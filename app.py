@@ -35,52 +35,77 @@ def check_vscode_file_exists(project, filename, branch="main"):
 
 
 def check_license_content(project, branch="main"):
-    """Strict check for AGPLv3 license"""
+    """Check if license is AGPLv3, other GNU, or invalid"""
     content = read_file_content(project, "LICENSE", branch) or read_file_content(
         project, "LICENSE.md", branch
     )
     if not content:
         return "not_found"
-    content_lower = content.lower().replace("-", "").replace(" ", "")
-    if any(
-        ind in content_lower
-        for ind in [
-            "gnuafferogeneralpubliclicense",
-            "agpl3.0",
-            "afferogeneralpubliclicenseversion3",
-        ]
-    ):
-        return "valid"
+
+    # Normalize: lowercase, single spaces
+    cleaned = " ".join(content.strip().split()).lower()
+
+    # Check for AGPLv3 specifically first
+    has_affero = "affero" in cleaned
+    has_gpl = "gpl" in cleaned or "general public license" in cleaned
+    has_version_3 = "version 3" in cleaned or "v3" in cleaned or "3.0" in cleaned
+
+    # Strong AGPLv3 indicators
+    if has_affero and has_gpl and has_version_3:
+        return "valid"  # ✅ AGPLv3
+
+    # Check for other GNU licenses (GPLv3, LGPLv3, GPLv2, etc.)
+    # Look for GNU patterns but exclude AGPL
+    has_gnu = "gnu" in cleaned
+    has_lgpl = "lgpl" in cleaned or "lesser general public license" in cleaned or "library general public license" in cleaned
+    has_gpl_v2 = "version 2" in cleaned or "v2" in cleaned or "2.0" in cleaned
+    has_gpl_general = has_gpl and not has_affero  # GPL but not AGPL
+
+    # Check for various GNU licenses
+    if (has_gnu and has_gpl_general and (has_version_3 or has_gpl_v2)) or \
+       (has_lgpl and (has_version_3 or has_gpl_v2)) or \
+       (has_gpl_general and (has_version_3 or has_gpl_v2)):
+        return "gnu_other"  # 🟡 Other GNU license
+
+    # Common non-GNU licenses
+    non_gnu_licenses = [
+        "mit license", "apache license", "apache 2.0", "bsd license",
+        "unlicense", "zlib", "isc license", "mozilla public license",
+        "eclipse public license", "creative commons"
+    ]
+
+    if any(phrase in cleaned for phrase in non_gnu_licenses):
+        return "invalid"
+
+    # If it contains license text but we can't identify the type
+    if "license" in cleaned and "copyright" in cleaned:
+        # Check if it mentions GPL/GNU but we couldn't categorize it properly
+        if has_gnu or has_gpl:
+            return "gnu_other"  # Assume it's some GNU variant we didn't catch
+        return "invalid"
+
     return "invalid"
 
-
 def check_vscode_settings_content(project, branch="main"):
-    """Check if settings.json have ruff configured"""
+    """Check only if .vscode/settings.json exists"""
     content = read_file_content(project, ".vscode/settings.json", branch)
+    return {"exists": content is not None}
+
+
+def check_extensions_json_for_ruff(project, branch="main"):
+    """Check if Ruff is recommended in .vscode/extensions.json"""
+    content = read_file_content(project, ".vscode/extensions.json", branch)
     if not content:
-        return {"exists": False, "have_ruff": False}
+        return False
     try:
         import json
-
         config = json.loads(content)
-
-        # Check for various ways Ruff can be configured in VS Code
-        have_ruff = any([
-            # Old extension format
-            config.get("python", {}).get("linting", {}).get("provider") == "ruff",
-            # Modern extension formats
-            config.get("python.formatting.provider") == "ruff",
-            config.get("python.linting.ruffEnabled") is True,
-            config.get("python.linting.enabled") is True and "ruff" in str(config).lower(),
-            # General check for ruff mentions in python settings
-            "ruff" in str(config.get("python", {})).lower(),
-            # Check for ruff in any python.* settings
-            any("ruff" in str(v).lower() for k, v in config.items() if k.startswith("python.") and isinstance(v, (str, list, dict)))
-        ])
-
-        return {"exists": True, "have_ruff": have_ruff}
+        recommendations = config.get("recommendations", [])
+        return "charliermarsh.ruff" in recommendations or any(
+            "ruff" in ext.lower() for ext in recommendations
+        )
     except Exception:
-        return {"exists": True, "have_ruff": False}
+        return False
 
 
 def list_markdown_files_in_folder(project, folder_path, branch="main"):
@@ -128,7 +153,7 @@ def check_project_compliance(project, branch=None):
         "README.md": ["README.md"],
         "CONTRIBUTING.md": ["CONTRIBUTING.md"],
         "CHANGELOG": ["CHANGELOG", "CHANGELOG.md"],
-        "LICENSE": ["LICENSE", "LICENSE.md"],
+        # LICENSE handled separately
     }
     report = {}
     try:
@@ -136,41 +161,46 @@ def check_project_compliance(project, branch=None):
         tree = project.repository_tree(ref=branch)
         filenames = [item["name"].lower() for item in tree]
 
+        # Check required files
         for label, variants in required_files.items():
             report[label] = any(variant.lower() in filenames for variant in variants)
 
-        report[".gitignore"] = ".gitignore" in filenames
-        report["pyproject.toml"] = "pyproject.toml" in filenames
-        report["vscode_settings"] = check_vscode_settings(project, branch)
+        # Check LICENSE existence and validity
+        license_variants = ["LICENSE", "LICENSE.md"]
+        report["LICENSE"] = any(variant.lower() in filenames for variant in license_variants)
 
-        # Content checks
-        license_status = check_license_content(project, branch)
+        if report["LICENSE"]:
+            license_status = check_license_content(project, branch)
+        else:
+            license_status = "not_found"
+
         report["license_valid"] = license_status == "valid"
         report["license_status"] = license_status
 
+        # Other files
+        report[".gitignore"] = ".gitignore" in filenames
+        report["pyproject.toml"] = "pyproject.toml" in filenames
+        report["uv_lock_exists"] = "uv.lock" in filenames  # ✅ New check
+
+        # VSCode config
+        report["vscode_settings"] = check_vscode_settings(project, branch)
         vscode_content = check_vscode_settings_content(project, branch)
-        report["vscode_have_ruff"] = vscode_content["have_ruff"]
         report["vscode_config_exists"] = vscode_content["exists"]
 
-        # Check other vscode config files including tasks.json
-        report["vscode_extensions_exists"] = check_vscode_file_exists(
-            project, "extensions.json", branch
-        )
-        report["vscode_launch_exists"] = check_vscode_file_exists(
-            project, "launch.json", branch
-        )
-        report["vscode_tasks_exists"] = check_vscode_file_exists(
-            project, "tasks.json", branch
-        )
+        # ✅ Ruff check in extensions.json
+        report["vscode_ruff_in_extensions"] = check_extensions_json_for_ruff(project, branch)
+
+        # Other VSCode files
+        report["vscode_extensions_exists"] = check_vscode_file_exists(project, "extensions.json", branch)
+        report["vscode_launch_exists"] = check_vscode_file_exists(project, "launch.json", branch)
+        report["vscode_tasks_exists"] = check_vscode_file_exists(project, "tasks.json", branch)
 
         # Templates
         template_details = check_templates_presence(project, branch)
         report.update(template_details)
 
         # Metadata
-        report["description_present"] = bool(
-            project.description and project.description.strip()
-        )
+        report["description_present"] = bool(project.description and project.description.strip())
         report["tags_present"] = len(project.tags.list(per_page=1)) > 0
 
     except Exception as e:
@@ -180,9 +210,7 @@ def check_project_compliance(project, branch=None):
 
 # Patch Project class
 def patch_gitlab_project():
-    Project.check_compliance = lambda self, branch=None: check_project_compliance(
-        self, branch
-    )
+    Project.check_compliance = lambda self, branch=None: check_project_compliance(self, branch)
 
 
 patch_gitlab_project()
@@ -207,68 +235,25 @@ def get_project_branches(project):
 # --- Suggestions Helper ---
 def get_suggestions_for_missing_items(report):
     suggestion_list = [
-        (
-            "README.md",
-            "Add a `README.md` file at the root of the repository with setup and usage instructions.",
-        ),
-        (
-            "CONTRIBUTING.md",
-            "Add a `CONTRIBUTING.md` file to guide collaborators on how to contribute to the project.",
-        ),
-        (
-            "CHANGELOG",
-            "Maintain a `CHANGELOG.md` file to record changes across versions for better transparency.",
-        ),
-        (
-            "LICENSE",
-            "Include a `AGPLv3 LICENSE` file to define the legal usage of your project.",
-        ),
-        (
-            "license_valid",
-            "Ensure the license is AGPLv3. Replace MIT/Apache with AGPLv3 for compliance.",
-        ),
-        (
-            "issue_templates_folder",
-            "Create `.gitlab/issue_templates/` and add `.md` templates like `Bug.md`, `Documentation.md`, or `Default.md`.",
-        ),
-        (
-            "merge_request_templates_folder",
-            "Create `.gitlab/merge_request_templates/` and add MR templates like `Bug.md`, `Documentation.md`, or `Default.md`.",
-        ),
-        (
-            ".gitignore",
-            "Add a `.gitignore` file to specify untracked files to ignore in your repository.",
-        ),
-        (
-            "pyproject.toml",
-            "Add a `pyproject.toml` file to declare Python build system requirements and project metadata.",
-        ),
-        (
-            ".vscode/settings.json",
-            "Add a `.vscode/settings.json` file to configure editor settings for consistency across contributors.",
-        ),
-        (
-            "vscode_have_ruff",
-            "Ensure `.vscode/settings.json` includes Ruff as the linter and make sure you are following correct json format.",
-        ),
-        (
-            "vscode_extensions_exists",
-            "Add a `.vscode/extensions.json` file to configure recommended VSCode extensions.",
-        ),
-        (
-            "vscode_launch_exists",
-            "Add a `.vscode/launch.json` file to configure debug launch profiles in VSCode.",
-        ),
-        (
-            "vscode_tasks_exists",
-            "Add a `.vscode/tasks.json` file to define custom tasks for build, lint, or deployment.",
-        ),
-        (
-            "description_present",
-            "Provide a meaningful project description in GitLab settings.",
-        ),
-        ("tags_present", "Tag your project releases for version control and clarity."),
+        ("README.md", "README.md missing", "Add a `README.md` file at the root of the repository with setup and usage instructions."),
+        ("CONTRIBUTING.md", "CONTRIBUTING.md missing", "Add a `CONTRIBUTING.md` file to guide collaborators on how to contribute to the project."),
+        ("CHANGELOG", "CHANGELOG missing", "Maintain a `CHANGELOG.md` file to record changes across versions for better transparency."),
+        ("LICENSE", "LICENSE missing", "Include an `AGPLv3 LICENSE` file to define the legal usage of your project."),
+        ("license_valid", "LICENSE is not AGPLv3", "Ensure the license is AGPLv3. Replace MIT/Apache with AGPLv3 for compliance."),
+        ("issue_templates_folder", "Issue templates folder missing", "Create `.gitlab/issue_templates/` and add `.md` templates like `Bug.md`, `Documentation.md`, or `Default.md`."),
+        ("merge_request_templates_folder", "Merge request templates folder missing", "Create `.gitlab/merge_request_templates/` and add MR templates like `Bug.md`, `Documentation.md`, or `Default.md`."),
+        (".gitignore", ".gitignore missing", "Add a `.gitignore` file to specify untracked files to ignore in your repository."),
+        ("pyproject.toml", "pyproject.toml missing", "Add a `pyproject.toml` file to declare Python build system requirements and project metadata."),
+        ("vscode_settings", ".vscode/settings.json missing", "Add a `.vscode/settings.json` file to configure editor settings for consistency across contributors."),
+        ("vscode_ruff_in_extensions", "Ruff not in .vscode/extensions.json", "Add `charliermarsh.ruff` to `.vscode/extensions.json` under `recommendations` to enforce Ruff linter usage."),
+        ("vscode_extensions_exists", ".vscode/extensions.json missing", "Add a `.vscode/extensions.json` file to configure recommended VSCode extensions."),
+        ("vscode_launch_exists", ".vscode/launch.json missing", "Add a `.vscode/launch.json` file to configure debug launch profiles in VSCode."),
+        ("vscode_tasks_exists", ".vscode/tasks.json missing", "Add a `.vscode/tasks.json` file to define custom tasks for build, lint, or deployment."),
+        ("description_present", "Project description missing", "Provide a meaningful project description in GitLab settings."),
+        ("tags_present", "Project tags missing", "Tag your project releases for version control and clarity."),
+        ("uv_lock_exists", "uv.lock missing", "Run `uv lock` to generate `uv.lock` for dependency locking. Commit this file to ensure reproducible environments."),
     ]
+
     image_map = {
         "README.md": "Readme.png",
         "CONTRIBUTING.md": "Contributing.png",
@@ -279,41 +264,29 @@ def get_suggestions_for_missing_items(report):
         "merge_request_templates_folder": "merge_request_files.png",
         ".gitignore": "gitignore.png",
         "pyproject.toml": "pyproject-toml.png",
-        ".vscode/settings.json": "vscode-settings.png",
-        "vscode_have_ruff": "vscode-ruff.png",
+        "vscode_settings": "vscode-settings.png",
+        "vscode_ruff_in_extensions": "vscode-extensions.png",
         "vscode_extensions_exists": "vscode-extensions.png",
         "vscode_launch_exists": "vscode-launch.png",
         "vscode_tasks_exists": "vscode-tasks.png",
         "description_present": "project-description.png",
         "tags_present": "Tags.png",
+        "uv_lock_exists": "uvlock.png",
     }
 
     st.subheader("📌 Suggestions for Missing Items")
-
-    show_files_image = not report.get(
-        "issue_templates_folder", False
-    ) or not report.get("merge_request_templates_folder", False)
+    show_files_image = not report.get("issue_templates_folder", False) or not report.get("merge_request_templates_folder", False)
     files_image_shown = False
 
-    for key, suggestion_text in suggestion_list:
+    for key, display_name, suggestion_text in suggestion_list:
         if not report.get(key, True):  # If missing
-            if (
-                key in ["issue_templates_folder", "merge_request_templates_folder"]
-                and show_files_image
-                and not files_image_shown
-            ):
+            if key in ["issue_templates_folder", "merge_request_templates_folder"] and show_files_image and not files_image_shown:
                 try:
-                    st.image(
-                        "assets/files.png",
-                        caption="Recommended file structure inside `.gitlab/` directory",
-                        width=500,
-                    )
+                    st.image("assets/files.png", caption="Recommended file structure inside `.gitlab/` directory", width=500)
                     files_image_shown = True
                 except Exception:
                     st.warning("Could not load: assets/files.png")
-
-            st.markdown(f"❌ **{key}** — {suggestion_text}")
-
+            st.markdown(f"❌ **{display_name}** — {suggestion_text}")
             img_file = image_map.get(key)
             if img_file:
                 try:
@@ -327,21 +300,15 @@ def render_vscode_and_pyproject_docs():
     st.markdown(
         """
 ### 🛠️ Documentation for `.vscode` Configuration Files and `pyproject.toml`
-
 These files help maintain consistent development environment and build configurations across the team.
-
 - [`.vscode/launch.json`](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations)
   Defines debug launch profiles for running and debugging the project inside VSCode.
-
 - [`.vscode/extensions.json`](https://code.visualstudio.com/docs/editor/extension-marketplace#_recommended-extensions)
   Lists recommended VSCode extensions to install for efficient coding and linting.
-
 - [`.vscode/settings.json`](https://code.visualstudio.com/docs/getstarted/settings)
   Contains workspace-specific editor settings such as Python interpreter path, linters (e.g., Ruff), and environment management (`uv`).
-
 - [`.vscode/tasks.json`](https://code.visualstudio.com/docs/editor/tasks)
   Defines custom tasks to automate build, test, lint, or deployment commands within VS Code.
-
 - [`pyproject.toml`](https://peps.python.org/pep-0518/)
   Configuration for Python project build system, dependencies, and packaging metadata. Ensures reproducible builds and integration with tools like Poetry or Flit.
         """
@@ -352,18 +319,14 @@ These files help maintain consistent development environment and build configura
 load_dotenv()
 TOKEN = st.secrets.get("GITLAB_TOKEN") or os.getenv("GITLAB_TOKEN")
 URL = st.secrets.get("GITLAB_URL") or os.getenv("GITLAB_URL")
-
 if not TOKEN or not URL:
-    st.error(
-        "❌ GITLAB_TOKEN or GITLAB_URL not found. Please set them in secrets or .env."
-    )
+    st.error("❌ GITLAB_TOKEN or GITLAB_URL not found. Please set them in secrets or .env.")
     st.stop()
 
 client = GitLabClient(base_url=URL, private_token=TOKEN)  # For user APIs
 gl = Gitlab(URL, private_token=TOKEN)  # For project APIs
 
 st.title("GitLab Tools")
-
 mode = st.sidebar.radio(
     "Select Mode",
     ["Check Project Compliance", "Check User Profile README", "Get User Info"],
@@ -380,7 +343,6 @@ if mode == "Check Project Compliance":
         ),
     )
 
-    # Auto-trigger on Enter
     if st.session_state.get("project_compliance_run"):
         st.session_state["project_compliance_run"] = False
         input_str = project_input.strip()
@@ -432,29 +394,19 @@ if mode == "Check Project Compliance":
                 )
             else:
                 selected_branch = default_branch
-                st.warning(
-                    "No branches found, will check default/main branch if possible."
-                )
+                st.warning("No branches found, will check default/main branch if possible.")
 
-            run_check = st.button(
-                "Run Compliance Check on Selected Branch", key="run_compliance_check"
-            )
+            run_check = st.button("Run Compliance Check on Selected Branch", key="run_compliance_check")
             run_automatic = len(branches) == 1 and (branches[0] == default_branch)
 
             if run_check or run_automatic:
-                report = check_project_compliance(
-                    project=project, branch=selected_branch
-                )
-                st.write(
-                    f"### Project: {project.path_with_namespace} (ID: {project.id}) | Branch: `{selected_branch}`"
-                )
+                report = check_project_compliance(project=project, branch=selected_branch)
+                st.write(f"### Project: {project.path_with_namespace} (ID: {project.id}) | Branch: `{selected_branch}`")
 
                 if "error" in report:
                     st.error(report["error"])
                 else:
-                    # --- CATEGORIZED COMPLIANCE REPORT ---
                     st.markdown("### 📋 Compliance Summary by Category")
-
                     categories = {
                         "1. 📄 Project Metadata": {
                             "description_present": "Project Description",
@@ -474,8 +426,9 @@ if mode == "Check Project Compliance":
                         "3. ⚙️ Project Configuration": {
                             ".gitignore": ".gitignore",
                             "pyproject.toml": "pyproject.toml",
+                            "uv_lock_exists": "uv.lock",
                             "vscode_settings": ".vscode/settings.json",
-                            "vscode_have_ruff": ".vscode/settings.json have Ruff",
+                            "vscode_ruff_in_extensions": "Ruff in .vscode/extensions.json",
                             "vscode_extensions_exists": ".vscode/extensions.json",
                             "vscode_launch_exists": ".vscode/launch.json",
                             "vscode_tasks_exists": ".vscode/tasks.json",
@@ -492,106 +445,58 @@ if mode == "Check Project Compliance":
                             for key, display_name in items.items():
                                 status = report.get(key, False)
 
-                                # === Special handling for Ruff linter presence ===
-                                if key == "vscode_have_ruff":
-                                    if status:
-                                        st.markdown("✅ .vscode/settings.json have Ruff")
-                                    else:
-                                        st.markdown("❌ .vscode/settings.json doesn't have Ruff")
-                                    if not status:
-                                        all_passed = False
-
-                                # === (Handle lists — e.g., list of template files) ===
-                                elif isinstance(status, list):
+                                if isinstance(status, list):
                                     count = len(status)
                                     emoji = "✅" if count > 0 else "❌"
                                     listed = ", ".join(sorted(status)) if status else "None"
-                                    st.markdown(
-                                        f"{emoji} **{display_name}**: {count} file(s) ({listed})"
-                                    )
+                                    st.markdown(f"{emoji} **{display_name}**: {count} file(s) ({listed})")
                                     if count == 0:
                                         all_passed = False
 
-                                # === (Handle license special case) ===
                                 elif key == "license_valid":
-                                    if report.get("license_status") == "invalid":
-                                        st.markdown("🟠 **LICENSE is AGPLv3** — License found but not AGPLv3")
+                                    license_status = report.get("license_status")
+                                    if license_status == "valid":
+                                        st.markdown("✅ **LICENSE is AGPLv3**")
+                                    elif license_status == "gnu_other":
+                                        st.markdown("🟠 **LICENSE is AGPLv3** — GNU license found (e.g., GPLv3/LGPLv3) but not AGPLv3")
                                         all_passed = False
                                     else:
-                                        emoji = "✅" if status else "❌"
-                                        st.markdown(f"{emoji} **{display_name}**")
-                                        if not status:
-                                            all_passed = False
+                                        st.markdown("❌ **LICENSE is AGPLv3** — License is non-GNU (e.g., MIT/Apache) or missing")
+                                        all_passed = False
 
-                                # === (Default for all other items) ===
                                 else:
                                     emoji = "✅" if status else "❌"
                                     st.markdown(f"{emoji} **{display_name}**")
                                     if not status:
                                         all_passed = False
 
-                    # Prepare updated report for suggestions
-                    updated_report = report.copy()
-                    if "vscode_settings" in updated_report:
-                        updated_report[".vscode/settings.json"] = updated_report.pop(
-                            "vscode_settings"
-                        )
-
                     if all_passed:
-                        st.success(
-                            "🎉 **All Set!** Your project meets all compliance requirements."
-                        )
+                        st.success("🎉 **All Set!** Your project meets all compliance requirements.")
                     else:
-                        get_suggestions_for_missing_items(updated_report)
+                        get_suggestions_for_missing_items(report)
 
-                    # --- New Section: Conditional Documentation ---
+                    # Conditional documentation
                     docs_map = {
-                        "pyproject.toml": """
-- [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/)
-  Configuration for Python project build system, dependencies, and packaging metadata. Ensures reproducible builds and integration with tools like Poetry or Flit.
-""",
-                        ".vscode/settings.json": """
-- [`.vscode/settings.json`](https://code.visualstudio.com/docs/getstarted/settings)
-  Contains workspace-specific editor settings such as Python interpreter path, linters (e.g., Ruff), and environment management.
-""",
-                        "vscode_have_ruff": """
-- [Ruff Linter in `.vscode/settings.json`](https://docs.astral.sh/ruff/editors/settings/#vs-code)
-  Ensure Ruff is configured as the Python linter for speedy and consistent linting.
-""",
-                        "vscode_extensions_exists": """
-- [`.vscode/extensions.json`](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#_workspace-recommended-extensions)
-  Lists recommended VSCode extensions to install for efficient coding and linting.
-""",
-                        "vscode_launch_exists": """
-- [`.vscode/launch.json`](https://code.visualstudio.com/docs/debugtest/debugging#_before-you-start-debugging)
-  Defines debug launch profiles for running and debugging the project inside VSCode.
-""",
-                        "vscode_tasks_exists": """
-- [`.vscode/tasks.json`](https://code.visualstudio.com/docs/editor/tasks)
-  Defines custom tasks to automate build, test, lint, or deployment commands within VS Code.
-""",
+                        "pyproject.toml": "- [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/) – Configuration for Python project build system, dependencies, and packaging metadata.",
+                        "vscode_settings": "- [`.vscode/settings.json`](https://code.visualstudio.com/docs/getstarted/settings) – Workspace-specific editor settings including linters and interpreter.",
+                        "vscode_ruff_in_extensions": "- [Ruff in `.vscode/extensions.json`](https://docs.astral.sh/ruff/editors/setup/) – Recommend Ruff extension for linting.",
+                        "vscode_extensions_exists": "- [`.vscode/extensions.json`](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#_workspace-recommended-extensions) – Recommend essential extensions.",
+                        "vscode_launch_exists": "- [`.vscode/launch.json`](https://code.visualstudio.com/docs/debugtest/debugging) – Define debug profiles.",
+                        "vscode_tasks_exists": "- [`.vscode/tasks.json`](https://code.visualstudio.com/docs/editor/tasks) – Automate common tasks.",
+                        "uv_lock_exists": "- [`uv.lock`](https://docs.astral.sh/uv/concepts/projects/sync/) – Lock dependencies for reproducible environments.",
                     }
 
                     relevant_keys = [
-                        "pyproject.toml",
-                        ".vscode/settings.json",
-                        "vscode_have_ruff",
-                        "vscode_extensions_exists",
-                        "vscode_launch_exists",
-                        "vscode_tasks_exists",
+                        "pyproject.toml", "vscode_settings", "vscode_ruff_in_extensions",
+                        "vscode_extensions_exists", "vscode_launch_exists",
+                        "vscode_tasks_exists", "uv_lock_exists"
                     ]
-
-                    missing_keys = [
-                        k for k in relevant_keys if not updated_report.get(k, False)
-                    ]
+                    missing_keys = [k for k in relevant_keys if not report.get(k, False)]
 
                     if missing_keys:
                         st.markdown("---")
                         st.subheader("📖 Documentation for Missing Configuration Files")
-                        with st.expander(
-                            "Why these .vscode and pyproject.toml files matter",
-                            expanded=False,
-                        ):
+                        with st.expander("Why these files matter", expanded=False):
                             for key in missing_keys:
                                 doc_text = docs_map.get(key)
                                 if doc_text:
@@ -602,17 +507,14 @@ if mode == "Check Project Compliance":
 
 # ---------- MODE: User Profile README ----------
 elif mode == "Check User Profile README":
-    st.subheader("✅ Check if user have a project named after them with README.md")
-
+    st.subheader("✅ Check if user has a project named after them with README.md")
     user_input = st.text_input(
         "Enter GitLab username, user ID, or user profile URL",
         key="user_readme_input",
         on_change=lambda: setattr(st.session_state, "user_readme_triggered", True),
     )
-
     check_triggered = st.session_state.get("user_readme_triggered", False)
     button_clicked = st.button("Check README", key="user_readme_button")
-
     if check_triggered or button_clicked:
         st.session_state["user_readme_triggered"] = False
         input_val = user_input.strip()
@@ -631,9 +533,7 @@ elif mode == "Check User Profile README":
             except Exception as e:
                 st.error(f"User not found or error: {e}")
                 user = None
-
             if user:
-
                 def check_readme_in_project(project):
                     try:
                         branch = getattr(project, "default_branch", "main")
@@ -655,45 +555,29 @@ elif mode == "Check User Profile README":
                                 profile_project.namespace["full_path"].lower()
                                 == user_obj.username.lower()
                             ):
-                                return check_readme_in_project(
-                                    profile_project
-                                ), profile_project
+                                return check_readme_in_project(profile_project), profile_project
                         except GitlabGetError:
                             pass
                         return False, None
                     except Exception as e:
-                        st.warning(
-                            f"Error checking README for user {user_obj.username}: {e}"
-                        )
+                        st.warning(f"Error checking README for user {user_obj.username}: {e}")
                         return False, None
 
-                have_readme, project = check_user_profile_readme(gl, user)
+                has_readme, project = check_user_profile_readme(gl, user)
                 st.write(f"User: **{user.name}** (@{user.username}, ID: {user.id})")
-
                 if project is None:
                     st.info(f"No profile project found for user '{user.username}'.")
-                    st.markdown(
-                        "💡 **Suggestion**: Create a README for your profile by following these steps:"
-                    )
-                    st.markdown(
-                        "1. Create a new project with the exact same name as your username"
-                    )
+                    st.markdown("💡 **Suggestion**: Create a README for your profile by following these steps:")
+                    st.markdown("1. Create a new project with the exact same name as your username")
                     st.markdown("2. Add a `README.md` file in that project")
-                    st.markdown(
-                        "3. This README will appear on your GitLab profile page"
-                    )
+                    st.markdown("3. This README will appear on your GitLab profile page")
                     try:
-                        st.image(
-                            "assets/Readme.png",
-                            caption="Example of a profile README setup",
-                        )
+                        st.image("assets/Readme.png", caption="Example of a profile README setup")
                     except Exception:
                         pass
-                elif have_readme:
+                elif has_readme:
                     branch = getattr(project, "default_branch", "main")
-                    st.success(
-                        f"✅ Project '{project.path_with_namespace}' have a README.md"
-                    )
+                    st.success(f"✅ Project '{project.path_with_namespace}' has a README.md")
                     domain = urlparse(URL).netloc
                     url = f"https://{domain}/{project.path_with_namespace}/-/blob/{branch}/README.md"
                     st.markdown(f"[View README]({url})")
@@ -703,7 +587,6 @@ elif mode == "Check User Profile README":
                         st.image("assets/Readme.png")
                     except Exception:
                         pass
-
 
 # ---------- MODE: Get User Info ----------
 elif mode == "Get User Info":
@@ -715,7 +598,6 @@ elif mode == "Get User Info":
     )
     check_triggered = st.session_state.get("user_info_triggered", False)
     button_clicked = st.button("Get User Info", key="user_info_button")
-
     if check_triggered or button_clicked:
         st.session_state["user_info_triggered"] = False
         input_val = user_input.strip()
@@ -728,46 +610,26 @@ elif mode == "Get User Info":
                 else:
                     username = extract_path_from_url(input_val)
                     user = client.users.get_by_username(username)
-
                 st.write(f"**Name:** {user['name']}")
                 st.write(f"**Username:** @{user['username']}")
                 st.write(f"**User ID:** {user['id']}")
                 if user.get("avatar_url"):
                     st.image(user["avatar_url"], width=80)
                 st.write(f"[View GitLab Profile]({user.get('web_url', '')})")
-
-                # Account statistics
                 st.markdown("#### 📊 Account Statistics")
                 col1, col2 = st.columns(2)
                 with col1:
                     proj_count = client.users.get_user_project_count(user["id"])
-                    st.metric(
-                        "Projects", proj_count if isinstance(proj_count, int) else "N/A"
-                    )
+                    st.metric("Projects", proj_count if isinstance(proj_count, int) else "N/A")
                     group_count = client.users.get_user_group_count(user["id"])
-                    st.metric(
-                        "Groups", group_count if isinstance(group_count, int) else "N/A"
-                    )
+                    st.metric("Groups", group_count if isinstance(group_count, int) else "N/A")
                 with col2:
                     issue_count = client.users.get_user_issue_count(user["id"])
-                    st.metric(
-                        "Issues", issue_count if isinstance(issue_count, int) else "N/A"
-                    )
+                    st.metric("Issues", issue_count if isinstance(issue_count, int) else "N/A")
                     mr_count = client.users.get_user_mr_count(user["id"])
-                    st.metric(
-                        "Merge Requests",
-                        mr_count if isinstance(mr_count, int) else "N/A",
-                    )
-
-                # Show warnings if API calls failed
-                for label, count in [
-                    ("projects", proj_count),
-                    ("groups", group_count),
-                    ("issues", issue_count),
-                    ("merge requests", mr_count),
-                ]:
+                    st.metric("Merge Requests", mr_count if isinstance(mr_count, int) else "N/A")
+                for label, count in [("projects", proj_count), ("groups", group_count), ("issues", issue_count), ("merge requests", mr_count)]:
                     if isinstance(count, str) and count.startswith("Error:"):
                         st.warning(f"Could not get {label} count: {count[6:].strip()}")
-
             except Exception as e:
                 st.error(f"User not found or error: {e}")
