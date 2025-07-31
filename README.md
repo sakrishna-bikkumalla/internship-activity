@@ -6,7 +6,7 @@ A Streamlit web application to verify GitLab project best practices and check us
 
 ## 🚀 Live Demo
 
-Try the application live: [https://glab-compliance-checker.streamlit.app/](https://glab-compliance-checker.streamlit.app/)
+Try the application live: [https://projects-compliance-checker.apps.swecha.org/](https://projects-compliance-checker.apps.swecha.org/)
 
 ## 📋 Features
 
