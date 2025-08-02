@@ -551,6 +551,8 @@ if mode == "Check Project Compliance":
                             ".gitignore": ".gitignore",
                             "pyproject.toml": "pyproject.toml",
                             "uv_lock_exists": "uv.lock",
+                        },
+                        "4. 🖥️ IDE Setup": {
                             "vscode_settings": ".vscode/settings.json",
                             "vscode_ruff_in_extensions": "Ruff in .vscode/extensions.json",
                             "vscode_extensions_exists": ".vscode/extensions.json",
@@ -558,7 +560,6 @@ if mode == "Check Project Compliance":
                             "vscode_tasks_exists": ".vscode/tasks.json",
                         },
                     }
-
                     all_passed = True
                     for category_title, items in categories.items():
                         st.markdown(
