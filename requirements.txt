@@ -3,3 +3,4 @@ python-gitlab
 python-dotenv
 requests
 gitlab-utils
+pandas>=1.5
