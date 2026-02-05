@@ -1,43 +1,28 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# =========================
+# Node.js
+# =========================
+node_modules/
+npm-debug.log
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
+# =========================
+# Python
+# =========================
 venv/
-env/
-ENV/
-env.bak/
-venv.bak/
+__pycache__/
+*.pyc
+.env
 
-# Streamlit secrets (Important!)
-.streamlit/secrets.toml
+# =========================
+# Streamlit
+# =========================
+.streamlit/
 
-# IDEs
-.idea/
-.vscode/
-*.swp
-*.swo
+# =========================
+# Reports / generated files
+# =========================
+*.pdf
 
-# OS
+# =========================
+# OS / Editor
+# =========================
 .DS_Store
-Thumbs.db

@@ -1,9 +1,10 @@
 {
   "name": "gitlab-compliance-checker",
   "version": "1.0.0",
-  "description": "A Streamlit web application to verify GitLab project best practices and check user profile README status.",
-  "main": "index.js",
+  "description": "GitLab compliance checker with Streamlit UI and Node backend",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -14,6 +15,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@iarna/toml": "^2.2.5"
+    "@iarna/toml": "^2.2.5",
+    "express": "^4.22.1"
   }
 }
