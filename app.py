@@ -10,6 +10,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from gitlab import Gitlab, GitlabGetError
 from gitlab.v4.objects import Project
+
 from gitlab_utils.client import GitLabClient  # For user APIs only
 
 # Dependency availability
@@ -1619,6 +1620,7 @@ if mode == "Check Project Compliance":
             st.error(f"Error accessing project: {str(e)}")
 
 # ---------- MODE: User Profile Overview ----------
+# ---------- MODE: User Profile Overview ----------
 elif mode == "User Profile Overview":
     st.subheader("👤 User Profile Overview")
     user_input = st.text_input(
@@ -1632,6 +1634,7 @@ elif mode == "User Profile Overview":
     if check_triggered or button_clicked:
         st.session_state["user_overview_triggered"] = False
         input_val = user_input.strip()
+
         if not input_val:
             st.warning("Please enter a username, user ID, or profile URL.")
         else:
@@ -1649,7 +1652,7 @@ elif mode == "User Profile Overview":
             if not user_info:
                 st.stop()
 
-            # Display user info from `client`
+            # Display user info
             st.write(
                 f"### User: **{user_info['name']}** (@{user_info['username']}, ID: {user_info['id']})"
             )
@@ -1657,31 +1660,41 @@ elif mode == "User Profile Overview":
                 st.image(user_info["avatar_url"], width=80)
             st.write(f"[View GitLab Profile]({user_info.get('web_url', '')})")
 
-            # Show stats using `client` APIs
+            # --- Account Statistics ---
             st.markdown("#### 📊 Account Statistics")
-            col1, col2 = st.columns(2)
+
+            col1, col2, col3 = st.columns(3)
 
             proj_count = client.users.get_user_project_count(user_info["id"])
             group_count = client.users.get_user_group_count(user_info["id"])
             issue_count = client.users.get_user_issue_count(user_info["id"])
-            mr_count = client.users.get_user_mr_count(user_info["id"])
+
+            open_mr_count = client.users.get_user_mr_count(user_info["id"])
+            closed_mr_count = client.users.get_user_closed_mr_count(user_info["id"])
+            total_mr_count = client.users.get_user_total_mr_count(user_info["id"])
 
             with col1:
                 st.metric("Projects", proj_count if isinstance(proj_count, int) else "N/A")
                 st.metric("Groups", group_count if isinstance(group_count, int) else "N/A")
+
             with col2:
+                st.metric("Open Issues", issue_count if isinstance(issue_count, int) else "N/A")
+                st.metric("Open MRs", open_mr_count if isinstance(open_mr_count, int) else "N/A")
+
+            with col3:
                 st.metric(
-                    "Open Issues",
-                    issue_count if isinstance(issue_count, int) else "N/A",
+                    "Closed MRs", closed_mr_count if isinstance(closed_mr_count, int) else "N/A"
                 )
-                st.metric("Open MRs", mr_count if isinstance(mr_count, int) else "N/A")
+                st.metric("Total MRs", total_mr_count if isinstance(total_mr_count, int) else "N/A")
 
             # Warn if any metric failed
             for label, count in [
                 ("projects", proj_count),
                 ("groups", group_count),
                 ("issues", issue_count),
-                ("merge requests", mr_count),
+                ("open merge requests", open_mr_count),
+                ("closed merge requests", closed_mr_count),
+                ("total merge requests", total_mr_count),
             ]:
                 if isinstance(count, str) and count.startswith("Error:"):
                     st.warning(f"Could not get {label} count: {count[6:].strip()}")
@@ -1701,20 +1714,18 @@ elif mode == "User Profile Overview":
 
             def check_user_profile_readme(gl_client, username):
                 try:
-                    # Try to get project: <username>/<username>
                     project_path = f"{username}/{username}"
                     profile_project = gl_client.projects.get(project_path)
-                    # Confirm it's in user namespace
+
                     if profile_project.namespace["full_path"].lower() == username.lower():
                         has_readme = check_readme_in_project(profile_project)
                         return has_readme, profile_project
                 except GitlabGetError:
-                    pass  # Project not found
+                    pass
                 except Exception as e:
                     st.warning(f"Error accessing profile project: {e}")
                 return False, None
 
-            # Use `gl` to check README (not `client`)
             has_readme, profile_project = check_user_profile_readme(gl, user_info["username"])
 
             if profile_project is None:
