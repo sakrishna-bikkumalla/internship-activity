@@ -3,7 +3,10 @@ import http.client
 import io
 import os
 import time
+<<<<<<< HEAD
 from datetime import time
+=======
+>>>>>>> open-issues-final
 from urllib.parse import urlparse
 
 import requests
@@ -11,9 +14,16 @@ import streamlit as st
 from dotenv import load_dotenv
 from gitlab import Gitlab, GitlabGetError
 from gitlab.v4.objects import Project
+<<<<<<< HEAD
 
 from gitlab_utils.client import GitLabClient
 
+=======
+from gitlab_utils.client import GitLabClient
+
+ # For user APIs only
+
+>>>>>>> open-issues-final
 # Dependency availability
 try:
     import pandas as pd  # noqa: F401
@@ -1625,6 +1635,7 @@ if mode == "Check Project Compliance":
 # ---------- MODE: User Profile Overview ----------
 # ---------- MODE: User Profile Overview ----------
 elif mode == "User Profile Overview":
+<<<<<<< HEAD
     st.subheader("👤 User Profile Overview")
 
     user_input = st.text_input(
@@ -1800,3 +1811,7 @@ elif mode == "User Profile Overview":
                 st.image("assets/Readme.png", width=450)
             except Exception:
                 pass
+=======
+    from user_profile.profile_ui import render_user_profile
+    render_user_profile(gl)
+>>>>>>> open-issues-final
