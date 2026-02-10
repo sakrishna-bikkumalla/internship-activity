@@ -602,6 +602,39 @@ def get_project_branches(project):
         return []
 
 
+def get_user_from_token(base_url, token):
+    try:
+        headers = {"PRIVATE-TOKEN": token}
+        url = f"{base_url}/api/v4/user"
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        return f"Error validating token: {e}"
+
+
+def get_user_groups_by_token(base_url, token):
+    """
+    Get groups of the AUTHENTICATED user.
+    Works even when /users/:id/groups is disabled.
+    """
+    try:
+        headers = {"PRIVATE-TOKEN": token}
+
+        api_base = base_url.rstrip("/")
+        if api_base.endswith("/api/v4"):
+            url = f"{api_base}/groups?membership=true"
+        else:
+            url = f"{api_base}/api/v4/groups?membership=true"
+
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        return r.json()
+
+    except Exception as e:
+        return f"Error fetching groups: {e}"
+
+
 # --- Suggestions Helper ---
 def get_suggestions_for_missing_items(report):
     suggestion_list = [
@@ -1009,7 +1042,6 @@ mode = st.sidebar.radio(
     "Select Mode",
     ["Check Project Compliance", "User Profile Overview"],
 )
-
 # --- MODE: Check Project Compliance ---
 if mode == "Check Project Compliance":
     st.subheader("📊 Project Compliance Checker")
