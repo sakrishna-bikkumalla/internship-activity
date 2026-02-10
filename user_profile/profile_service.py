@@ -128,7 +128,7 @@ def _get_total_count_from_api(gl, endpoint, query_data=None):
         return None
 
 
-# ---------------- USER BASIC INFO ----------------
+
 
 
 def get_user_profile(client, username_or_id):
