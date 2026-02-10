@@ -10,7 +10,45 @@ import streamlit as st
 from dotenv import load_dotenv
 from gitlab import Gitlab, GitlabGetError
 from gitlab.v4.objects import Project
-from gitlab_utils.client import GitLabClient  # For user APIs only
+
+from gitlab_utils.client import GitLabClient
+
+# Dependency availability
+try:
+    import pandas as pd  # noqa: F401
+
+    PANDAS_AVAILABLE = True
+except Exception:
+    PANDAS_AVAILABLE = False
+
+# Excel engine availability
+try:
+    import openpyxl  # noqa: F401
+
+    OPENPYXL_AVAILABLE = True
+except Exception:
+    OPENPYXL_AVAILABLE = False
+
+try:
+    import xlsxwriter  # noqa: F401
+
+    XLSXWRITER_AVAILABLE = True
+except Exception:
+    XLSXWRITER_AVAILABLE = False
+
+# Provide a helpful pip suggestion
+if not PANDAS_AVAILABLE:
+    # pandas missing — suggest installing pandas and an engine
+    if not (OPENPYXL_AVAILABLE or XLSXWRITER_AVAILABLE):
+        EXCEL_PIP_SUGGEST = "pip install pandas openpyxl"
+    else:
+        EXCEL_PIP_SUGGEST = "pip install pandas"
+else:
+    # pandas present, engines may be missing
+    if not (OPENPYXL_AVAILABLE or XLSXWRITER_AVAILABLE):
+        EXCEL_PIP_SUGGEST = "pip install openpyxl"
+    else:
+        EXCEL_PIP_SUGGEST = "pip install pandas"
 
 # Dependency availability
 try:
