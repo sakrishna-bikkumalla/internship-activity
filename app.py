@@ -3,6 +3,7 @@ import http.client
 import io
 import os
 import time
+from datetime import time
 from urllib.parse import urlparse
 
 import requests
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 from gitlab import Gitlab, GitlabGetError
 from gitlab.v4.objects import Project
 
-from gitlabutils.utils.gitlab_client import GitLabClient
+from gitlab_utils.client import GitLabClient  # For user APIs only
 
 # Dependency availability
 try:
@@ -1729,352 +1730,132 @@ if mode == "Check Project Compliance":
             st.error(f"Error accessing project: {str(e)}")
 
 # ---------- MODE: User Profile Overview ----------
+# ---------- MODE: User Profile Overview ----------
+# ---------- MODE: User Profile Overview ----------
+# ---------- MODE: User Profile Overview ----------
 elif mode == "User Profile Overview":
     st.subheader("👤 User Profile Overview")
+    user_input = st.text_input(
+        "Enter GitLab username, user ID, or profile URL",
+        key="user_overview_input",
+        on_change=lambda: setattr(st.session_state, "user_overview_triggered", True),
+    )
+    check_triggered = st.session_state.get("user_overview_triggered", False)
+    button_clicked = st.button("Fetch User Info & Check README", key="user_overview_button")
 
-    # Toggle between single and batch mode
-    mode_col1, mode_col2 = st.columns(2)
-    with mode_col1:
-        single_mode = st.checkbox("Single User Lookup", value=True, key="user_single_mode")
-    with mode_col2:
-        batch_mode = st.checkbox("Batch Mode: Multiple Users", key="user_batch_mode")
-
-    st.markdown("---")
-
-    # --- SINGLE USER MODE ---
-    if single_mode and not batch_mode:
-        user_input = st.text_input(
-            "Enter GitLab username, user ID, or profile URL",
-            key="user_overview_input",
-            on_change=lambda: setattr(st.session_state, "user_overview_triggered", True),
-        )
-        check_triggered = st.session_state.get("user_overview_triggered", False)
-        button_clicked = st.button("Fetch User Info & Check README", key="user_overview_button")
-
-        if check_triggered or button_clicked:
-            st.session_state["user_overview_triggered"] = False
-            input_val = user_input.strip()
-            if not input_val:
-                st.warning("Please enter a username, user ID, or profile URL.")
-            else:
-                # --- Step 1: Get User Info using `client` ---
-                try:
-                    if input_val.isdigit():
-                        user_info = client.users.get_by_userid(int(input_val))
-                    else:
-                        username = extract_path_from_url(input_val)
-                        user_info = client.users.get_by_username(username)
-                except Exception as e:
-                    st.error(f"❌ User not found or error (via client): {e}")
-                    user_info = None
-
-                if not user_info:
-                    st.stop()
-
-                # Display user info from `client`
-                st.write(
-                    f"### User: **{user_info['name']}** (@{user_info['username']}, ID: {user_info['id']})"
-                )
-                if user_info.get("avatar_url"):
-                    st.image(user_info["avatar_url"], width=80)
-                st.write(f"[View GitLab Profile]({user_info.get('web_url', '')})")
-
-                # Show stats using `client` APIs
-                st.markdown("#### 📊 Account Statistics")
-                col1, col2 = st.columns(2)
-
-                proj_count = client.users.get_user_project_count(user_info["id"])
-                group_count = client.users.get_user_group_count(user_info["id"])
-                issue_count = client.users.get_user_issue_count(user_info["id"])
-                mr_count = client.users.get_user_mr_count(user_info["id"])
-
-                with col1:
-                    st.metric("Projects", proj_count if isinstance(proj_count, int) else "N/A")
-                    st.metric("Groups", group_count if isinstance(group_count, int) else "N/A")
-                with col2:
-                    st.metric(
-                        "Open Issues",
-                        issue_count if isinstance(issue_count, int) else "N/A",
-                    )
-                    st.metric("Open MRs", mr_count if isinstance(mr_count, int) else "N/A")
-
-                # Warn if any metric failed
-                for label, count in [
-                    ("projects", proj_count),
-                    ("groups", group_count),
-                    ("issues", issue_count),
-                    ("merge requests", mr_count),
-                ]:
-                    if isinstance(count, str) and count.startswith("Error:"):
-                        st.warning(f"Could not get {label} count: {count[6:].strip()}")
-
-                # --- Step 2: Check Profile README using `gl` ---
-                st.markdown("#### 📄 Profile README Status")
-
-                # Use `gl` to check README (not `client`)
-                has_readme, profile_project = check_user_profile_readme(gl, user_info["username"])
-
-                if profile_project is None:
-                    st.info("❌ No profile project found (i.e., `<username>/<username>`).")
-                    st.markdown(
-                        "💡 **Suggestion**: Create a README for your profile by following these steps:"
-                    )
-                    st.markdown("1. Create a new project with the exact same name as your username")
-                    st.markdown("2. Add a `README.md` file in that project")
-                    st.markdown("3. This README will appear on your GitLab profile page")
-                    try:
-                        st.image(
-                            "assets/Readme.png",
-                            caption="Example of a profile README setup",
-                            width=500,
-                        )
-                    except Exception:
-                        pass
-                elif has_readme:
-                    branch = getattr(profile_project, "default_branch", "main")
-                    st.success("✅ Profile README is set up correctly!")
-                    domain = urlparse(URL).netloc
-                    url = f"https://{domain}/{profile_project.path_with_namespace}/-/blob/{branch}/README.md"
-                    st.markdown(f"[View README]({url})")
+    if check_triggered or button_clicked:
+        st.session_state["user_overview_triggered"] = False
+        input_val = user_input.strip()
+        if not input_val:
+            st.warning("Please enter a username, user ID, or profile URL.")
+        else:
+            # --- Step 1: Get User Info using `client` ---
+            try:
+                if input_val.isdigit():
+                    user_info = client.users.get_by_userid(int(input_val))
                 else:
-                    st.error("❌ Profile project exists but is missing `README.md`.")
-                    try:
-                        st.image("assets/Readme.png", width=400)
-                    except Exception:
-                        pass
-    # --- BATCH USER MODE ---
-    elif batch_mode and not single_mode:
-        st.subheader("🔁 Batch Mode: Multiple Users")
-        batch_users_input = st.text_area(
-            "Enter multiple usernames, user IDs, or profile URLs (one per line)",
-            key="batch_users_input",
-            placeholder="john_doe\n12345\nhttps://gitlab.com/jane_smith",
-        )
-        run_batch_users = st.button("Analyze Multiple Users", key="run_batch_users_button")
+                    username = extract_path_from_url(input_val)
+                    user_info = client.users.get_by_username(username)
+            except Exception as e:
+                st.error(f"❌ User not found or error (via client): {e}")
+                user_info = None
 
-        if run_batch_users:
-            lines = [l.strip() for l in (batch_users_input or "").splitlines() if l.strip()]
-            if not lines:
-                st.warning(
-                    "Please enter at least one username, user ID, or URL for batch processing."
+            if not user_info:
+                st.stop()
+
+            # Display user info from `client`
+            st.write(
+                f"### User: **{user_info['name']}** (@{user_info['username']}, ID: {user_info['id']})"
+            )
+            if user_info.get("avatar_url"):
+                st.image(user_info["avatar_url"], width=80)
+            st.write(f"[View GitLab Profile]({user_info.get('web_url', '')})")
+
+            # Show stats using `client` APIs
+            st.markdown("#### 📊 Account Statistics")
+            col1, col2 = st.columns(2)
+
+            proj_count = client.users.get_user_project_count(user_info["id"])
+            group_count = client.users.get_user_group_count(user_info["id"])
+            issue_count = client.users.get_user_issue_count(user_info["id"])
+            mr_count = client.users.get_user_mr_count(user_info["id"])
+
+            with col1:
+                st.metric("Projects", proj_count if isinstance(proj_count, int) else "N/A")
+                st.metric("Groups", group_count if isinstance(group_count, int) else "N/A")
+            with col2:
+                st.metric(
+                    "Open Issues",
+                    issue_count if isinstance(issue_count, int) else "N/A",
                 )
+                st.metric("Open MRs", mr_count if isinstance(mr_count, int) else "N/A")
+
+            # Warn if any metric failed
+            for label, count in [
+                ("projects", proj_count),
+                ("groups", group_count),
+                ("issues", issue_count),
+                ("merge requests", mr_count),
+            ]:
+                if isinstance(count, str) and count.startswith("Error:"):
+                    st.warning(f"Could not get {label} count: {count[6:].strip()}")
+
+            # --- Step 2: Check Profile README using `gl` ---
+            st.markdown("#### 📄 Profile README Status")
+
+            def check_readme_in_project(project):
+                try:
+                    branch = getattr(project, "default_branch", "main")
+                    tree = project.repository_tree(ref=branch)
+                    filenames = [item["name"].lower() for item in tree]
+                    return "readme.md" in filenames
+                except Exception as e:
+                    st.warning(f"Error checking README: {str(e)}")
+                    return False
+
+            def check_user_profile_readme(gl_client, username):
+                try:
+                    # Try to get project: <username>/<username>
+                    project_path = f"{username}/{username}"
+                    profile_project = gl_client.projects.get(project_path)
+                    # Confirm it's in user namespace
+                    if profile_project.namespace["full_path"].lower() == username.lower():
+                        has_readme = check_readme_in_project(profile_project)
+                        return has_readme, profile_project
+                except GitlabGetError:
+                    pass  # Project not found
+                except Exception as e:
+                    st.warning(f"Error accessing profile project: {e}")
+                return False, None
+
+            # Use `gl` to check README (not `client`)
+            has_readme, profile_project = check_user_profile_readme(gl, user_info["username"])
+
+            if profile_project is None:
+                st.info("❌ No profile project found (i.e., `<username>/<username>`).")
+                st.markdown(
+                    "💡 **Suggestion**: Create a README for your profile by following these steps:"
+                )
+                st.markdown("1. Create a new project with the exact same name as your username")
+                st.markdown("2. Add a `README.md` file in that project")
+                st.markdown("3. This README will appear on your GitLab profile page")
+                try:
+                    st.image(
+                        "assets/Readme.png",
+                        caption="Example of a profile README setup",
+                        width=500,
+                    )
+                except Exception:
+                    pass
+            elif has_readme:
+                branch = getattr(profile_project, "default_branch", "main")
+                st.success("✅ Profile README is set up correctly!")
+                domain = urlparse(URL).netloc
+                url = f"https://{domain}/{profile_project.path_with_namespace}/-/blob/{branch}/README.md"
+                st.markdown(f"[View README]({url})")
             else:
-                rows = []
-                full_user_results = []  # Store complete user info for detailed display
-                with st.spinner(f"Processing {len(lines)} user(s) ..."):
-                    for line in lines:
-                        user_identifier = extract_path_from_url(line)
-                        try:
-                            if user_identifier.isdigit():
-                                user_info = client.users.get_by_userid(int(user_identifier))
-                            else:
-                                user_info = client.users.get_by_username(user_identifier)
-
-                            if not user_info:
-                                st.error(f"User '{user_identifier}' not found")
-                                rows.append(
-                                    {
-                                        "username": user_identifier,
-                                        "user_id": None,
-                                        "name": None,
-                                        "projects": "N/A",
-                                        "groups": "N/A",
-                                        "open_issues": "N/A",
-                                        "open_mrs": "N/A",
-                                        "profile_readme": "Not found",
-                                        "error": "User not found",
-                                    }
-                                )
-                                continue
-
-                            # Get user stats
-                            proj_count = client.users.get_user_project_count(user_info["id"])
-                            group_count = client.users.get_user_group_count(user_info["id"])
-                            issue_count = client.users.get_user_issue_count(user_info["id"])
-                            mr_count = client.users.get_user_mr_count(user_info["id"])
-
-                            # Check for profile README
-                            has_readme, profile_project = check_user_profile_readme(
-                                gl, user_info["username"]
-                            )
-                            profile_readme_status = (
-                                "✅ Yes"
-                                if has_readme
-                                else ("❌ No" if profile_project else "Not created")
-                            )
-
-                            row = {
-                                "username": user_info["username"],
-                                "user_id": user_info["id"],
-                                "name": user_info.get("name", "N/A"),
-                                "projects": proj_count if isinstance(proj_count, int) else "Error",
-                                "groups": group_count if isinstance(group_count, int) else "Error",
-                                "open_issues": issue_count
-                                if isinstance(issue_count, int)
-                                else "Error",
-                                "open_mrs": mr_count if isinstance(mr_count, int) else "Error",
-                                "profile_readme": profile_readme_status,
-                                "web_url": user_info.get("web_url", "N/A"),
-                            }
-                            rows.append(row)
-
-                            # Store full user info for detailed display
-                            full_user_results.append(
-                                {
-                                    "user_info": user_info,
-                                    "proj_count": proj_count,
-                                    "group_count": group_count,
-                                    "issue_count": issue_count,
-                                    "mr_count": mr_count,
-                                    "has_readme": has_readme,
-                                    "profile_project": profile_project,
-                                }
-                            )
-                        except Exception as e:
-                            st.error(f"Error processing user '{user_identifier}': {e}")
-                            rows.append(
-                                {
-                                    "username": user_identifier,
-                                    "user_id": None,
-                                    "name": None,
-                                    "projects": "N/A",
-                                    "groups": "N/A",
-                                    "open_issues": "N/A",
-                                    "open_mrs": "N/A",
-                                    "profile_readme": "Error",
-                                    "error": str(e),
-                                }
-                            )
-
-                if rows:
-                    st.success(f"Processed {len(rows)} user(s)")
-                    st.dataframe(rows, use_container_width=True)
-
-                    # Show detailed per-user breakdown
-                    st.markdown("---")
-                    st.subheader("📋 Detailed User Information")
-
-                    for full_user in full_user_results:
-                        user_info = full_user.get("user_info")
-                        proj_count = full_user.get("proj_count")
-                        group_count = full_user.get("group_count")
-                        issue_count = full_user.get("issue_count")
-                        mr_count = full_user.get("mr_count")
-                        has_readme = full_user.get("has_readme")
-                        profile_project = full_user.get("profile_project")
-
-                        with st.expander(
-                            f"👤 {user_info.get('name', 'Unknown')} (@{user_info['username']}, ID: {user_info['id']})",
-                            expanded=False,
-                        ):
-                            # User Profile Section
-                            col1, col2 = st.columns([1, 3])
-                            with col1:
-                                if user_info.get("avatar_url"):
-                                    st.image(user_info["avatar_url"], width=100)
-                            with col2:
-                                st.markdown(f"**Username:** {user_info['username']}")
-                                st.markdown(f"**User ID:** {user_info['id']}")
-                                st.markdown(f"**Full Name:** {user_info.get('name', 'N/A')}")
-                                st.markdown(
-                                    f"[🔗 View GitLab Profile]({user_info.get('web_url', '#')})"
-                                )
-
-                            st.markdown("---")
-
-                            # Account Statistics
-                            st.markdown("#### 📊 Account Statistics")
-                            stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-
-                            with stat_col1:
-                                proj_display = proj_count if isinstance(proj_count, int) else "N/A"
-                                st.metric("Projects", proj_display)
-                            with stat_col2:
-                                group_display = (
-                                    group_count if isinstance(group_count, int) else "N/A"
-                                )
-                                st.metric("Groups", group_display)
-                            with stat_col3:
-                                issue_display = (
-                                    issue_count if isinstance(issue_count, int) else "N/A"
-                                )
-                                st.metric("Open Issues", issue_display)
-                            with stat_col4:
-                                mr_display = mr_count if isinstance(mr_count, int) else "N/A"
-                                st.metric("Open MRs", mr_display)
-
-                            # Show warnings for failed metrics
-                            for label, count in [
-                                ("projects", proj_count),
-                                ("groups", group_count),
-                                ("issues", issue_count),
-                                ("merge requests", mr_count),
-                            ]:
-                                if isinstance(count, str) and count.startswith("Error:"):
-                                    st.warning(
-                                        f"⚠️ Could not fetch {label} count: {count[6:].strip()}"
-                                    )
-
-                            st.markdown("---")
-
-                            # Profile README Status
-                            st.markdown("#### 📄 Profile README Status")
-                            if profile_project is None:
-                                st.info(
-                                    "❌ No profile project found (i.e., `<username>/<username>`)."
-                                )
-                                st.markdown(
-                                    "💡 **Suggestion:** Create a README for your profile by following these steps:"
-                                )
-                                st.markdown(
-                                    "1. Create a new project with the exact same name as your username"
-                                )
-                                st.markdown("2. Add a `README.md` file in that project")
-                                st.markdown(
-                                    "3. This README will appear on your GitLab profile page"
-                                )
-                            elif has_readme:
-                                st.success("✅ Profile README is set up correctly!")
-                                if profile_project:
-                                    branch = getattr(profile_project, "default_branch", "main")
-                                    domain = urlparse(URL).netloc
-                                    url = f"https://{domain}/{profile_project.path_with_namespace}/-/blob/{branch}/README.md"
-                                    st.markdown(f"[📖 View README]({url})")
-                            else:
-                                st.error("❌ Profile project exists but is missing `README.md`.")
-                                if profile_project:
-                                    st.markdown(
-                                        f"Project: [{profile_project.path_with_namespace}]({profile_project.web_url})"
-                                    )
-
-                    st.markdown("---")
-
-                    # Export options
-                    col_excel, col_csv = st.columns(2)
-
-                    # Excel export with detailed sheets
-                    with col_excel:
-                        try:
-                            excel_bytes = users_to_excel(rows)
-                            st.download_button(
-                                "📊 Download Excel Report (Detailed)",
-                                data=excel_bytes,
-                                file_name="batch_users_report.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            )
-                        except Exception as e:
-                            st.error(f"Could not create Excel report: {e}")
-                            st.info(f"Tip: Install Excel writer support: {EXCEL_PIP_SUGGEST}")
-
-                    # CSV export
-                    with col_csv:
-                        try:
-                            csv_content = reports_to_csv(rows)
-                            st.download_button(
-                                "📄 Download CSV Report",
-                                data=csv_content,
-                                file_name="batch_users_report.csv",
-                                mime="text/csv",
-                            )
-                        except Exception as e:
-                            st.warning(f"Could not export CSV: {e}")
+                st.error("❌ Profile project exists but is missing `README.md`.")
+                try:
+                    st.image("assets/Readme.png", width=400)
+                except Exception:
+                    pass
