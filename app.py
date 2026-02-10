@@ -1,29 +1,18 @@
 import csv
-import http.client
 import io
 import os
 import time
-<<<<<<< HEAD
 from datetime import time
-=======
->>>>>>> open-issues-final
 from urllib.parse import urlparse
 
-import requests
 import streamlit as st
 from dotenv import load_dotenv
 from gitlab import Gitlab, GitlabGetError
 from gitlab.v4.objects import Project
-<<<<<<< HEAD
 
-from gitlab_utils.client import GitLabClient
+from gitlab_utils.client import GitLabClient  # For user APIs only
+from user_profile.profile_ui import render_user_profile
 
-=======
-from gitlab_utils.client import GitLabClient
-
- # For user APIs only
-
->>>>>>> open-issues-final
 # Dependency availability
 try:
     import pandas as pd  # noqa: F401
@@ -63,7 +52,7 @@ else:
 
 
 # --- Optimize: Cache file reads ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60) #README content check
 def read_file_content(_project, file_path, ref):
     try:
         file = _project.files.get(file_path=file_path, ref=ref)
@@ -256,7 +245,7 @@ def check_templates_presence(project, branch="main"):
     return result
 
 
-def check_project_compliance(project, branch=None):
+def check_project_compliance(project, branch=None): #README existence & quality
     required_files = {
         "README.md": ["README.md"],
         "CONTRIBUTING.md": ["CONTRIBUTING.md"],
@@ -285,7 +274,6 @@ def check_project_compliance(project, branch=None):
                 report["readme_status"] = "empty"
                 report["readme_sections"] = []
                 report["readme_needs_improvement"] = True
-                report["readme_quality_score"] = 0
             else:
                 lc = content.lower()
                 expected_sections = [
@@ -305,44 +293,10 @@ def check_project_compliance(project, branch=None):
                 report["readme_needs_improvement"] = (
                     len(found_sections) < 3 or len(content.strip()) < 150
                 )
-                # Calculate README quality score
-                report["readme_quality_score"] = calculate_readme_quality_score(content)
-
-                # Check section order by tracking their positions
-                section_positions = {}
-                for section in expected_sections:
-                    pos = lc.find(section)
-                    if pos != -1:
-                        section_positions[section] = pos
-
-                # Check if sections are in logical order (installation before usage, etc.)
-                # Define recommended order
-                recommended_order = [
-                    "installation",
-                    "setup",
-                    "getting started",
-                    "usage",
-                    "features",
-                    "example",
-                    "quick start",
-                    "contributing",
-                    "license",
-                ]
-                found_ordered = [s for s in recommended_order if s in section_positions]
-                positions_list = [section_positions[s] for s in found_ordered]
-
-                # Check if positions are in ascending order
-                is_ordered = all(
-                    positions_list[i] < positions_list[i + 1]
-                    for i in range(len(positions_list) - 1)
-                )
-                report["readme_section_order_correct"] = is_ordered or len(found_ordered) <= 1
-                report["readme_section_positions"] = section_positions
         else:
             report["readme_status"] = "missing"
             report["readme_sections"] = []
             report["readme_needs_improvement"] = True
-            report["readme_quality_score"] = 0
 
         # Check LICENSE existence and validity
         license_variants = ["LICENSE", "LICENSE.md"]
@@ -397,7 +351,7 @@ def patch_gitlab_project():
 patch_gitlab_project()
 
 
-# --- File listing and classification helpers ---
+# Fetches all files in repo
 def list_all_files(project, branch="main"):
     """Return list of file paths (blobs) in the repository (recursive)."""
     try:
@@ -409,6 +363,7 @@ def list_all_files(project, branch="main"):
     files = [item.get("path") for item in items if item.get("type") == "blob"]
     return files
 
+#Detects python files (.py) ,JavaScript / TypeScript files ,Requirement files
 
 def classify_repository_files(file_paths):
     """Classify files into categories and detect language files."""
@@ -419,10 +374,7 @@ def classify_repository_files(file_paths):
         "python_files": [],
         "js_files": [],
         "java_files": [],
-        "go_files": [],
-        "rust_files": [],
-        "csharp_files": [],
-        "detected_languages": [],
+        "c#_files": [],
     }
     for p in file_paths or []:
         lp = p.lower()
@@ -440,14 +392,6 @@ def classify_repository_files(file_paths):
             "poetry.lock",
             "setup.py",
             "setup.cfg",
-            "pom.xml",
-            "gradle.properties",
-            "go.mod",
-            "go.sum",
-            "cargo.toml",
-            "cargo.lock",
-            "csproj",
-            ".csproj",
         }:
             res["common_requirements"].append(p)
 
@@ -475,7 +419,6 @@ def classify_repository_files(file_paths):
                 "dockerfile",
                 "docker-compose.yml",
                 ".gitlab-ci.yml",
-                ".gitignore",
                 "makefile",
                 "tox.ini",
                 ".pre-commit-config.yaml",
@@ -488,122 +431,16 @@ def classify_repository_files(file_paths):
         ):
             res["tech_files"].append(p)
 
-        # Language-specific detection
+        # Language-specific
         if lp.endswith(".py"):
             res["python_files"].append(p)
-            if "Python" not in res["detected_languages"]:
-                res["detected_languages"].append("Python")
         if lp.endswith((".js", ".jsx", ".ts", ".tsx")):
             res["js_files"].append(p)
-            if "JavaScript/TypeScript" not in res["detected_languages"]:
-                res["detected_languages"].append("JavaScript/TypeScript")
-        if lp.endswith(".java"):
-            res["java_files"].append(p)
-            if "Java" not in res["detected_languages"]:
-                res["detected_languages"].append("Java")
-        if lp.endswith(".go"):
-            res["go_files"].append(p)
-            if "Go" not in res["detected_languages"]:
-                res["detected_languages"].append("Go")
-        if lp.endswith(".rs"):
-            res["rust_files"].append(p)
-            if "Rust" not in res["detected_languages"]:
-                res["detected_languages"].append("Rust")
-        if lp.endswith((".cs", ".csproj")):
-            res["csharp_files"].append(p)
-            if "C#" not in res["detected_languages"]:
-                res["detected_languages"].append("C#")
 
     # Deduplicate lists
     for k in res:
-        if isinstance(res[k], list):
-            res[k] = sorted(list(dict.fromkeys(res[k])))
+        res[k] = sorted(list(dict.fromkeys(res[k])))
     return res
-
-
-def calculate_readme_quality_score(content):
-    """Calculate README quality score (0-100) based on content analysis."""
-    if not content or not content.strip():
-        return 0
-
-    lc = content.lower()
-    score = 0
-
-    # Content length bonus (max 15 points)
-    content_len = len(content.strip())
-    if content_len > 500:
-        score += 15
-    elif content_len > 300:
-        score += 10
-    elif content_len > 100:
-        score += 5
-
-    # Section presence checks (max 60 points)
-    essential_sections = {
-        "installation": 10,
-        "usage": 10,
-        "getting started": 10,
-        "setup": 5,
-        "features": 10,
-        "contributing": 5,
-        "license": 10,
-    }
-    for section, points in essential_sections.items():
-        if section in lc:
-            score += points
-
-    # Code examples/blocks bonus (max 10 points)
-    if "```" in content:
-        score += 10
-    elif "`" in content:
-        score += 5
-
-    # Links and references bonus (max 5 points)
-    if "http" in lc or "[" in content:
-        score += 5
-
-    # Project structure/clarity (max 10 points)
-    heading_count = content.count("#")
-    if heading_count >= 5:
-        score += 10
-    elif heading_count >= 3:
-        score += 5
-
-    return min(score, 100)  # Cap at 100
-
-
-def render_readme_quality_progress_bar(score):
-    """Render a visual progress bar for README quality score."""
-    # Determine color based on score
-    if score >= 85:
-        color = "#00d084"  # Green
-        label = "Excellent"
-    elif score >= 70:
-        color = "#a3e635"  # Yellow-green
-        label = "Good"
-    elif score >= 50:
-        color = "#fbbf24"  # Amber
-        label = "Fair"
-    elif score >= 25:
-        color = "#f97316"  # Orange
-        label = "Poor"
-    else:
-        color = "#ef4444"  # Red
-        label = "Very Poor"
-
-    # Create custom progress bar HTML
-    progress_html = f"""
-    <div style="margin: 10px 0;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-            <span style="font-weight: bold;">README Quality Score</span>
-            <span style="font-weight: bold; color: {color};">{score}/100 ({label})</span>
-        </div>
-        <div style="width: 100%; height: 25px; background-color: #e5e7eb; border-radius: 5px; overflow: hidden; border: 1px solid #d1d5db;">
-            <div style="height: 100%; width: {score}%; background-color: {color}; transition: width 0.3s ease;"></div>
-        </div>
-    </div>
-    """
-    st.markdown(progress_html, unsafe_allow_html=True)
 
 
 def reports_to_csv(rows):
@@ -701,15 +538,19 @@ def reports_to_excel(rows):
 
     buf = BytesIO()
     try:
-        df.to_excel(buf, index=False, engine=engine, sheet_name="Report")
-        buf.seek(0)  # Reset buffer position to beginning before reading
+        # Use ExcelWriter context manager for proper file closure and flushing
+        with pd.ExcelWriter(buf, engine=engine) as writer:
+            df.to_excel(writer, index=False, sheet_name="Compliance Report")
     except Exception as e:
         raise RuntimeError(f"Failed to generate Excel file using engine '{engine}': {e}") from e
 
+    buf.seek(0)
     return buf.getvalue()
 
 
-def extract_path_from_url(input_str):
+def extract_path_from_url(input_str): #Raw project path to GitLab-compatible project identifier
+
+
     try:
         path = urlparse(input_str).path.strip("/")
         return path[:-4] if path.endswith(".git") else path
@@ -958,18 +799,6 @@ def render_project_compliance_ui(report, project=None, branch=None, classificati
             "vscode_launch_exists": ".vscode/launch.json",
             "vscode_tasks_exists": ".vscode/tasks.json",
         },
-        "5. 🗂️ File Categories": {
-            "python_count": "Python files",
-            "js_count": "JS/TS files",
-            "java_count": "Java files",
-            "go_count": "Go files",
-            "rust_count": "Rust files",
-            "csharp_count": "C# files",
-            "detected_languages_list": "Detected Languages",
-            "common_requirements_list": "Common requirement files",
-            "project_files_list": "Project files",
-            "tech_files_list": "Tech / tooling files",
-        },
     }
 
     all_passed = True
@@ -1012,10 +841,6 @@ def render_project_compliance_ui(report, project=None, branch=None, classificati
                     rstatus = report.get("readme_status")
                     if rstatus == "present":
                         st.markdown("✅ **README present**")
-                        # Show README quality score if available
-                        readme_score = report.get("readme_quality_score")
-                        if readme_score is not None:
-                            render_readme_quality_progress_bar(readme_score)
                     elif rstatus == "empty":
                         st.markdown("❌ **README is empty**")
                         all_passed = False
@@ -1023,22 +848,10 @@ def render_project_compliance_ui(report, project=None, branch=None, classificati
                         st.markdown("❌ **README missing**")
                         all_passed = False
 
-                elif key in {
-                    "python_count",
-                    "js_count",
-                    "java_count",
-                    "go_count",
-                    "rust_count",
-                    "csharp_count",
-                }:
+                elif key in {"python_count", "js_count"}:
                     st.markdown(f"**{display_name}**: {report.get(key, 0)}")
-
-                elif key == "detected_languages_list":
-                    langs = report.get(key, [])
-                    if langs:
-                        st.markdown(f"✅ **Detected Languages**: {', '.join(langs)}")
-                    else:
-                        st.markdown("❌ **Detected Languages**: None")
+                    if report.get(key, 0) == 0:
+                        all_passed = False
 
                 else:
                     emoji = "✅" if status else "❌"
@@ -1173,19 +986,19 @@ if mode == "Check Project Compliance":
 
     # --- Batch Mode: accept multiple projects ---
     st.markdown("---")
-    st.subheader("🔁 Batch Mode: Multiple Projects")
+    st.subheader("🔁 Batch Mode: Multiple Projects") # allow user to move from single to multiple repo
     st.checkbox(
         "Enable batch mode: analyze multiple repositories at once", key="batch_mode_enabled"
     )
     if st.session_state.get("batch_mode_enabled"):
-        batch_input = st.text_area(
+        batch_input = st.text_area(                #Accepts multiple GitLab repositories
             "Enter multiple project paths, URLs, or IDs (one per line)",
             key="batch_projects_input",
             placeholder="group/project or https://gitlab.com/group/project or 12345",
         )
-        run_batch = st.button("Run Batch Compliance & File Analysis", key="run_batch_button")
+        run_batch = st.button("Run Batch Compliance & File Analysis", key="run_batch_button") #Starts batch processing
         if run_batch:
-            lines = [l.strip() for l in (batch_input or "").splitlines() if l.strip()]
+            lines = [l.strip() for l in (batch_input or "").splitlines() if l.strip()] #Converts text area input into list of repos
             if not lines:
                 st.warning(
                     "Please enter at least one project path, URL, or ID for batch processing."
@@ -1194,11 +1007,11 @@ if mode == "Check Project Compliance":
                 rows = []
                 full_results = []
                 with st.spinner(f"Processing {len(lines)} project(s) ..."):
-                    for line in lines:
+                    for line in lines: #Processes each repository independently
                         path_or_id = extract_path_from_url(line)
                         is_id = path_or_id.isdigit()
                         try:
-                            proj = get_project_with_retries(gl, path_or_id)
+                            proj = gl.projects.get(int(path_or_id) if is_id else path_or_id) #Fetches GitLab project metadata
                         except Exception as e:
                             st.error(f"Project '{path_or_id}' not found: {e}")
                             rows.append(
@@ -1233,13 +1046,6 @@ if mode == "Check Project Compliance":
                                     "branch": branch,
                                     "python_count": len(classification.get("python_files", [])),
                                     "js_count": len(classification.get("js_files", [])),
-                                    "java_count": len(classification.get("java_files", [])),
-                                    "go_count": len(classification.get("go_files", [])),
-                                    "rust_count": len(classification.get("rust_files", [])),
-                                    "csharp_count": len(classification.get("csharp_files", [])),
-                                    "detected_languages": ", ".join(
-                                        classification.get("detected_languages", [])
-                                    ),
                                     "common_requirements": classification.get(
                                         "common_requirements", []
                                     ),
@@ -1248,7 +1054,6 @@ if mode == "Check Project Compliance":
                                     "license_status": report.get("license_status"),
                                     "license_valid": report.get("license_valid"),
                                     "readme_status": report.get("readme_status"),
-                                    "readme_quality_score": report.get("readme_quality_score", 0),
                                     "readme_notes": ";".join(report.get("readme_sections", [])),
                                 }
                             )
@@ -1325,7 +1130,7 @@ if mode == "Check Project Compliance":
                             "Download Excel Report",
                             data=excel_bytes,
                             file_name="batch_compliance_report.xlsx",
-                            mime="application/octet-stream",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
                     except Exception as e:
                         # Show detailed error and provide an install suggestion
@@ -1374,18 +1179,13 @@ if mode == "Check Project Compliance":
             run_automatic = len(branches) == 1 and (branches[0] == default_branch)
 
             if run_check or run_automatic:
-                report = check_project_compliance(project=project, branch=selected_branch)
+                report = check_project_compliance(project=project, branch=selected_branch)  #runs full compliance  and checks for the repository
 
                 # Classify repository files and include counts into report for display
                 files_for_classify = list_all_files(project, branch=selected_branch)
                 classification = classify_repository_files(files_for_classify)
                 report["python_count"] = len(classification.get("python_files", []))
                 report["js_count"] = len(classification.get("js_files", []))
-                report["java_count"] = len(classification.get("java_files", []))
-                report["go_count"] = len(classification.get("go_files", []))
-                report["rust_count"] = len(classification.get("rust_files", []))
-                report["csharp_count"] = len(classification.get("csharp_files", []))
-                report["detected_languages_list"] = classification.get("detected_languages", [])
                 report["common_requirements_list"] = classification.get("common_requirements", [])
                 report["project_files_list"] = classification.get("project_files", [])
                 report["tech_files_list"] = classification.get("tech_files", [])
@@ -1635,7 +1435,6 @@ if mode == "Check Project Compliance":
 # ---------- MODE: User Profile Overview ----------
 # ---------- MODE: User Profile Overview ----------
 elif mode == "User Profile Overview":
-<<<<<<< HEAD
     st.subheader("👤 User Profile Overview")
 
     user_input = st.text_input(
@@ -1655,16 +1454,70 @@ elif mode == "User Profile Overview":
             st.warning("Please enter a username, user ID, or profile URL.")
             st.stop()
 
-        # ---------- Step 1: Get User Info ----------
-        try:
-            if input_val.isdigit():
-                user_info = client.users.get_by_userid(int(input_val))
+            if not user_info:
+                st.stop()
+
+            render_user_profile(client, user_info)
+
+            # --- Step 2: Check Profile README using `gl` ---
+            st.markdown("#### 📄 Profile README Status")
+
+            def check_readme_in_project(project):
+                try:
+                    branch = getattr(project, "default_branch", "main")
+                    tree = project.repository_tree(ref=branch)
+                    filenames = [item["name"].lower() for item in tree]
+                    return "readme.md" in filenames
+                except Exception as e:
+                    st.warning(f"Error checking README: {str(e)}")
+                    return False
+
+            def check_user_profile_readme(gl_client, username):
+                try:
+                    # Try to get project: <username>/<username>
+                    project_path = f"{username}/{username}"
+                    profile_project = gl_client.projects.get(project_path)
+                    # Confirm it's in user namespace
+                    if profile_project.namespace["full_path"].lower() == username.lower():
+                        has_readme = check_readme_in_project(profile_project)
+                        return has_readme, profile_project
+                except GitlabGetError:
+                    pass  # Project not found
+                except Exception as e:
+                    st.warning(f"Error accessing profile project: {e}")
+                return False, None
+
+            # Use `gl` to check README (not `client`)
+            has_readme, profile_project = check_user_profile_readme(gl, user_info["username"])
+
+            if profile_project is None:
+                st.info("❌ No profile project found (i.e., `<username>/<username>`).")
+                st.markdown(
+                    "💡 **Suggestion**: Create a README for your profile by following these steps:"
+                )
+                st.markdown("1. Create a new project with the exact same name as your username")
+                st.markdown("2. Add a `README.md` file in that project")
+                st.markdown("3. This README will appear on your GitLab profile page")
+                try:
+                    st.image(
+                        "assets/Readme.png",
+                        caption="Example of a profile README setup",
+                        width=500,
+                    )
+                except Exception:
+                    pass
+            elif has_readme:
+                branch = getattr(profile_project, "default_branch", "main")
+                st.success("✅ Profile README is set up correctly!")
+                domain = urlparse(URL).netloc
+                url = f"https://{domain}/{profile_project.path_with_namespace}/-/blob/{branch}/README.md"
+                st.markdown(f"[View README]({url})")
             else:
                 username = extract_path_from_url(input_val)
                 user_info = client.users.get_by_username(username)
-        except Exception as e:
-            st.error(f"❌ User not found or error: {e}")
-            st.stop()
+        #    except Exception as e:
+        #         st.error(f"❌ User not found or error: {e}")
+        #             st.stop()
 
         if not user_info:
             st.stop()
@@ -1811,7 +1664,3 @@ elif mode == "User Profile Overview":
                 st.image("assets/Readme.png", width=450)
             except Exception:
                 pass
-=======
-    from user_profile.profile_ui import render_user_profile
-    render_user_profile(gl)
->>>>>>> open-issues-final
