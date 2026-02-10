@@ -505,7 +505,7 @@ def classify_repository_files(file_paths):
     # Deduplicate lists
     for k in res:
         if isinstance(res[k], list):
-            res[k] = sorted(dict.fromkeys(res[k]))
+            res[k] = sorted(list(dict.fromkeys(res[k])))
     return res
 
 
@@ -1205,7 +1205,7 @@ if mode == "Check Project Compliance":
         )
         run_batch = st.button("Run Batch Compliance & File Analysis", key="run_batch_button")
         if run_batch:
-            lines = [line.strip() for line in (batch_input or "").splitlines() if line.strip()]
+            lines = [l.strip() for l in (batch_input or "").splitlines() if l.strip()]
             if not lines:
                 st.warning(
                     "Please enter at least one project path, URL, or ID for batch processing."
