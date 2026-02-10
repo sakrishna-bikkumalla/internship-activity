@@ -921,6 +921,35 @@ These files help maintain consistent development environment and build configura
     )
 
 
+# --------- Helper Functions for User Profile Check ---------
+def check_readme_in_project(project):
+    """Check if a project has a README.md file."""
+    try:
+        branch = getattr(project, "default_branch", "main")
+        tree = project.repository_tree(ref=branch)
+        filenames = [item["name"].lower() for item in tree]
+        return "readme.md" in filenames
+    except Exception:
+        return False
+
+
+def check_user_profile_readme(gl_client, username):
+    """Check if user has a profile README in their <username>/<username> project."""
+    try:
+        # Try to get project: <username>/<username>
+        project_path = f"{username}/{username}"
+        profile_project = gl_client.projects.get(project_path)
+        # Confirm it's in user namespace
+        if profile_project.namespace["full_path"].lower() == username.lower():
+            has_readme = check_readme_in_project(profile_project)
+            return has_readme, profile_project
+    except GitlabGetError:
+        pass  # Project not found
+    except Exception:
+        pass
+    return False, None
+
+
 # --------- Main Streamlit App ---------
 load_dotenv()
 TOKEN = st.secrets.get("GITLAB_TOKEN") or os.getenv("GITLAB_TOKEN")
@@ -1489,7 +1518,6 @@ elif mode == "User Profile Overview":
     # -----------------------------
     if fetch_clicked:
         input_val = user_input.strip()
-
         if not input_val:
             st.warning("Please enter a username, user ID, or profile URL.")
             st.stop()
