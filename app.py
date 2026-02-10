@@ -2,7 +2,6 @@ import csv
 import io
 import os
 import time
-from datetime import time
 from urllib.parse import urlparse
 
 import streamlit as st
@@ -12,6 +11,43 @@ from gitlab.v4.objects import Project
 
 from gitlab_utils.client import GitLabClient  # For user APIs only
 from user_profile.profile_ui import render_user_profile
+
+# Dependency availability
+try:
+    import pandas as pd  # noqa: F401
+
+    PANDAS_AVAILABLE = True
+except Exception:
+    PANDAS_AVAILABLE = False
+
+# Excel engine availability
+try:
+    import openpyxl  # noqa: F401
+
+    OPENPYXL_AVAILABLE = True
+except Exception:
+    OPENPYXL_AVAILABLE = False
+
+try:
+    import xlsxwriter  # noqa: F401
+
+    XLSXWRITER_AVAILABLE = True
+except Exception:
+    XLSXWRITER_AVAILABLE = False
+
+# Provide a helpful pip suggestion
+if not PANDAS_AVAILABLE:
+    # pandas missing — suggest installing pandas and an engine
+    if not (OPENPYXL_AVAILABLE or XLSXWRITER_AVAILABLE):
+        EXCEL_PIP_SUGGEST = "pip install pandas openpyxl"
+    else:
+        EXCEL_PIP_SUGGEST = "pip install pandas"
+else:
+    # pandas present, engines may be missing
+    if not (OPENPYXL_AVAILABLE or XLSXWRITER_AVAILABLE):
+        EXCEL_PIP_SUGGEST = "pip install openpyxl"
+    else:
+        EXCEL_PIP_SUGGEST = "pip install pandas"
 
 # Dependency availability
 try:
@@ -1432,22 +1468,26 @@ if mode == "Check Project Compliance":
 
 # ---------- MODE: User Profile Overview ----------
 # ---------- MODE: User Profile Overview ----------
-# ---------- MODE: User Profile Overview ----------
-# ---------- MODE: User Profile Overview ----------
 elif mode == "User Profile Overview":
     st.subheader("👤 User Profile Overview")
 
+    # -----------------------------
+    # 🔹 User Input
+    # -----------------------------
     user_input = st.text_input(
         "Enter GitLab username, user ID, or profile URL",
-        key="user_overview_input",
-        on_change=lambda: setattr(st.session_state, "user_overview_triggered", True),
+        key="user_overview_input"
     )
 
-    check_triggered = st.session_state.get("user_overview_triggered", False)
-    button_clicked = st.button("Fetch User Info & Check README", key="user_overview_button")
+    fetch_clicked = st.button(
+        "Fetch User Info & Check README",
+        key="user_overview_button"
+    )
 
-    if check_triggered or button_clicked:
-        st.session_state["user_overview_triggered"] = False
+    # -----------------------------
+    # 🔹 Trigger Validation
+    # -----------------------------
+    if fetch_clicked:
         input_val = user_input.strip()
 
         if not input_val:
@@ -1519,102 +1559,158 @@ elif mode == "User Profile Overview":
         #         st.error(f"❌ User not found or error: {e}")
         #             st.stop()
 
-        if not user_info:
-            st.stop()
-
-        # ---------- Display User Info ----------
-        st.markdown(
-            f"### 👤 {user_info['name']}  \n"
-            f"**Username:** @{user_info['username']}  \n"
-            f"**User ID:** {user_info['id']}"
+        # --------------------------------------------------
+        # 👤 Display User Info
+        # --------------------------------------------------
+        st.write(
+            f"### User: **{user_info['name']}** "
+            f"(@{user_info['username']}, ID: {user_info['id']})"
         )
 
         if user_info.get("avatar_url"):
-            st.image(user_info["avatar_url"], width=90)
+            st.image(user_info["avatar_url"], width=80)
 
-        st.markdown(f"[🔗 View GitLab Profile]({user_info.get('web_url', '')})")
+        st.markdown(f"[View GitLab Profile]({user_info.get('web_url', '')})")
 
-        # ---------- Account Statistics ----------
-        # ---------- Account Statistics ----------
-        st.markdown("## 📊 Account Statistics")
 
-        col1, col2, col3, col4 = st.columns(4)
+        # --------------------------------------------------
+        # 📁 User Projects (Personal + Contributed)
+        # --------------------------------------------------
 
-        proj_count = client.users.get_user_project_count(user_info["id"])
-        group_count = client.users.get_user_group_count(user_info["id"])
+        # Try multiple approaches to fetch projects
+        user_projects = []
 
-        open_mr_count = client.users.get_user_opened_mr_count(user_info["id"])
-        closed_mr_count = client.users.get_user_closed_mr_count(user_info["id"])
-        merged_mr_count = client.users.get_user_merged_mr_count(user_info["id"])
-        total_mr_count = client.users.get_user_total_mr_count(user_info["id"])
+        # Method 1: Try to fetch all projects with membership
+        try:
+            user_projects = gl.users.get(user_info["id"]).projects.list(
+                all=True,
+                membership=True
+            )
+        except Exception as e:
+            st.warning(f"Method 1 failed: {e}")
+
+            # Method 2: Try to fetch owned projects
+            try:
+                owned_projects = gl.users.get(user_info["id"]).projects.list(
+                    all=True,
+                    owned=True
+                )
+                user_projects.extend(owned_projects)
+            except Exception as e2:
+                st.warning(f"Method 2 failed: {e2}")
+
+                # Method 3: Try to fetch all visible projects for the user
+                try:
+                    all_projects = gl.users.get(user_info["id"]).projects.list(all=True)
+                    user_projects.extend(all_projects)
+                except Exception as e3:
+                    st.warning(f"Method 3 failed: {e3}")
+                    st.error("Could not fetch any projects for this user.")
+
+
+        personal_count = 0
+        contributed_count = 0
+
+        if not user_projects:
+            st.info("No accessible projects found for this user.")
+            st.markdown("💡 **Note:** This might be due to privacy settings or insufficient permissions.")
+        else:
+            # First, count and separate contributed and personal projects
+            contributed_projects = []
+            personal_projects = []
+
+            for project in user_projects:
+                # Get namespace and project info
+                namespace_info = getattr(project, "namespace", None)
+                project_owner_id = getattr(project, "owner", {}).get("id") if hasattr(project, "owner") else None
+                # ✅ Correct personal vs contributed check
+                # Personal: namespace kind = "user" AND path = username
+                # Contributed: namespace kind = "group" OR namespace path != username
+
+                namespace_info = getattr(project, "namespace", None)
+                is_personal = False
+
+                if namespace_info:
+                    namespace_kind = namespace_info.get("kind", "")
+                    namespace_path = namespace_info.get("path", "")
+                    username = user_info["username"]
+
+                    # Personal project ONLY if:
+                    # - namespace is of kind "user"
+                    # - AND namespace path equals the username
+                    if namespace_kind == "user" and namespace_path == username:
+                        is_personal = True
+                    # Otherwise it's contributed (group projects, etc)
+                    else:
+                        is_personal = False
+
+                if is_personal:
+                    personal_projects.append(project)
+                    personal_count += 1
+                else:
+                    contributed_projects.append(project)
+                    contributed_count += 1
+
+            # Display Contributed Projects first (above personal projects)
+            st.markdown(f"#### 🔵 Contributed Projects")
+            if contributed_projects:
+                st.markdown(
+                    f"[View contributed projects on GitLab UI](https://code.swecha.org/users/{user_info['username']}/contributed)"
+                )
+                for project in contributed_projects:
+                    project_url = getattr(project, "web_url", None)
+                    if project_url:
+                        st.markdown(f"- 🔗 [{project.name}]({project_url})")
+                    else:
+                        st.markdown(f"- 📁 {project.name}")
+            else:
+                st.markdown(
+                    f"[Check contributed projects on GitLab UI](https://code.swecha.org/users/{user_info['username']}/contributed)"
+                )
+
+            # Display Personal Projects
+            st.markdown(f"#### 🟢 Personal Projects")
+            if personal_projects:
+                for project in personal_projects:
+                    project_url = getattr(project, "web_url", None)
+                    if project_url:
+                        st.markdown(f"- 🔗 [{project.name}]({project_url})")
+                    else:
+                        st.markdown(f"- 📁 {project.name}")
+            else:
+                st.markdown("No personal projects found.")
+
+        # --------------------------------------------------
+        # 📊 Account Statistics (403-safe)
+        # --------------------------------------------------
+        st.markdown("#### 📊 Account Statistics")
+
+        project_count = len(user_projects)
+
+        col1, col2 = st.columns(2)
 
         with col1:
-            st.metric("📁 Projects", proj_count)
+            st.metric("Projects", project_count)
+            st.metric("Personal Projects", personal_count)
 
         with col2:
-            st.metric("👥 Groups", group_count)
+            st.metric("Contributed Projects", contributed_count)
+            st.metric("Groups", "N/A")
 
-        with col3:
-            st.metric("🟢 Opened MRs", open_mr_count)
-            st.metric("🔵 Merged MRs", merged_mr_count)
+        st.info(
+            "ℹ️ GitLab permissions restrict access to groups, issues, and MR counts. "
+            "Project count is calculated from accessible repositories."
+        )
 
-        with col4:
-            st.metric("🔴 Closed MRs", closed_mr_count)
-            st.metric("📊 Total MRs", total_mr_count)
-
-        # ---------- Overall Merge Request Summary Table ----------
-        st.markdown("## 📋 Overall Merge Request Summary")
-
-        overall_mr_table = [
-            {
-                "Opened MRs": open_mr_count,
-                "Closed MRs": closed_mr_count,
-                "Merged MRs": merged_mr_count,
-                "Total MRs": total_mr_count,
-            }
-        ]
-
-        st.table(overall_mr_table)
-
-        # ---------- Project-wise Merge Request Report ----------
-        st.markdown("## 📄 Project-wise Merge Request Report")
-
-        mr_details = client.users.get_user_mr_details(user_info["id"])
-
-        if isinstance(mr_details, list) and mr_details:
-            st.dataframe(mr_details, use_container_width=True, hide_index=True)
-        else:
-            st.info("No merge request data available.")
-
-        # ---------- Today's Merge Request Report ----------
-        st.markdown("## ⏰ Today's Merge Request Summary")
-
-        today_open_mr = client.users.get_today_opened_mr_count(user_info["id"])
-        today_closed_mr = client.users.get_today_closed_mr_count(user_info["id"])
-        today_merged_mr = client.users.get_today_merged_mr_count(user_info["id"])
-
-        today_total_mr = today_open_mr + today_closed_mr + today_merged_mr
-
-        today_mr_table = [
-            {
-                "Today's Opened MRs": today_open_mr,
-                "Today's Closed MRs": today_closed_mr,
-                "Today's Merged MRs": today_merged_mr,
-                "Today's Total MRs": today_total_mr,
-            }
-        ]
-
-        st.table(today_mr_table)
-
-        # ---------- Profile README Status ----------
-
-        # ---------- Profile README Status ----------
-        st.markdown("## 📄 Profile README Status")
+        # --------------------------------------------------
+        # 📄 Profile README Status
+        # --------------------------------------------------
+        st.markdown("#### 📄 Profile README Status")
 
         def check_readme_in_project(project):
             try:
                 branch = getattr(project, "default_branch", "main")
-                tree = project.repository_tree(ref=branch, recursive=False)
+                tree = project.repository_tree(ref=branch)
                 filenames = [item["name"].lower() for item in tree]
                 return "readme.md" in filenames
             except Exception:
@@ -1624,43 +1720,40 @@ elif mode == "User Profile Overview":
             try:
                 project_path = f"{username}/{username}"
                 profile_project = gl_client.projects.get(project_path)
-
-                if profile_project.namespace["full_path"].lower() == username.lower():
-                    has_readme = check_readme_in_project(profile_project)
-                    return has_readme, profile_project
+                has_readme = check_readme_in_project(profile_project)
+                return has_readme, profile_project
             except Exception:
-                pass
+                return False, None
 
-            return False, None
-
-        has_readme, profile_project = check_user_profile_readme(gl, user_info["username"])
+        has_readme, profile_project = check_user_profile_readme(
+            gl, user_info["username"]
+        )
 
         if profile_project is None:
-            st.error("❌ No profile README project found.")
-            st.markdown("### 💡 How to fix:")
-            st.markdown("1. Create a project named **same as your username**")
+            st.info("❌ No profile project found (`<username>/<username>`).")
+            st.markdown("💡 **How to fix:**")
+            st.markdown("1. Create a project with the same name as your username")
             st.markdown("2. Add a `README.md` file")
-            st.markdown("3. It will appear on your GitLab profile")
+            st.markdown("3. This README will appear on your GitLab profile")
 
             try:
-                st.image("assets/Readme.png", width=450)
+                st.image("assets/Readme.png", width=400)
             except Exception:
                 pass
 
         elif has_readme:
             branch = getattr(profile_project, "default_branch", "main")
-            st.success("✅ Profile README is correctly configured!")
-
             domain = urlparse(URL).netloc
             url = (
-                f"https://{domain}/{profile_project.path_with_namespace}/-/blob/{branch}/README.md"
+                f"https://{domain}/"
+                f"{profile_project.path_with_namespace}/-/blob/{branch}/README.md"
             )
-            st.markdown(f"[🔗 View README]({url})")
+            st.success("✅ Profile README is set up correctly!")
+            st.markdown(f"[View README]({url})")
 
         else:
-            st.warning("⚠ Profile project exists but README.md is missing.")
-
+            st.error("❌ Profile project exists but is missing `README.md`.")
             try:
-                st.image("assets/Readme.png", width=450)
+                st.image("assets/Readme.png", width=400)
             except Exception:
                 pass
