@@ -4,10 +4,10 @@ from gitlab import GitlabGetError
 from user_profile.profile_service import (
     check_profile_readme,
     get_user_groups_count,
-    get_user_profile,
     get_user_issues_details,
     get_user_issues_list,
     get_user_open_mrs_count,
+    get_user_profile,
     get_user_projects_count,
 )
 

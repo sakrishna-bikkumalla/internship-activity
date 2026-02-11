@@ -1712,7 +1712,7 @@ elif mode == "User Profile Overview":
                     contributed_count += 1
 
             # Display Contributed Projects first (above personal projects)
-            st.markdown(f"#### 🔵 Contributed Projects")
+            st.markdown("#### 🔵 Contributed Projects")
             if contributed_projects:
                 st.markdown(
                     f"[View contributed projects on GitLab UI](https://code.swecha.org/users/{user_info['username']}/contributed)"
@@ -1729,7 +1729,7 @@ elif mode == "User Profile Overview":
                 )
 
             # Display Personal Projects
-            st.markdown(f"#### 🟢 Personal Projects")
+            st.markdown("#### 🟢 Personal Projects")
             if personal_projects:
                 for project in personal_projects:
                     project_url = getattr(project, "web_url", None)
