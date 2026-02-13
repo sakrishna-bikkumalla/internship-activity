@@ -39,7 +39,7 @@ class GitLabClient:
                 url=self.base_url,
                 private_token=private_token,
                 timeout=10,
-                ssl_verify=True
+                ssl_verify=False
             )
             # auth() is cheap and verifies credentials
             self.client.auth()

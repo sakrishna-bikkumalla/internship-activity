@@ -4,12 +4,53 @@ import io
 import datetime
 from gitlab_utils import batch
 
+DEFAULT_ICFAI_USERS = """saikrishna_b
+MohanaSriBhavitha
+praneethashish
+kanukuntagreeshma2004
+vandana1735
+vandana_rajuldev
+Mukthanand21
+Shanmukh16
+Sathwikareddy_Damanagari
+Sahasraa
+laxmanreddypatlolla
+Abhilash653
+LagichettyKushal
+Lakshy
+Suma2304
+koushik_18
+kumari123
+Habeebunissa
+Bhaskar_Battula
+Pranav_rs
+Pavani_Pothuganti
+prav2702"""
+
+DEFAULT_RCTS_USERS = """vai5h
+Saiharshavardhan
+Rushika_1105
+swarna_4539
+satish05
+aravindswamy
+pavaninagireddi
+jeevana_31
+saiteja3005
+SandhyaRani_111
+klaxmi1908
+Kaveri_Mamidi
+dasari_Askhaya
+Ashritha_P"""
+
 def render_batch_mode_ui(client, report_type):
     st.subheader(f"🚀 Batch Analytics - {report_type}")
 
+    default_value = DEFAULT_ICFAI_USERS if report_type == "ICFAI" else DEFAULT_RCTS_USERS
+
     user_input = st.text_area(
         "Enter Usernames (one per line)",
-        height=150,
+        height=300,
+        value=default_value,
         placeholder="user1\nuser2\n..."
     )
 
