@@ -10,7 +10,8 @@ license = { text = "GNU Affero General Public License v3.0" }
 requires-python = ">=3.11"
 dependencies = [
   "requests>=2.31.0",
-  "streamlit>=1.33.0"
+  "streamlit>=1.33.0",
+  "xlsxwriter"
 ]
 
 [project.optional-dependencies]

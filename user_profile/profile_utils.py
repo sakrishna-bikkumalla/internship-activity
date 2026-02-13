@@ -31,16 +31,23 @@ def parse_gitlab_datetime(timestamp: str):
 
 def classify_time_slot(timestamp: str):
     """
+<<<<<<< HEAD
     Classify time into:
     Morning   : 00:00 – 11:59
     Afternoon : 12:00 – 16:59
     Evening   : 17:00 – 23:59
+=======
+    Morning:   09:00 – 12:30
+    Afternoon: 14:00 – 17:00
+    Other:     All other times
+>>>>>>> origin/feature-final
     """
     dt = parse_gitlab_datetime(timestamp)
     if not dt:
         return None
 
     hour = dt.hour
+<<<<<<< HEAD
 
     if 0 <= hour < 12:
         return "Morning"
@@ -48,6 +55,24 @@ def classify_time_slot(timestamp: str):
         return "Afternoon"
     else:
         return "Evening"
+=======
+    minute = dt.minute
+
+    # Morning: 9:00 AM to 12:30 PM
+    # 9, 10, 11 are fully in. 12 is in if minute <= 30.
+    if (9 <= hour < 12) or (hour == 12 and minute <= 30):
+        return "Morning"
+
+    # Afternoon: 2:00 PM to 5:00 PM (14:00 - 17:00)
+    # 14, 15, 16 are fully in. 17:00 is exactly on the edge, usually "until 5" includes 5:00 or excludes?
+    # User said "2-5 pm". I'll assume 14:00:00 to 17:00:00 inclusive.
+    if 14 <= hour <= 17:
+        if hour == 17 and minute > 0:
+            return "Other"
+        return "Afternoon"
+
+    return "Other"
+>>>>>>> origin/feature-final
 
 
 def format_date_time(timestamp: str):
