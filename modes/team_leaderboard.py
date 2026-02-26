@@ -42,6 +42,16 @@ def _init_state() -> None:
         "_lb_triggered": False,
         "_lb_date_since": None,  # ISO 8601 UTC string or None
         "_lb_date_until": None,  # ISO 8601 UTC string or None
+        "_lb_from_date": None,  # date input value or None
+        "_lb_to_date": None,  # date input value or None
+        "_lb_clear_dates_requested": False,  # one-shot flag to clear date widgets safely
+        "_lb_project_id": None,  # Resolved int or None
+        "_lb_project_input": "",  # Raw string input
+        "_lb_selected_team": "All Teams",
+        "_lb_page": "Workspace",
+        "_lb_last_ranking_rows": [],
+        "_lb_cached_results": None,
+        "_lb_last_filters": None,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -753,9 +763,414 @@ def _render_overall_leaderboard(team_data: dict) -> None:
     st.dataframe(df_lb, use_container_width=True, hide_index=True)
     st.divider()
 
-    st.subheader("📊 Team Score Comparison")
-    if not df_lb.empty:
-        st.bar_chart(df_lb.set_index("Team")[["Team Score"]])
+
+
+def _build_ranking_rows(team_data: dict) -> list[dict]:
+    """Create sorted ranking rows from already aggregated team totals."""
+    rows = []
+    for team_name, (_, _, totals) in team_data.items():
+        rows.append(
+            {
+                "Team Name": team_name,
+                "Total Score": totals.get("Team Score", 0),
+                "Total Commits": totals.get("Total Commits", 0),
+                "MRs Merged": totals.get("MR Merged", 0),
+                "Issues Closed": totals.get("Issues Closed", 0),
+            }
+        )
+
+    rows.sort(key=lambda x: x["Total Score"], reverse=True)
+    ranked_rows = []
+    for idx, row in enumerate(rows, start=1):
+        ranked_rows.append(
+            {
+                "Rank": idx,
+                "Badge": "",
+                **row,
+            }
+        )
+    return ranked_rows
+
+
+def _build_individual_rows(team_data: dict) -> list[dict]:
+    """Flatten all members across teams into a ranked list with achievement badges."""
+    all_members: list[dict] = []
+    for team_name, (_, member_rows, _) in team_data.items():
+        for row in member_rows:
+            if row.get("Status") != "Success":
+                continue
+            all_members.append(
+                {
+                    "Username": row.get("Username", "unknown"),
+                    "Team Name": team_name,
+                    "Total Commits": row.get("Total Commits", 0),
+                    "MRs Merged": row.get("MR Merged", 0),
+                    "Issues Closed": row.get("Issues Closed", 0),
+                    "Score": row.get("Score", 0),
+                    "Badge": "",
+                }
+            )
+
+    all_members.sort(key=lambda x: x["Score"], reverse=True)
+
+    # Track badges per member (max 3 each)
+    MAX_BADGES = 3
+    member_badges: dict[str, list[str]] = {m["Username"]: [] for m in all_members}
+
+    def _can_badge(username: str) -> bool:
+        return len(member_badges[username]) < MAX_BADGES
+
+    def _add_badge(username: str, badge_name: str) -> None:
+        member_badges[username].append(badge_name)
+
+    # --- Team Player: highest scorer in each team ---
+    teams_seen: set[str] = set()
+    for m in all_members:
+        team = m["Team Name"]
+        if team not in teams_seen and m["Score"] > 0:
+            _add_badge(m["Username"], "team_player")
+            teams_seen.add(team)
+
+    # --- Global achievement badges (a person can hold multiple) ---
+    def _best_for(key: str, badge_name: str) -> None:
+        for m in sorted(all_members, key=lambda x: x[key], reverse=True):
+            if not _can_badge(m["Username"]):
+                continue
+            if badge_name in member_badges[m["Username"]]:
+                continue
+            if m[key] > 0:
+                _add_badge(m["Username"], badge_name)
+                return
+
+    def _best_consistency(badge_name: str) -> None:
+        candidates = [
+            m
+            for m in all_members
+            if _can_badge(m["Username"])
+            and badge_name not in member_badges[m["Username"]]
+            and m["Total Commits"] > 0
+            and m["MRs Merged"] > 0
+            and m["Issues Closed"] > 0
+        ]
+        if not candidates:
+            return
+        best = min(
+            candidates,
+            key=lambda m: (
+                statistics.stdev([m["Total Commits"], m["MRs Merged"], m["Issues Closed"]])
+                / max(statistics.mean([m["Total Commits"], m["MRs Merged"], m["Issues Closed"]]), 1)
+            ),
+        )
+        _add_badge(best["Username"], badge_name)
+
+    _best_for("Score", "sprint_star")
+    _best_for("Total Commits", "top_committer")
+    _best_for("MRs Merged", "merge_master")
+    # hackathon_hero: highest combined total
+    for m in sorted(
+        all_members,
+        key=lambda x: x["Total Commits"] + x["MRs Merged"] + x["Issues Closed"],
+        reverse=True,
+    ):
+        if (
+            _can_badge(m["Username"])
+            and "hackathon_hero" not in member_badges[m["Username"]]
+            and (m["Total Commits"] + m["MRs Merged"] + m["Issues Closed"]) > 0
+        ):
+            _add_badge(m["Username"], "hackathon_hero")
+            break
+    _best_consistency("consistency_champ")
+
+    # Write badges back to member dicts (list instead of single string)
+    for m in all_members:
+        m["Badges"] = member_badges[m["Username"]]
+
+    # Assign serial numbers
+    for idx, m in enumerate(all_members, start=1):
+        m["S.No"] = idx
+
+    return all_members
+
+
+def _load_rank_badge_svg(rank: int) -> str:
+    """Load badge SVG markup for ranks 1-6 from assets; otherwise return empty."""
+    if rank < 1 or rank > 6:
+        return ""
+
+    repo_root = Path(__file__).resolve().parent.parent
+    candidate_dirs = [
+        repo_root / "badges",
+        repo_root / "assets" / "badges",
+        Path.home() / "Downloads" / "final badges",
+        Path.home() / "Downloads" / "badges svg",
+        Path.home() / "Downloads",
+    ]
+
+    explicit_names = [
+        f"rank{rank}.svg",
+        f"rank{rank} 1.svg",
+        f"rank{rank} 2.svg",
+    ]
+
+    for folder in candidate_dirs:
+        if not folder.exists():
+            continue
+
+        for name in explicit_names:
+            badge_path = folder / name
+            if badge_path.exists():
+                try:
+                    return badge_path.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+
+        # Fallback for any alternate exported name like rank1_final.svg
+        for badge_path in sorted(folder.glob(f"rank{rank}*.svg")):
+            try:
+                return badge_path.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+    return ""
+
+
+def _load_individual_badge_svg(badge_name: str) -> str:
+    """Load badge SVG markup by achievement name from assets/badges/."""
+    if not badge_name:
+        return ""
+    repo_root = Path(__file__).resolve().parent.parent
+    badge_path = repo_root / "assets" / "badges" / f"{badge_name}.svg"
+    if badge_path.exists():
+        try:
+            return badge_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    return ""
+
+
+def _render_ranking_table_html(ranked_rows: list[dict]) -> None:
+    """Render ranking table with SVG badges using custom HTML/CSS."""
+    table_rows: list[str] = []
+    for row in ranked_rows:
+        rank = int(row.get("Rank", 0))
+        badge_svg = _load_rank_badge_svg(rank)
+
+        if badge_svg:
+            badge_html = f'<div class="lb-badge">{badge_svg}</div>'
+        else:
+            badge_html = ""
+
+        table_rows.append(
+            "<tr>"
+            f'<td class="lb-rank">{rank}</td>'
+            f'<td class="lb-badge-cell">{badge_html}</td>'
+            f'<td class="lb-team">{escape(str(row.get("Team Name", "")))}</td>'
+            f'<td class="lb-num">{int(row.get("Total Score", 0))}</td>'
+            f'<td class="lb-num">{int(row.get("Total Commits", 0))}</td>'
+            f'<td class="lb-num">{int(row.get("MRs Merged", 0))}</td>'
+            f'<td class="lb-num">{int(row.get("Issues Closed", 0))}</td>'
+            "</tr>"
+        )
+
+    html_table = f"""
+<style>
+.lb-rank-wrap {{
+  width: 100%;
+  overflow-x: auto;
+}}
+.lb-rank-table {{
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  background: rgba(18, 22, 30, 0.88);
+  border: 1px solid rgba(120, 129, 149, 0.35);
+  border-radius: 14px;
+  overflow: hidden;
+}}
+.lb-rank-table thead th {{
+  text-align: left;
+  font-size: 17px;
+  font-weight: 700;
+  padding: 18px 16px;
+  border-bottom: 1px solid rgba(120, 129, 149, 0.35);
+  color: #e6edf7;
+  letter-spacing: 0.01em;
+  background: rgba(28, 33, 46, 0.95);
+  white-space: nowrap;
+}}
+.lb-rank-table tbody td {{
+  font-size: 18px;
+  font-weight: 500;
+  padding: 16px;
+  border-bottom: 1px solid rgba(120, 129, 149, 0.24);
+  color: #d9e1ee;
+  vertical-align: middle;
+}}
+.lb-rank-table tbody tr:last-child td {{
+  border-bottom: none;
+}}
+.lb-rank {{
+  width: 80px;
+  font-weight: 700;
+  color: #f4f7ff;
+}}
+.lb-badge-cell {{
+  min-width: 140px;
+}}
+.lb-badge {{
+  width: 120px;
+  min-height: 64px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}}
+.lb-badge svg {{
+  width: 120px;
+  height: auto;
+  display: block;
+}}
+.lb-badge-label {{
+  font-size: 11px;
+  font-weight: 600;
+  color: #a0b4d0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}}
+.lb-badges-row {{
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}}
+.lb-team {{
+  min-width: 220px;
+  font-weight: 600;
+}}
+.lb-num {{
+  min-width: 120px;
+  white-space: nowrap;
+}}
+</style>
+<div class="lb-rank-wrap">
+  <table class="lb-rank-table">
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Badge</th>
+        <th>Team Name</th>
+        <th>Total Score</th>
+        <th>Total Commits</th>
+        <th>MRs Merged</th>
+        <th>Issues Closed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {"".join(table_rows)}
+    </tbody>
+  </table>
+</div>
+"""
+    st.markdown(html_table, unsafe_allow_html=True)
+
+
+def _render_individual_table_html(individual_rows: list[dict]) -> None:
+    """Render individual member ranking table with achievement badges."""
+    _badge_display_names = {
+        "team_player": "Team Player",
+        "sprint_star": "Sprint Star",
+        "top_committer": "Top Committer",
+        "merge_master": "Merge Master",
+        "hackathon_hero": "Hackathon Hero",
+        "consistency_champ": "Consistency Champ",
+    }
+
+    table_rows: list[str] = []
+    for row in individual_rows:
+        badges = row.get("Badges", [])
+        badge_parts: list[str] = []
+        for badge_name in badges:
+            svg = _load_individual_badge_svg(badge_name)
+            if svg:
+                label = _badge_display_names.get(badge_name, badge_name.replace("_", " ").title())
+                badge_parts.append(
+                    f'<div class="lb-badge">{svg}<span class="lb-badge-label">{escape(label)}</span></div>'
+                )
+        badge_html = f'<div class="lb-badges-row">{"".join(badge_parts)}</div>' if badge_parts else ""
+
+        table_rows.append(
+            "<tr>"
+            f'<td class="lb-rank">{int(row.get("S.No", 0))}</td>'
+            f'<td class="lb-badge-cell">{badge_html}</td>'
+            f'<td class="lb-team">{escape(str(row.get("Username", "")))}</td>'
+            f'<td class="lb-team">{escape(str(row.get("Team Name", "")))}</td>'
+            f'<td class="lb-num">{int(row.get("Total Commits", 0))}</td>'
+            f'<td class="lb-num">{int(row.get("MRs Merged", 0))}</td>'
+            f'<td class="lb-num">{int(row.get("Issues Closed", 0))}</td>'
+            "</tr>"
+        )
+
+    html_table = f"""
+<div class="lb-rank-wrap">
+  <table class="lb-rank-table">
+    <thead>
+      <tr>
+        <th>S.No</th>
+        <th>Badge</th>
+        <th>Username</th>
+        <th>Team Name</th>
+        <th>Total Commits</th>
+        <th>MRs Merged</th>
+        <th>Issues Closed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {"".join(table_rows)}
+    </tbody>
+  </table>
+</div>
+"""
+    st.markdown(html_table, unsafe_allow_html=True)
+
+
+def _render_ranking_page() -> None:
+    """Ranking-only view that reuses previously computed summary rows."""
+    st.markdown("### 🏅 Leaderboard Ranking")
+    st.caption("Structured ranking table with badge placeholders for top 6 teams.")
+
+    ranked_rows = st.session_state.get("_lb_last_ranking_rows", [])
+    if not ranked_rows:
+        st.info("No ranking data available yet. Go to **Workspace**, run analysis, then return here.")
+        return
+
+    _render_ranking_table_html(ranked_rows)
+
+    # ── Individual Member Rankings ─────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 👤 Individual Member Rankings")
+    st.caption(
+        "All members ranked by individual score. "
+        "Achievement badges: sprint_star, top_committer, merge_master, "
+        "team_player, hackathon_hero, consistency_champ."
+    )
+
+    individual_rows = st.session_state.get("_lb_last_individual_rows", [])
+    if individual_rows:
+        _render_individual_table_html(individual_rows)
+    else:
+        st.info("No individual data available yet.")
+
+    # ── Score Comparison Chart ─────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 📊 Score Comparison")
+    if ranked_rows:
+        df_chart = pd.DataFrame(ranked_rows)
+        # Map back to the expected columns for the chart
+        if not df_chart.empty:
+            chart_data = df_chart.rename(columns={"Team Name": "Team", "Total Score": "Team Score"})
+            st.bar_chart(chart_data.set_index("Team")[["Team Score"]])
 
 
 # ---------------------------------------------------------------------------
@@ -767,11 +1182,101 @@ def render_team_leaderboard(client) -> None:
     """Main render function. Called from app.py with the GitLabClient instance."""
     _init_state()
 
+    if "_lb_cached_results" not in st.session_state:
+        st.session_state["_lb_cached_results"] = None
+    if "_lb_last_filters" not in st.session_state:
+        st.session_state["_lb_last_filters"] = None
+
     st.subheader("🏆 Team Leaderboard")
     st.markdown(
         "Create and manage teams, then run analytics to compare productivity scores.\n\n"
         "**Score formula:** `Commits × 1 + Merged MRs × 5 + Total MRs × 2 + Issues Closed × 3`"
     )
+
+    # ── Scoped UI Restyling CSS ──────────────────────────────────────────
+    st.markdown(
+        """
+        <style>
+        /* Target buttons following the toggle marker */
+        div:has(> .lb-toggle-container) + div button {
+            border-radius: 10px !important;
+            font-weight: 600 !important;
+            padding: 0.75rem 1rem !important;
+            transition: all 0.2s ease-in-out !important;
+            border: none !important;
+            height: 3rem !important;
+        }
+
+        /* Active Toggle (Primary) */
+        div:has(> .lb-toggle-container) + div button[kind="primary"] {
+            background-color: #d32f2f !important;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(211, 47, 47, 0.4) !important;
+        }
+
+        /* Inactive Toggle (Secondary) */
+        div:has(> .lb-toggle-container) + div button[kind="secondary"] {
+            background-color: #2c2c2c !important;
+            color: #888 !important;
+        }
+
+        div:has(> .lb-toggle-container) + div button[kind="secondary"]:hover {
+            background-color: #3d3d3d !important;
+            color: #fff !important;
+            transform: translateY(-1px);
+        }
+
+        /* Target button following the run marker */
+        div:has(> .lb-run-btn) + div button {
+            border-radius: 10px !important;
+            font-weight: 700 !important;
+            padding: 0.8rem !important;
+            transition: all 0.2s ease-in-out !important;
+            background-color: #d32f2f !important;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(211, 47, 47, 0.3) !important;
+            width: 100% !important;
+            border: none !important;
+            height: 3.5rem !important;
+        }
+
+        div:has(> .lb-run-btn) + div button:hover {
+            background-color: #b71c1c !important;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(183, 28, 28, 0.5) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Page selector (Button Toggle) ────────────────────────────────────
+    st.markdown('<div class="lb-toggle-container">', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    current_page = st.session_state.get("_lb_page", "Workspace")
+
+    with col1:
+        if st.button(
+            "Workspace",
+            use_container_width=True,
+            key="_btn_workspace",
+            type="secondary" if current_page == "Leaderboard Ranking" else "primary",
+        ):
+            st.session_state["_lb_page"] = "Workspace"
+            st.rerun()
+
+    with col2:
+        if st.button(
+            "Leaderboard Ranking",
+            use_container_width=True,
+            key="_btn_ranking",
+            type="secondary" if current_page == "Workspace" else "primary",
+        ):
+            st.session_state["_lb_page"] = "Leaderboard Ranking"
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    page = st.session_state["_lb_page"]
     st.divider()
 
     # ── Section 1: Create Team ────────────────────────────────────────────
@@ -797,7 +1302,11 @@ def render_team_leaderboard(client) -> None:
     # ── Date range filter ─────────────────────────────────────────────────
     since_iso, until_iso = _render_date_filter()
 
-    if st.button("▶️ Run Leaderboard Analysis", type="primary", key="_lb_run_btn"):
+    # ── Run button ────────────────────────────────────────────────────────
+    st.markdown('<div class="lb-run-btn">', unsafe_allow_html=True)
+    run_button_clicked = st.button("▶️ Run Leaderboard Analysis", type="primary", key="_lb_run_btn")
+    st.markdown("</div>", unsafe_allow_html=True)
+    if run_button_clicked:
         st.session_state["_lb_triggered"] = True
 
     if not st.session_state.get("_lb_triggered"):
@@ -840,6 +1349,11 @@ def render_team_leaderboard(client) -> None:
     if not team_data:
         st.error("No team data could be fetched. Check your GitLab connection.")
         return
+
+    # Cache ranking rows for the Ranking page
+    st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(team_data)
+    st.session_state["_lb_last_individual_rows"] = _build_individual_rows(team_data)
+
 
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
