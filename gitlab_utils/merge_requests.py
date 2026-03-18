@@ -1,4 +1,4 @@
-def get_user_mrs(client, user_id, since=None, until=None):
+def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
     """
     Fetch Merge Requests:
     - Authored MRs (GET /merge_requests?author_id=:id)
@@ -8,12 +8,16 @@ def get_user_mrs(client, user_id, since=None, until=None):
       since (str): ISO 8601 UTC datetime — maps to created_after
       until (str): ISO 8601 UTC datetime — maps to created_before
 
+    Optional project filter:
+      project_ids (list[int]): if provided, only MRs in these projects are counted.
+
     Returns:
       - mrs_list: List of MR dicts
       - stats: Dict {total, merged, closed, opened, pending}
     """
     mrs_list = []
     seen_ids = set()
+    pid_set = set(project_ids) if project_ids else None
 
     stats = {
         "total": 0,
@@ -37,6 +41,9 @@ def get_user_mrs(client, user_id, since=None, until=None):
                 "/merge_requests", params=params, per_page=50, max_pages=10
             )
             for item in items:
+                # Apply project filter if specified
+                if pid_set is not None and item.get("project_id") not in pid_set:
+                    continue
                 if item["id"] not in seen_ids:
                     state = item.get("state")
 
@@ -72,6 +79,7 @@ def get_user_mrs(client, user_id, since=None, until=None):
 
     return mrs_list, stats
 
+
 def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
     """
     Fetch live MR compliance metrics using correct GitLab API endpoints for the selected user.
@@ -81,7 +89,7 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
         "Failed Pipelines": 0,
         "No Issues Linked": 0,
         "No Time Spent": 0,
-        "No Unit Tests": 0
+        "No Unit Tests": 0,
     }
 
     problematic_mrs = []
@@ -94,7 +102,7 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
             project = client.client.projects.get(pid)
             mrs = project.mergerequests.list(all=True)
             for cached_mr in mrs:
-                if cached_mr.author['name'] != selected_user_name:
+                if cached_mr.author["name"] != selected_user_name:
                     continue
 
                 try:
@@ -113,16 +121,16 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                         stats["No Description"] += 1
 
                     # b) Failed Pipelines — use head_pipeline attribute
-                    head_pipe = getattr(mr, 'head_pipeline', None)
+                    head_pipe = getattr(mr, "head_pipeline", None)
                     if head_pipe and isinstance(head_pipe, dict):
-                        if head_pipe.get('status') == "failed":
+                        if head_pipe.get("status") == "failed":
                             failed_pipeline = True
                             stats["Failed Pipelines"] += 1
 
                     # c) No Time Spent — use time_stats API
                     try:
                         ts = mr.time_stats()
-                        if not ts or ts.get('total_time_spent', 0) == 0:
+                        if not ts or ts.get("total_time_spent", 0) == 0:
                             no_time_spent = True
                             stats["No Time Spent"] += 1
                     except Exception:
@@ -131,8 +139,8 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
 
                     # d) No Issues Linked — use mr.references (better than "#" string matching)
                     try:
-                        refs = getattr(mr, 'references', None)
-                        if not refs or not refs.get('full'):
+                        refs = getattr(mr, "references", None)
+                        if not refs or not refs.get("full"):
                             no_issues = True
                             stats["No Issues Linked"] += 1
                     except Exception:
@@ -142,10 +150,14 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                     # e) No Unit Tests — use mr.changes() to inspect file paths
                     try:
                         changes_data = mr.changes()
-                        changed_files = changes_data.get('changes', []) if isinstance(changes_data, dict) else []
+                        changed_files = (
+                            changes_data.get("changes", [])
+                            if isinstance(changes_data, dict)
+                            else []
+                        )
                         has_tests = any(
-                            "test" in str(ch.get('new_path', '')).lower()
-                            or "spec" in str(ch.get('new_path', '')).lower()
+                            "test" in str(ch.get("new_path", "")).lower()
+                            or "spec" in str(ch.get("new_path", "")).lower()
                             for ch in changed_files
                         )
                         if not has_tests:
@@ -157,15 +169,17 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
 
                     # Collect problematic MRs
                     if no_desc or failed_pipeline or no_issues or no_time_spent or no_unit_tests:
-                        problematic_mrs.append({
-                            "Title": mr.title,
-                            "State": mr.state,
-                            "No Description": no_desc,
-                            "No Time Spent": no_time_spent,
-                            "No Issues Linked": no_issues,
-                            "No Unit Tests": no_unit_tests,
-                            "Failed Pipeline": failed_pipeline
-                        })
+                        problematic_mrs.append(
+                            {
+                                "Title": mr.title,
+                                "State": mr.state,
+                                "No Description": no_desc,
+                                "No Time Spent": no_time_spent,
+                                "No Issues Linked": no_issues,
+                                "No Unit Tests": no_unit_tests,
+                                "Failed Pipeline": failed_pipeline,
+                            }
+                        )
 
                 except Exception:
                     pass

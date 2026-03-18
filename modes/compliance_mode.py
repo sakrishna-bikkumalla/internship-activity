@@ -1,12 +1,13 @@
-import streamlit as st
-import os
-import requests
 import http.client
 import time
-from gitlab import GitlabGetError
 from urllib.parse import urlparse
 
+import requests
+import streamlit as st
+from gitlab import GitlabGetError
+
 # --- Helper Functions (copied/adapted from app.py) ---
+
 
 @st.cache_data(ttl=60)
 def read_file_content(_project, file_path, ref):
@@ -15,6 +16,7 @@ def read_file_content(_project, file_path, ref):
         return file.decode().decode("utf-8")
     except Exception:
         return None
+
 
 def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
     last_exc = None
@@ -44,6 +46,7 @@ def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
     if last_exc:
         raise last_exc
 
+
 def check_vscode_settings(project, branch="main"):
     try:
         items = project.repository_tree(path=".vscode", ref=branch)
@@ -51,12 +54,14 @@ def check_vscode_settings(project, branch="main"):
     except Exception:
         return False
 
+
 def check_vscode_file_exists(project, filename, branch="main"):
     try:
         items = project.repository_tree(path=".vscode", ref=branch)
         return filename.lower() in [item["name"].lower() for item in items]
     except Exception:
         return False
+
 
 def check_license_content(project, branch="main"):
     content = read_file_content(project, "LICENSE", branch) or read_file_content(
@@ -95,9 +100,16 @@ def check_license_content(project, branch="main"):
         return "gnu_other"
 
     non_gnu_licenses = [
-        "mit license", "apache license", "apache 2.0", "bsd license",
-        "unlicense", "zlib", "isc license", "mozilla public license",
-        "eclipse public license", "creative commons",
+        "mit license",
+        "apache license",
+        "apache 2.0",
+        "bsd license",
+        "unlicense",
+        "zlib",
+        "isc license",
+        "mozilla public license",
+        "eclipse public license",
+        "creative commons",
     ]
     if any(phrase in cleaned for phrase in non_gnu_licenses):
         return "invalid"
@@ -109,9 +121,11 @@ def check_license_content(project, branch="main"):
 
     return "invalid"
 
+
 def check_vscode_settings_content(project, branch="main"):
     content = read_file_content(project, ".vscode/settings.json", branch)
     return {"exists": content is not None}
+
 
 def check_extensions_json_for_ruff(project, branch="main"):
     content = read_file_content(project, ".vscode/extensions.json", branch)
@@ -119,6 +133,7 @@ def check_extensions_json_for_ruff(project, branch="main"):
         return False
     try:
         import json
+
         config = json.loads(content)
         recommendations = config.get("recommendations", [])
         return "charliermarsh.ruff" in recommendations or any(
@@ -126,6 +141,7 @@ def check_extensions_json_for_ruff(project, branch="main"):
         )
     except Exception:
         return False
+
 
 def check_templates_presence(project, branch="main"):
     result = {
@@ -151,6 +167,7 @@ def check_templates_presence(project, branch="main"):
     except Exception:
         pass
     return result
+
 
 def check_project_compliance(project, branch=None):
     required_files = {
@@ -180,8 +197,15 @@ def check_project_compliance(project, branch=None):
             else:
                 lc = content.lower()
                 expected_sections = [
-                    "installation", "usage", "getting started", "setup",
-                    "license", "contributing", "example", "quick start", "features",
+                    "installation",
+                    "usage",
+                    "getting started",
+                    "setup",
+                    "license",
+                    "contributing",
+                    "example",
+                    "quick start",
+                    "features",
                 ]
                 found_sections = [s for s in expected_sections if s in lc]
                 report["readme_status"] = "present"
@@ -210,7 +234,9 @@ def check_project_compliance(project, branch=None):
         vscode_content = check_vscode_settings_content(project, branch)
         report["vscode_config_exists"] = vscode_content["exists"]
         report["vscode_ruff_in_extensions"] = check_extensions_json_for_ruff(project, branch)
-        report["vscode_extensions_exists"] = check_vscode_file_exists(project, "extensions.json", branch)
+        report["vscode_extensions_exists"] = check_vscode_file_exists(
+            project, "extensions.json", branch
+        )
         report["vscode_launch_exists"] = check_vscode_file_exists(project, "launch.json", branch)
         report["vscode_tasks_exists"] = check_vscode_file_exists(project, "tasks.json", branch)
 
@@ -224,6 +250,7 @@ def check_project_compliance(project, branch=None):
         report["error"] = f"Error during compliance check: {e}"
     return report
 
+
 def extract_path_from_url(input_str):
     try:
         path = urlparse(input_str).path.strip("/")
@@ -231,12 +258,14 @@ def extract_path_from_url(input_str):
     except Exception:
         return input_str.strip()
 
+
 def get_project_branches(project):
     try:
         branches = project.branches.list(all=True)
         return sorted([b.name for b in branches])
     except Exception:
         return []
+
 
 def get_suggestions_for_missing_items(report):
     # (Copied from app.py - abridged for brevity but kept functional)
@@ -246,13 +275,29 @@ def get_suggestions_for_missing_items(report):
         ("CHANGELOG", "CHANGELOG missing", "Maintain a `CHANGELOG.md` file."),
         ("LICENSE", "LICENSE missing", "Include an `AGPLv3 LICENSE` file."),
         ("license_valid", "LICENSE is not AGPLv3", "Ensure the license is AGPLv3."),
-        ("issue_templates_folder", "Issue templates folder missing", "Create `.gitlab/issue_templates/`."),
-        ("merge_request_templates_folder", "Merge request templates folder missing", "Create `.gitlab/merge_request_templates/`."),
+        (
+            "issue_templates_folder",
+            "Issue templates folder missing",
+            "Create `.gitlab/issue_templates/`.",
+        ),
+        (
+            "merge_request_templates_folder",
+            "Merge request templates folder missing",
+            "Create `.gitlab/merge_request_templates/`.",
+        ),
         (".gitignore", ".gitignore missing", "Add a `.gitignore` file."),
         ("pyproject.toml", "pyproject.toml missing", "Add a `pyproject.toml` file."),
         ("vscode_settings", ".vscode/settings.json missing", "Add a `.vscode/settings.json` file."),
-        ("vscode_ruff_in_extensions", "Ruff not in .vscode/extensions.json", "Add `charliermarsh.ruff` to recommendations."),
-        ("vscode_extensions_exists", ".vscode/extensions.json missing", "Add a `.vscode/extensions.json` file."),
+        (
+            "vscode_ruff_in_extensions",
+            "Ruff not in .vscode/extensions.json",
+            "Add `charliermarsh.ruff` to recommendations.",
+        ),
+        (
+            "vscode_extensions_exists",
+            ".vscode/extensions.json missing",
+            "Add a `.vscode/extensions.json` file.",
+        ),
         ("vscode_launch_exists", ".vscode/launch.json missing", "Add `.vscode/launch.json`."),
         ("vscode_tasks_exists", ".vscode/tasks.json missing", "Add `.vscode/tasks.json`."),
         ("description_present", "Project description missing", "Provide a project description."),
@@ -271,7 +316,10 @@ def get_suggestions_for_missing_items(report):
     elif readme_status == "empty":
         st.markdown("❌ **README is empty** — Add meaningful content.")
     elif report.get("readme_needs_improvement"):
-         st.markdown("🟡 **README needs improvement** — Consider adding Installation/Usage/License/Contributing.")
+        st.markdown(
+            "🟡 **README needs improvement** — Consider adding Installation/Usage/License/Contributing."
+        )
+
 
 def render_project_compliance_ui(report, project=None, branch=None, classification=None):
     if report.get("error"):
@@ -302,9 +350,9 @@ def render_project_compliance_ui(report, project=None, branch=None, classificati
         "4. 🖥️ IDE Setup": {
             "vscode_settings": ".vscode/settings.json",
             "vscode_ruff_in_extensions": "Ruff in config",
-            "vscode_config_exists": "VSCode Config Exists", # Added missing key in rendering
-             "vscode_extensions_exists": ".vscode/extensions.json",
-        }
+            "vscode_config_exists": "VSCode Config Exists",  # Added missing key in rendering
+            "vscode_extensions_exists": ".vscode/extensions.json",
+        },
     }
 
     for cat_name, items in categories.items():
@@ -312,10 +360,15 @@ def render_project_compliance_ui(report, project=None, branch=None, classificati
         for key, label in items.items():
             status = report.get(key)
             if key == "readme_status":
-                icon = "✅" if status == "present" and not report.get("readme_needs_improvement") else ("✅ (Needs Impr.)" if status == "present" else "❌")
+                icon = (
+                    "✅"
+                    if status == "present" and not report.get("readme_needs_improvement")
+                    else ("✅ (Needs Impr.)" if status == "present" else "❌")
+                )
             else:
-                 icon = "✅" if status else "❌"
+                icon = "✅" if status else "❌"
             st.write(f"{icon} {label}")
+
 
 def render_compliance_mode(gl_client):
     st.subheader("🔍 Project Compliance Checker")
@@ -326,37 +379,42 @@ def render_compliance_mode(gl_client):
         st.markdown("#### Check a Single Project")
 
         # State management for Single Project
-        if 'compliance_project_id' not in st.session_state:
-            st.session_state['compliance_project_id'] = ""
+        if "compliance_project_id" not in st.session_state:
+            st.session_state["compliance_project_id"] = ""
 
-        project_input = st.text_input("Enter Project ID or URL",
-                                      value=st.session_state['compliance_project_id'],
-                                      key="single_project_input",
-                                      placeholder="https://gitlab.com/group/project")
+        project_input = st.text_input(
+            "Enter Project ID or URL",
+            value=st.session_state["compliance_project_id"],
+            key="single_project_input",
+            placeholder="https://gitlab.com/group/project",
+        )
 
         col1, col2 = st.columns([1, 4])
         with col1:
-             fetch_clicked = st.button("Fetch Project")
+            fetch_clicked = st.button("Fetch Project")
 
         if fetch_clicked and project_input:
-            st.session_state['compliance_project_id'] = project_input
+            st.session_state["compliance_project_id"] = project_input
             try:
                 with st.spinner("Fetching project..."):
                     pid = extract_path_from_url(project_input)
                     project = get_project_with_retries(gl_client, pid)
-                    st.session_state['current_project'] = project
-                    st.session_state['current_project_branches'] = get_project_branches(project)
+                    st.session_state["current_project"] = project
+                    st.session_state["current_project_branches"] = get_project_branches(project)
                     st.success(f"Loaded: **{project.name_with_namespace}**")
                     st.rerun()
             except Exception as e:
                 st.error(f"Error fetching project: {e}")
 
         # Display Project Info & Run Analysis if loaded
-        if 'current_project' in st.session_state and st.session_state.get('compliance_project_id') == project_input:
-            project = st.session_state['current_project']
+        if (
+            "current_project" in st.session_state
+            and st.session_state.get("compliance_project_id") == project_input
+        ):
+            project = st.session_state["current_project"]
             st.info(f"Active Project: **{project.name_with_namespace}** ({project.web_url})")
 
-            branches = st.session_state.get('current_project_branches', [])
+            branches = st.session_state.get("current_project_branches", [])
             default_branch_idx = 0
             if hasattr(project, "default_branch") and project.default_branch in branches:
                 default_branch_idx = branches.index(project.default_branch)
@@ -364,7 +422,7 @@ def render_compliance_mode(gl_client):
             branch = st.selectbox("Select Branch", branches, index=default_branch_idx)
 
             if st.button("Run Analysis", key="run_analysis_single"):
-                 with st.spinner("Analyzing..."):
+                with st.spinner("Analyzing..."):
                     report = check_project_compliance(project, branch)
                     render_project_compliance_ui(report, project, branch)
                     get_suggestions_for_missing_items(report)
@@ -373,11 +431,12 @@ def render_compliance_mode(gl_client):
         st.markdown("#### Batch Check Multiple Projects")
         render_batch_project_compliance_internal(gl_client)
 
+
 def render_batch_project_compliance_internal(gl_client):
     project_input = st.text_area(
         "Enter Project IDs or URLs (one per line)",
         height=150,
-        placeholder="https://gitlab.com/group/project1\n12345\n..."
+        placeholder="https://gitlab.com/group/project1\n12345\n...",
     )
 
     if st.button("Run Batch Analysis", key="run_batch_btn"):
@@ -404,7 +463,10 @@ def render_batch_project_compliance_internal(gl_client):
                     "VSCode": "✅" if report.get("vscode_config_exists") else "❌",
                     "Metdata": "✅" if report.get("description_present") else "❌",
                     "CI/CD": "✅" if report.get(".gitlab-ci.yml") else "❌",
-                    "GitProcess": "✅" if report.get("issue_templates_folder") or report.get("merge_request_templates_folder") else "❌"
+                    "GitProcess": "✅"
+                    if report.get("issue_templates_folder")
+                    or report.get("merge_request_templates_folder")
+                    else "❌",
                 }
 
                 if report.get("error"):
@@ -423,17 +485,19 @@ def render_batch_project_compliance_internal(gl_client):
 
             # Excel Export
             try:
-                import pandas as pd
                 from io import BytesIO
+
+                import pandas as pd
+
                 df = pd.DataFrame(results)
                 output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, index=False, sheet_name='Batch Compliance')
+                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                    df.to_excel(writer, index=False, sheet_name="Batch Compliance")
                 st.download_button(
                     label="Download Batch Report",
                     data=output.getvalue(),
                     file_name="batch_compliance_report.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception:
                 pass

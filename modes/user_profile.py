@@ -1,6 +1,8 @@
-import streamlit as st
 import pandas as pd
-from gitlab_utils import users, projects, commits, groups, merge_requests, issues
+import streamlit as st
+
+from gitlab_utils import commits, groups, issues, merge_requests, projects
+
 
 def render_user_profile(client, simple_user_info):
     """
@@ -32,12 +34,14 @@ def render_user_profile(client, simple_user_info):
 
         # 2. Commits - Passing full simple_user_info
         all_projs = proj_data["all"]
-        all_commits, commit_counts, commit_stats = commits.get_user_commits(client, simple_user_info, all_projs)
+        all_commits, commit_counts, commit_stats = commits.get_user_commits(
+            client, simple_user_info, all_projs
+        )
 
         verified_contributed = []
         for p in proj_data["contributed"]:
-             if commit_counts.get(p['id'], 0) > 0:
-                 verified_contributed.append(p)
+            if commit_counts.get(p["id"], 0) > 0:
+                verified_contributed.append(p)
 
         personal_projects = proj_data["personal"]
 
@@ -65,7 +69,7 @@ def render_user_profile(client, simple_user_info):
     with p_col2:
         st.metric("Contributed Projects", len(verified_contributed))
         if verified_contributed:
-             with st.expander("View Contributed Projects"):
+            with st.expander("View Contributed Projects"):
                 for p in verified_contributed:
                     st.write(f"- [{p['name_with_namespace']}]({p['web_url']})")
 
@@ -82,7 +86,9 @@ def render_user_profile(client, simple_user_info):
             # Use pandas for table
             df_commits = pd.DataFrame(all_commits)
             # Display updated columns
-            st.dataframe(df_commits[["project_name", "message", "date", "time", "slot"]], width="stretch")
+            st.dataframe(
+                df_commits[["project_name", "message", "date", "time", "slot"]], width="stretch"
+            )
 
     # Groups
     st.markdown("---")
@@ -111,8 +117,12 @@ def render_user_profile(client, simple_user_info):
     st.markdown("---")
     st.subheader("🔍 MR Compliance (Live API)")
     with st.spinner(f"Fetching Live MR Compliance API for {name}..."):
-        project_ids_to_check = [p['id'] for p in personal_projects] + [p['id'] for p in verified_contributed]
-        live_stats, prob_mrs = merge_requests.get_single_user_live_mr_compliance(client, project_ids_to_check, name)
+        project_ids_to_check = [p["id"] for p in personal_projects] + [
+            p["id"] for p in verified_contributed
+        ]
+        live_stats, prob_mrs = merge_requests.get_single_user_live_mr_compliance(
+            client, project_ids_to_check, name
+        )
 
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("No Description", live_stats.get("No Description", 0))
@@ -126,12 +136,33 @@ def render_user_profile(client, simple_user_info):
             df_prob = pd.DataFrame(prob_mrs)
 
             # Map boolean compliance values to professional color indicators
-            bool_cols = ["No Description", "No Time Spent", "No Issues Linked", "No Unit Tests", "Failed Pipeline"]
+            bool_cols = [
+                "No Description",
+                "No Time Spent",
+                "No Issues Linked",
+                "No Unit Tests",
+                "Failed Pipeline",
+            ]
             for col in bool_cols:
                 if col in df_prob.columns:
-                    df_prob[col] = df_prob[col].map({True: "✅", False: "", "True": "✅", "False": ""})
+                    df_prob[col] = df_prob[col].map(
+                        {True: "✅", False: "", "True": "✅", "False": ""}
+                    )
 
-            st.dataframe(df_prob[["Title", "State", "No Description", "No Time Spent", "No Issues Linked", "No Unit Tests", "Failed Pipeline"]], width="stretch")
+            st.dataframe(
+                df_prob[
+                    [
+                        "Title",
+                        "State",
+                        "No Description",
+                        "No Time Spent",
+                        "No Issues Linked",
+                        "No Unit Tests",
+                        "Failed Pipeline",
+                    ]
+                ],
+                width="stretch",
+            )
         else:
             st.success("All analyzed Merge Requests are compliant!")
 
