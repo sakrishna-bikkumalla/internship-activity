@@ -1,6 +1,7 @@
 import pytest
 from gitlab_utils.description_quality import analyze_description
 
+
 def test_empty_description():
     """Empty description should get 0 score and Low quality."""
     result = analyze_description(None)
@@ -10,6 +11,7 @@ def test_empty_description():
 
     result = analyze_description("   ")
     assert result["description_score"] == 0
+
 
 def test_high_quality_description():
     """A structured, detailed description with action verbs and lists."""
@@ -28,6 +30,7 @@ def test_high_quality_description():
     assert result["description_score"] >= 80
     assert result["quality_label"] == "High"
 
+
 def test_moderate_quality_description():
     """A basic description with some length and an action verb but lacking structure."""
     desc = "Fixed the database migration issue where indices were not created properly."
@@ -35,6 +38,7 @@ def test_moderate_quality_description():
     assert result["description_score"] >= 25  # length > 50 (+10) + verb 'fixed' (+15)
     assert result["description_score"] <= 79
     assert result["quality_label"] == "Low" or result["quality_label"] == "Moderate"
+
 
 def test_low_quality_description():
     """Very short, vague description."""
@@ -44,12 +48,14 @@ def test_low_quality_description():
     assert result["quality_label"] == "Low"
     # Action verb 'update' may give +15, but length < 50, no struct, no impact -> score = 25
 
+
 def test_keyword_only_description():
     """Keyword-only description."""
     desc = "fix"
     result = analyze_description(desc)
     assert result["description_score"] < 25
     assert result["quality_label"] == "Low"
+
 
 def test_large_irrelevant_text():
     """A large block of text without MR structures or keywords."""
@@ -59,6 +65,7 @@ def test_large_irrelevant_text():
     assert result["description_score"] == 40
     assert result["quality_label"] == "Low"
     assert "Description is long but lacks structure and key MR context." in result["feedback"]
+
 
 def test_structured_description():
     """Sections and lists."""

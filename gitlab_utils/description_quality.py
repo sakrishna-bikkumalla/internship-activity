@@ -35,7 +35,7 @@ def analyze_description(text: str | None) -> dict:
 
     # 2. Structured Sections (Max +20)
     # Check for markdown headers like # Summary, ## Changes, **Impact**, etc.
-    if re.search(r'(#+ |\*\*).*(summary|changes|impact|testing|context|description)', text_lower):
+    if re.search(r"(#+ |\*\*).*(summary|changes|impact|testing|context|description)", text_lower):
         score += 20
     else:
         feedback.append("Missing structured sections (e.g., Summary, Changes, Impact).")
@@ -48,7 +48,16 @@ def analyze_description(text: str | None) -> dict:
         feedback.append("Could uniquely describe what changed using clear action verbs.")
 
     # 4. Context/Impact (Max +15)
-    context_keywords = ["because", "so that", "in order to", "fix", "resolves", "closes", "issue", "impact"]
+    context_keywords = [
+        "because",
+        "so that",
+        "in order to",
+        "fix",
+        "resolves",
+        "closes",
+        "issue",
+        "impact",
+    ]
     if any(keyword in text_lower for keyword in context_keywords):
         score += 15
     else:
@@ -56,7 +65,7 @@ def analyze_description(text: str | None) -> dict:
 
     # 5. Has a list (Max +10)
     # Checks for markdown lists: '- ', '* ', '1. '
-    if re.search(r'(^|\n)\s*([-*]|\d+\.)\s+', text):
+    if re.search(r"(^|\n)\s*([-*]|\d+\.)\s+", text):
         score += 10
     else:
         feedback.append("Consider using lists to break down multiple changes.")

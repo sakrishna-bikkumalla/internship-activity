@@ -21,6 +21,7 @@ from gitlab_utils.commits import get_user_commits
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_commit(sha, author_name, author_email, created_at, title="Fix bug"):
     return {
         "id": sha,
@@ -49,6 +50,7 @@ def _make_client(commits_per_call=None):
 # ---------------------------------------------------------------------------
 # 1. Basic matching: author_name exact match
 # ---------------------------------------------------------------------------
+
 
 class TestAuthorNameMatching:
     def test_match_by_exact_name(self):
@@ -87,6 +89,7 @@ class TestAuthorNameMatching:
 # 2. Matching by email
 # ---------------------------------------------------------------------------
 
+
 class TestAuthorEmailMatching:
     def test_match_by_email_when_name_differs(self):
         """Even if the stored author_name differs, email match should still count."""
@@ -114,6 +117,7 @@ class TestAuthorEmailMatching:
 # 3. Matching by username (substring)
 # ---------------------------------------------------------------------------
 
+
 class TestUsernameMatching:
     def test_match_by_username_in_email(self):
         commit = _make_commit("sha1", "Alice", "alicedev@company.org", "2024-01-15T10:00:00+00:00")
@@ -125,7 +129,9 @@ class TestUsernameMatching:
         assert stats["total"] == 1
 
     def test_match_by_username_in_name(self):
-        commit = _make_commit("sha1", "alicedev (contractor)", "x@x.com", "2024-01-15T10:00:00+00:00")
+        commit = _make_commit(
+            "sha1", "alicedev (contractor)", "x@x.com", "2024-01-15T10:00:00+00:00"
+        )
         client = _make_client([commit])
         user = {"name": "Alice Dev", "email": "alice@example.com", "username": "alicedev"}
 
@@ -137,6 +143,7 @@ class TestUsernameMatching:
 # ---------------------------------------------------------------------------
 # 4. Timezone handling (fix #1 — the critical bug)
 # ---------------------------------------------------------------------------
+
 
 class TestTimezoneHandling:
     def test_utc_aware_timestamp_converted_to_ist(self):
@@ -200,9 +207,12 @@ class TestTimezoneHandling:
 # 5. Deduplication
 # ---------------------------------------------------------------------------
 
+
 class TestDeduplication:
     def test_same_sha_across_two_projects_counted_once(self):
-        commit = _make_commit("sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00")
+        commit = _make_commit(
+            "sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00"
+        )
         client = _make_client([commit])
         user = {"name": "Alice Dev", "email": "alice@example.com", "username": "alicedev"}
         projects = [_make_project(1, "proj/one"), _make_project(2, "proj/two")]
@@ -217,7 +227,9 @@ class TestDeduplication:
 
     def test_deduplication_within_single_project(self):
         """Commits returned twice (e.g. from two search terms) should be counted once per project."""
-        commit = _make_commit("sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00")
+        commit = _make_commit(
+            "sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00"
+        )
 
         # Return same commit on every _get_paginated call (name search + username search)
         client = _make_client([commit])
@@ -232,6 +244,7 @@ class TestDeduplication:
 # ---------------------------------------------------------------------------
 # 6. No projects
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_no_projects_returns_empty(self):
@@ -284,13 +297,17 @@ class TestEdgeCases:
         user = {"name": "Alice Dev", "email": "alice@example.com", "username": "alicedev"}
 
         get_user_commits(
-            client, user, [_make_project(1)],
+            client,
+            user,
+            [_make_project(1)],
             since="2024-01-01T00:00:00Z",
             until="2024-01-31T23:59:59Z",
         )
 
         # Check that at least one call included the since/until params
-        called_params = [call.kwargs.get("params", {}) or call.args[1] if call.args else {}
-                         for call in client._get_paginated.call_args_list]
+        called_params = [
+            call.kwargs.get("params", {}) or call.args[1] if call.args else {}
+            for call in client._get_paginated.call_args_list
+        ]
         assert any("since" in str(p) for p in called_params)
         assert any("until" in str(p) for p in called_params)

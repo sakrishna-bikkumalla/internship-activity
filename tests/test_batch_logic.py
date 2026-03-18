@@ -2,12 +2,14 @@ import pytest
 from unittest.mock import MagicMock, patch
 from gitlab_utils import batch, projects
 
+
 @pytest.fixture
 def mock_client():
     client = MagicMock()
     # Mock _get_paginated to return a list
     client._get_paginated.return_value = []
     return client
+
 
 def test_project_classification_personal(mock_client):
     """Test that projects are correctly classified as personal."""
@@ -16,21 +18,13 @@ def test_project_classification_personal(mock_client):
 
     # Mock project data
     mock_projects = [
-        {
-            "id": 1,
-            "name": "Personal Project",
-            "namespace": {"path": "testuser", "kind": "user"}
-        },
+        {"id": 1, "name": "Personal Project", "namespace": {"path": "testuser", "kind": "user"}},
         {
             "id": 2,
             "name": "Contributed Project",
-            "namespace": {"path": "otheruser", "kind": "user"}
+            "namespace": {"path": "otheruser", "kind": "user"},
         },
-        {
-            "id": 3,
-            "name": "Group Project",
-            "namespace": {"path": "somegroup", "kind": "group"}
-        }
+        {"id": 3, "name": "Group Project", "namespace": {"path": "somegroup", "kind": "group"}},
     ]
 
     mock_client._get_paginated.return_value = mock_projects
@@ -42,6 +36,7 @@ def test_project_classification_personal(mock_client):
     assert len(res["contributed"]) == 2
     assert res["contributed"][0]["id"] == 2
     assert res["contributed"][1]["id"] == 3
+
 
 @patch("gitlab_utils.users.get_user_by_username")
 @patch("gitlab_utils.projects.get_user_projects")
@@ -60,7 +55,7 @@ def test_process_single_user_success(
     mock_projects.return_value = {
         "personal": [{"id": 1}],
         "contributed": [{"id": 2}],
-        "all": [{"id": 1}, {"id": 2}]
+        "all": [{"id": 1}, {"id": 2}],
     }
     mock_commits.return_value = ([], {1: 10, 2: 5}, {"total": 15})
     mock_groups.return_value = []
