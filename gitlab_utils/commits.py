@@ -41,10 +41,11 @@ def get_user_commits(client, user, projects):
             pid = project.get('id')
             pname = project.get('name_with_namespace')
 
-            # Fetch commits
+            # Fetch commits from the default branch only (not all branches)
+            # Using "all": True causes overcounting as commits appear on many branches
             commits_data = client._get_paginated(
                 f"/projects/{pid}/repository/commits",
-                params={"author": author_name or username, "all": True},
+                params={"author": author_name or username},
                 per_page=50,
                 max_pages=20
             )
@@ -59,11 +60,10 @@ def get_user_commits(client, user, projects):
                     c_author_email = c.get('author_email')
 
                     is_match = False
+                    # Strict matching: exact author name OR exact author email only
                     if author_name and c_author_name == author_name:
                         is_match = True
                     elif author_email and c_author_email == author_email:
-                        is_match = True
-                    elif username and (username in str(c_author_name).lower() or username in str(c_author_email).lower()):
                         is_match = True
 
                     if not is_match:
