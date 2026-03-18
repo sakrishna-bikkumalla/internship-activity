@@ -4,7 +4,8 @@ import io
 import datetime
 from gitlab_utils import batch
 
-DEFAULT_ICFAI_USERS = """saikrishna_b
+DEFAULT_ICFAI_USERS = """prav2702
+saikrishna_b
 MohanaSriBhavitha
 praneethashish
 kanukuntagreeshma2004
