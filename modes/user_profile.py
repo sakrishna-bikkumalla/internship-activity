@@ -108,6 +108,26 @@ def render_user_profile(client, simple_user_info):
             df_mrs = pd.DataFrame(user_mrs)
             st.dataframe(df_mrs[["title", "role", "state", "created_at"]], width="stretch")
 
+    st.markdown("---")
+    st.subheader("🔍 MR Compliance (Live API)")
+    with st.spinner(f"Fetching Live MR Compliance API for {name}..."):
+        project_ids_to_check = [p['id'] for p in personal_projects] + [p['id'] for p in verified_contributed]
+        live_stats, prob_mrs = merge_requests.get_single_user_live_mr_compliance(client, project_ids_to_check, name)
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("No Description", live_stats.get("No Description", 0))
+        c2.metric("No Time Spent", live_stats.get("No Time Spent", 0))
+        c3.metric("No Issues Linked", live_stats.get("No Issues Linked", 0))
+        c4.metric("No Unit Tests", live_stats.get("No Unit Tests", 0))
+        c5.metric("Failed Pipelines", live_stats.get("Failed Pipelines", 0))
+
+        st.markdown("### ⚠️ Non-Compliant Merge Requests")
+        if prob_mrs:
+            df_prob = pd.DataFrame(prob_mrs)
+            st.dataframe(df_prob[["Title", "State", "No Description", "No Time Spent", "No Issues Linked", "No Unit Tests", "Failed Pipeline"]], width="stretch")
+        else:
+            st.success("All analyzed Merge Requests are compliant!")
+
     # Issues
     st.markdown("---")
     st.subheader("⚠️ Issues")
