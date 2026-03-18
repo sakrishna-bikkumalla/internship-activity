@@ -19,6 +19,7 @@ Session state keys (all prefixed _lb_ except "teams" and "edit_team_index"):
 import copy
 import datetime
 import io
+import statistics
 
 import pandas as pd
 import streamlit as st
