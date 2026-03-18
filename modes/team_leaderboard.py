@@ -26,6 +26,103 @@ import streamlit as st
 from gitlab_utils.batch import process_batch_users
 
 # ---------------------------------------------------------------------------
+# Default Teams (pre-configured)
+# ---------------------------------------------------------------------------
+
+BACKEND_TEAMS: list[dict] = [
+    {
+        "team_name": "Dev 3",
+        "project_name": "Dev 3",
+        "members": [
+            {"name": "Sai Krishna", "username": "saikrishna_b", "user_id": None},
+            {"name": "Bhavitha", "username": "MohanaSriBhavitha", "user_id": None},
+            {"name": "Madavarapu Sai Harshavardhan", "username": "Saiharshavardhan", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "Trinity",
+        "project_name": "Trinity",
+        "members": [
+            {"name": "Praneeth Ashish", "username": "praneethashish", "user_id": None},
+            {"name": "Vaishnavi Prabhala", "username": "vai5h", "user_id": None},
+            {"name": "Greeshma Kanukunta", "username": "kanukuntagreeshma2004", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "Sudo",
+        "project_name": "Sudo",
+        "members": [
+            {"name": "Balannagari Vandana Reddy", "username": "vandana1735", "user_id": None},
+            {"name": "Rajuldev Vandana", "username": "vandana_rajuldev", "user_id": None},
+            {"name": "Challa lakshmi Pavani", "username": "lakshmipavani_20", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "Trishul",
+        "project_name": "Trishul",
+        "members": [
+            {"name": "Mukthananad Reddy", "username": "Mukthanand21", "user_id": None},
+            {"name": "Lanke Shanmukha Varma", "username": "Shanmukh16", "user_id": None},
+            {"name": "Maddula Rushika Sritha", "username": "Rushika_1105", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "BrainStorm",
+        "project_name": "BrainStorm",
+        "members": [
+            {"name": "Daliboina satish", "username": "satish05", "user_id": None},
+            {"name": "Damanagari Sathwika", "username": "Sathwikareddy_Damanagari", "user_id": None},
+            {"name": "C.Sahasra", "username": "Sahasraa", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "Core",
+        "project_name": "Core",
+        "members": [
+            {"name": "Abhilash", "username": "Abhilash653", "user_id": None},
+            {"name": "kanda swarna rathna madhuri", "username": "swarna_4539", "user_id": None},
+            {"name": "Laxman Reddy", "username": "laxmanredddypatlolla", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "Magnum",
+        "project_name": "Magnum",
+        "members": [
+            {"name": "Lagichetty Kushal", "username": "LagichettyKushal", "user_id": None},
+            {"name": "Lakshy Yarlagadda", "username": "Lakshy", "user_id": None},
+            {"name": "Nagi Reddy Pavani", "username": "pavaninagireddi", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "TrioForce",
+        "project_name": "TrioForce",
+        "members": [
+            {"name": "Aravindswamy", "username": "aravindswamy", "user_id": None},
+            {"name": "Suma Reddy", "username": "Suma2304", "user_id": None},
+            {"name": "Koushik Reddy", "username": "koushik_18", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "Techops",
+        "project_name": "Techops",
+        "members": [
+            {"name": "Prabhu kumari", "username": "kumari123", "user_id": None},
+            {"name": "Habiba", "username": "Habeebunissa", "user_id": None},
+            {"name": "Chesetti Sai Jeevana Jyothi", "username": "jeevana_31", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "Mind ops",
+        "project_name": "Mind ops",
+        "members": [
+            {"name": "Bhaskar", "username": "Bhaskar_Battula", "user_id": None},
+            {"name": "Sai Teja", "username": "saiteja3005", "user_id": None},
+            {"name": "Satya Pranavanadh", "username": "Pranav_rs", "user_id": None},
+        ],
+    },
+]
+
+# ---------------------------------------------------------------------------
 # Session State Bootstrap
 # ---------------------------------------------------------------------------
 
@@ -33,7 +130,7 @@ from gitlab_utils.batch import process_batch_users
 def _init_state() -> None:
     """Initialise all session-state keys used by this module. Safe to call repeatedly."""
     defaults: dict = {
-        "teams": [],
+        "teams": copy.deepcopy(BACKEND_TEAMS),  # Pre-load with default teams
         "edit_team_index": None,
         "_lb_show_create_form": False,
         "_lb_show_upload_form": False,
