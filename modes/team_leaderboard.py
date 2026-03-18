@@ -496,6 +496,8 @@ def _render_create_team_form() -> None:
             st.session_state["_lb_draft_members"] = []
             st.session_state["_lb_show_create_form"] = False
             st.session_state["_lb_triggered"] = False
+            st.session_state["_lb_cached_results"] = None  # invalidate cache
+            st.session_state["_lb_last_filters"] = None
             st.success(f'✅ Team **"{team_name}"** saved!')
             st.rerun()
 
@@ -624,6 +626,8 @@ def _render_edit_form(edit_idx: int) -> None:
                 st.session_state["edit_team_index"] = None
                 st.session_state["_lb_edit_draft"] = {}
                 st.session_state["_lb_triggered"] = False  # require re-run after edit
+                st.session_state["_lb_cached_results"] = None  # invalidate cache
+                st.session_state["_lb_last_filters"] = None
                 st.success(f'✅ Team **"{new_team_name}"** updated!')
                 st.rerun()
 
@@ -682,6 +686,8 @@ def _render_teams_overview() -> None:
                     st.session_state["edit_team_index"] = None
                     st.session_state["_lb_edit_draft"] = {}
                 st.session_state["_lb_triggered"] = False
+                st.session_state["_lb_cached_results"] = None  # invalidate cache
+                st.session_state["_lb_last_filters"] = None
                 st.rerun()
 
 
@@ -1317,47 +1323,71 @@ def render_team_leaderboard(client) -> None:
         st.info("Click **▶️ Run Leaderboard Analysis** to fetch data for all teams.")
         return
 
-    # ── Fetch ─────────────────────────────────────────────────────────────
-    team_data: dict = {}
-    progress = st.progress(0, text="Fetching team data…")
+    # ── Cache key: fingerprint of current teams + date filters ────────────
+    current_filters = {
+        "teams": [
+            {
+                "team_name": t["team_name"],
+                "project_name": t.get("project_name", ""),
+                "members": sorted([m["username"] for m in t.get("members", []) if m.get("username")]),
+            }
+            for t in teams
+        ],
+        "since": since_iso,
+        "until": until_iso,
+    }
 
-    for idx, team in enumerate(teams):
-        team_name = team["team_name"]
-        project_name = team.get("project_name", "")
-        usernames = [m["username"] for m in team.get("members", []) if m.get("username")]
+    cached_results = st.session_state.get("_lb_cached_results")
+    last_filters = st.session_state.get("_lb_last_filters")
 
-        if not usernames:
-            team_data[team_name] = (team, [], _aggregate_team_totals([]))
-            progress.progress((idx + 1) / len(teams), text=f"Skipped: {team_name}")
-            continue
+    # If cache is valid and filters haven't changed, reuse cached data
+    if cached_results is not None and last_filters == current_filters and not run_button_clicked:
+        team_data = cached_results
+    else:
+        # ── Fetch ─────────────────────────────────────────────────────────
+        team_data = {}
+        progress = st.progress(0, text="Fetching team data…")
 
-        with st.spinner(f"Fetching **{team_name}** ({len(usernames)} member(s))…"):
-            try:
-                results = process_batch_users(
-                    client,
-                    usernames,
-                    since=since_iso,
-                    until=until_iso,
-                )
-            except Exception as exc:
-                st.warning(f"⚠️ Could not fetch data for **{team_name}**: {exc}")
-                results = []
+        for idx, team in enumerate(teams):
+            team_name = team["team_name"]
+            project_name = team.get("project_name", "")
+            usernames = [m["username"] for m in team.get("members", []) if m.get("username")]
 
-        member_rows = [_extract_member_row(r) for r in results if r]
-        totals = _aggregate_team_totals(member_rows)
-        team_data[team_name] = (team, member_rows, totals)
-        progress.progress((idx + 1) / len(teams), text=f"Done: {team_name}")
+            if not usernames:
+                team_data[team_name] = (team, [], _aggregate_team_totals([]))
+                progress.progress((idx + 1) / len(teams), text=f"Skipped: {team_name}")
+                continue
 
-    progress.empty()
+            with st.spinner(f"Fetching **{team_name}** ({len(usernames)} member(s))…"):
+                try:
+                    results = process_batch_users(
+                        client,
+                        usernames,
+                        since=since_iso,
+                        until=until_iso,
+                    )
+                except Exception as exc:
+                    st.warning(f"⚠️ Could not fetch data for **{team_name}**: {exc}")
+                    results = []
 
-    if not team_data:
-        st.error("No team data could be fetched. Check your GitLab connection.")
-        return
+            member_rows = [_extract_member_row(r) for r in results if r]
+            totals = _aggregate_team_totals(member_rows)
+            team_data[team_name] = (team, member_rows, totals)
+            progress.progress((idx + 1) / len(teams), text=f"Done: {team_name}")
 
-    # Cache ranking rows for the Ranking page
-    st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(team_data)
-    st.session_state["_lb_last_individual_rows"] = _build_individual_rows(team_data)
+        progress.empty()
 
+        if not team_data:
+            st.error("No team data could be fetched. Check your GitLab connection.")
+            return
+
+        # Store results and filters in cache
+        st.session_state["_lb_cached_results"] = team_data
+        st.session_state["_lb_last_filters"] = current_filters
+
+        # Cache ranking rows for the Ranking page
+        st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(team_data)
+        st.session_state["_lb_last_individual_rows"] = _build_individual_rows(team_data)
 
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
