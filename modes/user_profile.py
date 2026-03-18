@@ -124,6 +124,13 @@ def render_user_profile(client, simple_user_info):
             client, project_ids_to_check, name
         )
 
+        avg_desc_score = 0
+        total_eval = live_stats.get("Total MRs Evaluated", 0)
+        if total_eval > 0:
+            avg_desc_score = int(live_stats.get("Total Desc Score", 0) / total_eval)
+
+        st.markdown(f"**Average MR Description Quality:** {avg_desc_score}/100")
+
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("No Description", live_stats.get("No Description", 0))
         c2.metric("No Time Spent", live_stats.get("No Time Spent", 0))
@@ -159,6 +166,9 @@ def render_user_profile(client, simple_user_info):
                         "No Issues Linked",
                         "No Unit Tests",
                         "Failed Pipeline",
+                        "Desc Score",
+                        "Quality",
+                        "Feedback",
                     ]
                 ],
                 width="stretch",

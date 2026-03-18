@@ -1,3 +1,6 @@
+from gitlab_utils.description_quality import analyze_description
+
+
 def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
     """
     Fetch Merge Requests:
@@ -90,6 +93,8 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
         "No Issues Linked": 0,
         "No Time Spent": 0,
         "No Unit Tests": 0,
+        "Total Desc Score": 0,
+        "Total MRs Evaluated": 0,
     }
 
     problematic_mrs = []
@@ -115,7 +120,11 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                     no_time_spent = False
                     no_unit_tests = False
 
-                    # a) No Description
+                    # a) No Description & Description Quality
+                    desc_quality = analyze_description(mr.description)
+                    stats["Total Desc Score"] += desc_quality["description_score"]
+                    stats["Total MRs Evaluated"] += 1
+
                     if not mr.description or str(mr.description).strip() == "":
                         no_desc = True
                         stats["No Description"] += 1
@@ -167,8 +176,8 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                         no_unit_tests = True
                         stats["No Unit Tests"] += 1
 
-                    # Collect problematic MRs
-                    if no_desc or failed_pipeline or no_issues or no_time_spent or no_unit_tests:
+                    # Collect problematic MRs (include those with Moderate/Low description score)
+                    if no_desc or failed_pipeline or no_issues or no_time_spent or no_unit_tests or desc_quality["description_score"] < 80:
                         problematic_mrs.append(
                             {
                                 "Title": mr.title,
@@ -178,6 +187,9 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                                 "No Issues Linked": no_issues,
                                 "No Unit Tests": no_unit_tests,
                                 "Failed Pipeline": failed_pipeline,
+                                "Desc Score": desc_quality["description_score"],
+                                "Quality": desc_quality["quality_label"],
+                                "Feedback": desc_quality["feedback"],
                             }
                         )
 
