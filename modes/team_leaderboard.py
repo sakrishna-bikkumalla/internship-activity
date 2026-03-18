@@ -120,6 +120,23 @@ BACKEND_TEAMS: list[dict] = [
             {"name": "Satya Pranavanadh", "username": "Pranav_rs", "user_id": None},
         ],
     },
+    {
+        "team_name": "code dev",
+        "project_name": "code dev",
+        "members": [
+            {"name": "", "username": "klaxmi1908", "user_id": None},
+            {"name": "", "username": "prav2702", "user_id": None},
+        ],
+    },
+    {
+        "team_name": "spk",
+        "project_name": "spk",
+        "members": [
+            {"name": "", "username": "Pavani_Pothuganti", "user_id": None},
+            {"name": "", "username": "SandhyaRani_111", "user_id": None},
+            {"name": "", "username": "Kaveri_Mamidi", "user_id": None},
+        ],
+    },
 ]
 
 # ---------------------------------------------------------------------------

@@ -23,9 +23,7 @@ koushik_18
 kumari123
 Habeebunissa
 Bhaskar_Battula
-Pranav_rs
-Pavani_Pothuganti
-prav2702"""
+Pranav_rs"""
 
 DEFAULT_RCTS_USERS = """vai5h
 Saiharshavardhan
@@ -39,8 +37,8 @@ saiteja3005
 SandhyaRani_111
 klaxmi1908
 Kaveri_Mamidi
-dasari_Askhaya
-Ashritha_P"""
+Pavani_Pothuganti
+prav2702"""
 
 def render_batch_mode_ui(client, report_type):
     st.subheader(f"🚀 Batch Analytics - {report_type}")
