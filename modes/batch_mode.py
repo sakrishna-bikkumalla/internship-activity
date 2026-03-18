@@ -38,8 +38,7 @@ saiteja3005
 SandhyaRani_111
 klaxmi1908
 Kaveri_Mamidi
-Pavani_Pothuganti
-prav2702"""
+Pavani_Pothuganti"""
 
 def render_batch_mode_ui(client, report_type):
     st.subheader(f"🚀 Batch Analytics - {report_type}")
