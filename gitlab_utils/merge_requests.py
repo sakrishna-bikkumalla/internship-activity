@@ -50,6 +50,7 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
                 if item["id"] not in seen_ids:
                     state = item.get("state")
 
+                    desc_quality = analyze_description(item.get("description", ""))
                     mrs_list.append(
                         {
                             "title": item.get("title"),
@@ -58,6 +59,9 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
                             "state": state,
                             "created_at": item.get("created_at"),
                             "role": role_label,
+                            "desc_score": desc_quality["description_score"],
+                            "quality": desc_quality["quality_label"],
+                            "feedback": desc_quality["feedback"],
                         }
                     )
                     seen_ids.add(item["id"])
@@ -176,8 +180,8 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                         no_unit_tests = True
                         stats["No Unit Tests"] += 1
 
-                    # Collect problematic MRs (include those with Moderate/Low description score)
-                    if no_desc or failed_pipeline or no_issues or no_time_spent or no_unit_tests or desc_quality["description_score"] < 80:
+                    # Collect problematic MRs
+                    if no_desc or failed_pipeline or no_issues or no_time_spent or no_unit_tests:
                         problematic_mrs.append(
                             {
                                 "Title": mr.title,
@@ -187,9 +191,6 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                                 "No Issues Linked": no_issues,
                                 "No Unit Tests": no_unit_tests,
                                 "Failed Pipeline": failed_pipeline,
-                                "Desc Score": desc_quality["description_score"],
-                                "Quality": desc_quality["quality_label"],
-                                "Feedback": desc_quality["feedback"],
                             }
                         )
 

@@ -112,7 +112,12 @@ def render_user_profile(client, simple_user_info):
     if user_mrs:
         with st.expander("View MR Details"):
             df_mrs = pd.DataFrame(user_mrs)
-            st.dataframe(df_mrs[["title", "role", "state", "created_at"]], width="stretch")
+            st.dataframe(
+                df_mrs[
+                    ["title", "role", "state", "desc_score", "quality", "feedback", "created_at"]
+                ],
+                width="stretch",
+            )
 
     st.markdown("---")
     st.subheader("🔍 MR Compliance (Live API)")
@@ -166,9 +171,6 @@ def render_user_profile(client, simple_user_info):
                         "No Issues Linked",
                         "No Unit Tests",
                         "Failed Pipeline",
-                        "Desc Score",
-                        "Quality",
-                        "Feedback",
                     ]
                 ],
                 width="stretch",
