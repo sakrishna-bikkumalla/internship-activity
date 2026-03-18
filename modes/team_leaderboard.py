@@ -1198,7 +1198,7 @@ def render_team_leaderboard(client) -> None:
         """
         <style>
         /* Target buttons following the toggle marker */
-        div:has(> .lb-toggle-container) + div button {
+        div:has(.lb-toggle-container) + div button {
             border-radius: 10px !important;
             font-weight: 600 !important;
             padding: 0.75rem 1rem !important;
@@ -1208,26 +1208,26 @@ def render_team_leaderboard(client) -> None:
         }
 
         /* Active Toggle (Primary) */
-        div:has(> .lb-toggle-container) + div button[kind="primary"] {
+        div:has(.lb-toggle-container) + div button[kind="primary"] {
             background-color: #d32f2f !important;
             color: white !important;
             box-shadow: 0 4px 12px rgba(211, 47, 47, 0.4) !important;
         }
 
         /* Inactive Toggle (Secondary) */
-        div:has(> .lb-toggle-container) + div button[kind="secondary"] {
+        div:has(.lb-toggle-container) + div button[kind="secondary"] {
             background-color: #2c2c2c !important;
             color: #888 !important;
         }
 
-        div:has(> .lb-toggle-container) + div button[kind="secondary"]:hover {
+        div:has(.lb-toggle-container) + div button[kind="secondary"]:hover {
             background-color: #3d3d3d !important;
             color: #fff !important;
             transform: translateY(-1px);
         }
 
         /* Target button following the run marker */
-        div:has(> .lb-run-btn) + div button {
+        div:has(.lb-run-btn) + div button {
             border-radius: 10px !important;
             font-weight: 700 !important;
             padding: 0.8rem !important;
@@ -1240,7 +1240,7 @@ def render_team_leaderboard(client) -> None:
             height: 3.5rem !important;
         }
 
-        div:has(> .lb-run-btn) + div button:hover {
+        div:has(.lb-run-btn) + div button:hover {
             background-color: #b71c1c !important;
             transform: translateY(-2px);
             box-shadow: 0 6px 16px rgba(183, 28, 28, 0.5) !important;
@@ -1278,6 +1278,10 @@ def render_team_leaderboard(client) -> None:
 
     page = st.session_state["_lb_page"]
     st.divider()
+
+    if page == "Leaderboard Ranking":
+        _render_ranking_page()
+        return
 
     # ── Section 1: Create Team ────────────────────────────────────────────
     _render_create_team_form()

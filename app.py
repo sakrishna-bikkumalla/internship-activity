@@ -21,6 +21,7 @@ try:
     from modes.compliance_mode import render_compliance_mode
     from modes.user_profile import render_user_profile
     from modes.batch_mode import render_batch_mode_ui
+    from modes.team_leaderboard import render_team_leaderboard
 
 except ImportError as e:
     st.error(f"Import Error: {e}")
@@ -44,6 +45,7 @@ def main():
         [
             "Check Project Compliance",
             "User Profile Overview",
+            "Team Leaderboard",
             "Batch 2026 ICFAI",
             "Batch 2026 RCTS",
         ],
@@ -92,6 +94,9 @@ def main():
 
     elif mode == "Batch 2026 RCTS":
         render_batch_mode_ui(client, "RCTS")
+
+    elif mode == "Team Leaderboard":
+        render_team_leaderboard(client)
 
 if __name__ == "__main__":
     main()

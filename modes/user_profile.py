@@ -124,6 +124,13 @@ def render_user_profile(client, simple_user_info):
         st.markdown("### ⚠️ Non-Compliant Merge Requests")
         if prob_mrs:
             df_prob = pd.DataFrame(prob_mrs)
+
+            # Map boolean compliance values to professional color indicators
+            bool_cols = ["No Description", "No Time Spent", "No Issues Linked", "No Unit Tests", "Failed Pipeline"]
+            for col in bool_cols:
+                if col in df_prob.columns:
+                    df_prob[col] = df_prob[col].map({True: "✅", False: "", "True": "✅", "False": ""})
+
             st.dataframe(df_prob[["Title", "State", "No Description", "No Time Spent", "No Issues Linked", "No Unit Tests", "Failed Pipeline"]], width="stretch")
         else:
             st.success("All analyzed Merge Requests are compliant!")
