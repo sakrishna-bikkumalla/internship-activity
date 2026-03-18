@@ -20,6 +20,7 @@ import copy
 import datetime
 import io
 import statistics
+from html import escape
 
 import pandas as pd
 import streamlit as st
@@ -37,7 +38,11 @@ BACKEND_TEAMS: list[dict] = [
         "members": [
             {"name": "Sai Krishna", "username": "saikrishna_b", "user_id": None},
             {"name": "Bhavitha", "username": "MohanaSriBhavitha", "user_id": None},
-            {"name": "Madavarapu Sai Harshavardhan", "username": "Saiharshavardhan", "user_id": None},
+            {
+                "name": "Madavarapu Sai Harshavardhan",
+                "username": "Saiharshavardhan",
+                "user_id": None,
+            },
         ],
     },
     {
@@ -72,7 +77,11 @@ BACKEND_TEAMS: list[dict] = [
         "project_name": "BrainStorm",
         "members": [
             {"name": "Daliboina satish", "username": "satish05", "user_id": None},
-            {"name": "Damanagari Sathwika", "username": "Sathwikareddy_Damanagari", "user_id": None},
+            {
+                "name": "Damanagari Sathwika",
+                "username": "Sathwikareddy_Damanagari",
+                "user_id": None,
+            },
             {"name": "C.Sahasra", "username": "Sahasraa", "user_id": None},
         ],
     },
@@ -392,18 +401,12 @@ def _validate_json_teams(raw: dict) -> tuple[list[dict] | None, str]:
             mname = member.get("name", "")
             musername = member.get("username", "")
             if not isinstance(musername, str) or not musername.strip():
-                return None, (
-                    f'Team "{tname}", member #{mi}: "username" is missing or empty.'
-                )
+                return None, (f'Team "{tname}", member #{mi}: "username" is missing or empty.')
             if not isinstance(mname, str):
-                return None, (
-                    f'Team "{tname}", member #{mi}: "name" must be a string.'
-                )
+                return None, (f'Team "{tname}", member #{mi}: "name" must be a string.')
             ukey = musername.strip().lower()
             if ukey in seen_usernames:
-                return None, (
-                    f'Team "{tname}": duplicate username "{musername}".'
-                )
+                return None, (f'Team "{tname}": duplicate username "{musername}".')
             seen_usernames.add(ukey)
 
     return teams, ""
@@ -424,15 +427,15 @@ def _render_json_upload() -> None:
         _SAMPLE_JSON = (
             "{"
             + '\n  "teams": ['
-            + '\n    {'
+            + "\n    {"
             + '\n      "team_name": "Team Alpha",'
             + '\n      "project_name": "Project A",'
             + '\n      "members": ['
             + '\n        { "name": "John", "username": "john123" }'
-            + '\n      ]'
-            + '\n    }'
-            + '\n  ]'
-            + '\n}'
+            + "\n      ]"
+            + "\n    }"
+            + "\n  ]"
+            + "\n}"
         )
         st.code(_SAMPLE_JSON, language="json")
 
@@ -467,13 +470,13 @@ def _render_json_upload() -> None:
         # Normalise member dicts (ensure user_id key exists)
         clean_teams = [
             {
-                "team_name":    t["team_name"].strip(),
+                "team_name": t["team_name"].strip(),
                 "project_name": t["project_name"].strip(),
                 "members": [
                     {
-                        "name":     m.get("name", "").strip(),
+                        "name": m.get("name", "").strip(),
                         "username": m["username"].strip(),
-                        "user_id":  m.get("user_id") or None,
+                        "user_id": m.get("user_id") or None,
                     }
                     for m in t["members"]
                 ],
@@ -486,7 +489,7 @@ def _render_json_upload() -> None:
         st.session_state["_lb_triggered"] = False
         st.success(
             f"✅ {len(clean_teams)} team(s) imported successfully: "
-            + ", ".join(f'**{t["team_name"]}**' for t in clean_teams)
+            + ", ".join(f"**{t['team_name']}**" for t in clean_teams)
         )
         st.rerun()
 
@@ -517,7 +520,8 @@ def _render_create_team_form() -> None:
 
     with btn_col2:
         upload_label = (
-            "✖ Cancel Upload" if st.session_state["_lb_show_upload_form"]
+            "✖ Cancel Upload"
+            if st.session_state["_lb_show_upload_form"]
             else "📂 Add All Teams Using JSON"
         )
         if st.button(upload_label, key="_lb_toggle_upload", use_container_width=True):
@@ -885,7 +889,6 @@ def _render_overall_leaderboard(team_data: dict) -> None:
     st.divider()
 
 
-
 def _build_ranking_rows(team_data: dict) -> list[dict]:
     """Create sorted ranking rows from already aggregated team totals."""
     rows = []
@@ -1219,7 +1222,9 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
                 badge_parts.append(
                     f'<div class="lb-badge">{svg}<span class="lb-badge-label">{escape(label)}</span></div>'
                 )
-        badge_html = f'<div class="lb-badges-row">{"".join(badge_parts)}</div>' if badge_parts else ""
+        badge_html = (
+            f'<div class="lb-badges-row">{"".join(badge_parts)}</div>' if badge_parts else ""
+        )
 
         table_rows.append(
             "<tr>"
@@ -1263,7 +1268,9 @@ def _render_ranking_page() -> None:
 
     ranked_rows = st.session_state.get("_lb_last_ranking_rows", [])
     if not ranked_rows:
-        st.info("No ranking data available yet. Go to **Workspace**, run analysis, then return here.")
+        st.info(
+            "No ranking data available yet. Go to **Workspace**, run analysis, then return here."
+        )
         return
 
     _render_ranking_table_html(ranked_rows)
@@ -1444,7 +1451,9 @@ def render_team_leaderboard(client) -> None:
             {
                 "team_name": t["team_name"],
                 "project_name": t.get("project_name", ""),
-                "members": sorted([m["username"] for m in t.get("members", []) if m.get("username")]),
+                "members": sorted(
+                    [m["username"] for m in t.get("members", []) if m.get("username")]
+                ),
             }
             for t in teams
         ],
@@ -1465,7 +1474,6 @@ def render_team_leaderboard(client) -> None:
 
         for idx, team in enumerate(teams):
             team_name = team["team_name"]
-            project_name = team.get("project_name", "")
             usernames = [m["username"] for m in team.get("members", []) if m.get("username")]
 
             if not usernames:

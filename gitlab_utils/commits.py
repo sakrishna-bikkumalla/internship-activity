@@ -43,46 +43,69 @@ def get_user_commits(client, user, projects, since=None, until=None):
             pid = project.get("id")
             pname = project.get("name_with_namespace")
 
-            # Fetch commits — apply date filter at API level when provided
-            api_params: dict = {"author": author_name or username, "all": True}
-            if since:
-                api_params["since"] = since
-            if until:
-                api_params["until"] = until
+            valid_project_commits = 0
 
-            commits_data = client._get_paginated(
-                f"/projects/{pid}/repository/commits",
-                params=api_params,
-                per_page=50,
-                max_pages=20,
-            )
+            # Build a list of author search terms to try
+            # GitLab's `author` param searches by name OR email (fuzzy match)
+            author_search_terms = []
+            if author_name:
+                author_search_terms.append(author_name)
+            if username and username not in author_search_terms:
+                author_search_terms.append(username)
+            # Fall back to email if nothing else
+            if not author_search_terms and author_email:
+                author_search_terms.append(author_email)
 
-            if commits_data:
-                valid_project_commits = 0
+            project_seen_shas = set()  # track per-term dedupe within a project
+
+            for search_term in author_search_terms:
+                api_params: dict = {"author": search_term, "all": True}
+                if since:
+                    api_params["since"] = since
+                if until:
+                    api_params["until"] = until
+
+                commits_data = client._get_paginated(
+                    f"/projects/{pid}/repository/commits",
+                    params=api_params,
+                    per_page=100,
+                    max_pages=20,
+                )
+
+                if not commits_data:
+                    continue
+
                 for c in commits_data:
                     sha = c.get("id")
+                    if not sha:
+                        continue
 
-                    # Validation
-                    c_author_name = c.get("author_name")
-                    c_author_email = c.get("author_email")
+                    # Skip duplicates across search terms within this project
+                    if sha in project_seen_shas:
+                        continue
+
+                    # Validation: match by author name, email, or username
+                    c_author_name = c.get("author_name", "") or ""
+                    c_author_email = c.get("author_email", "") or ""
 
                     is_match = False
-                    # Strict matching: exact author name OR exact author email only
-                    if author_name and c_author_name == author_name:
+                    if author_name and c_author_name.lower() == author_name.lower():
                         is_match = True
-                    elif author_email and c_author_email == author_email:
+                    elif author_email and c_author_email.lower() == author_email.lower():
                         is_match = True
                     elif username and (
-                        username in str(c_author_name).lower()
-                        or username in str(c_author_email).lower()
+                        username.lower() in c_author_name.lower()
+                        or username.lower() in c_author_email.lower()
                     ):
                         is_match = True
 
                     if not is_match:
                         continue
 
+                    project_seen_shas.add(sha)
                     valid_project_commits += 1
 
+                    # Skip commits already counted globally (across projects)
                     if sha in seen_shas:
                         continue
 
@@ -92,8 +115,12 @@ def get_user_commits(client, user, projects, since=None, until=None):
                     # Parse and Convert to IST
                     created_at_str = c.get("created_at")
                     try:
-                        dt_utc = dateutil.parser.isoparse(created_at_str)
-                        dt_ist = dt_utc.replace(tzinfo=timezone.utc).astimezone(ist)
+                        dt = dateutil.parser.isoparse(created_at_str)
+                        # If the parsed datetime is naive (no tzinfo), assume UTC
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        # Now safely convert to IST
+                        dt_ist = dt.astimezone(ist)
 
                         date_str = dt_ist.strftime("%Y-%m-%d")
                         time_str = dt_ist.strftime("%I:%M %p")
@@ -124,9 +151,12 @@ def get_user_commits(client, user, projects, since=None, until=None):
                         }
                     )
 
-                project_commit_counts[pid] = valid_project_commits
+            project_commit_counts[pid] = valid_project_commits
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(
+                f"Warning: Could not fetch commits for project {project.get('name_with_namespace', pid)}: {e}"
+            )
+            continue
 
     return all_commits, project_commit_counts, stats
