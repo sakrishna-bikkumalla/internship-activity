@@ -17,6 +17,7 @@ load_dotenv()
 try:
     from gitlab_utils import users
     from gitlab_utils.client import GitLabClient
+    from modes.bad_mrs_batch import render_bad_mrs_batch_ui
     from modes.batch_mode import render_batch_mode_ui
 
     # New UI Modules
@@ -50,6 +51,7 @@ def main():
             "Team Leaderboard",
             "Batch 2026 ICFAI",
             "Batch 2026 RCTS",
+            "BAD MRs (Batch)",
         ],
     )
 
@@ -99,6 +101,9 @@ def main():
 
     elif mode == "Team Leaderboard":
         render_team_leaderboard(client)
+
+    elif mode == "BAD MRs (Batch)":
+        render_bad_mrs_batch_ui(client)
 
 
 if __name__ == "__main__":

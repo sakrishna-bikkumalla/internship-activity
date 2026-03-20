@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from gitlab_utils import commits, groups, issues, merge_requests, projects
+from gitlab_utils import batch
 
 
 def render_user_profile(client, simple_user_info):
@@ -27,32 +27,28 @@ def render_user_profile(client, simple_user_info):
         st.markdown(f"### {name} (@{username})")
         st.markdown(f"**ID:** {user_id} | [GitLab Profile]({web_url})")
 
-    # Fetch Data
-    with st.spinner("Fetching comprehensive user data..."):
-        # 1. Projects
-        proj_data = projects.get_user_projects(client, user_id, username)
+    # Fetch Data concurrently via the batch engine
+    with st.spinner("Fetching comprehensive user data in parallel..."):
+        user_data = batch.process_single_user(client, username)
 
-        # 2. Commits - Passing full simple_user_info
-        all_projs = proj_data["all"]
-        all_commits, commit_counts, commit_stats = commits.get_user_commits(
-            client, simple_user_info, all_projs
-        )
+    if not user_data or user_data.get("status") != "Success":
+        st.error(f"Error fetching data: {user_data.get('error', 'Unknown error')}")
+        return
 
-        verified_contributed = []
-        for p in proj_data["contributed"]:
-            if commit_counts.get(p["id"], 0) > 0:
-                verified_contributed.append(p)
+    # Extract data from the resulting dict
+    data = user_data["data"]
+    proj_data = data["projects"]
+    all_commits = data["commits"]
+    commit_stats = data["commit_stats"]
+    user_groups = data["groups"]
+    user_mrs = data["mrs"]
+    mr_stats = data["mr_stats"]
+    user_issues = data["issues"]
+    issue_stats = data["issue_stats"]
 
-        personal_projects = proj_data["personal"]
-
-        # 3. Groups
-        user_groups = groups.get_user_groups(client, user_id)
-
-        # 4. MRs
-        user_mrs, mr_stats = merge_requests.get_user_mrs(client, user_id)
-
-        # 5. Issues
-        user_issues, issue_stats = issues.get_user_issues(client, user_id)
+    # Projects classification
+    personal_projects = proj_data["personal"]
+    verified_contributed = proj_data["contributed"]
 
     # --- Display ---
 
@@ -113,70 +109,9 @@ def render_user_profile(client, simple_user_info):
         with st.expander("View MR Details"):
             df_mrs = pd.DataFrame(user_mrs)
             st.dataframe(
-                df_mrs[
-                    ["title", "role", "state", "desc_score", "quality", "feedback", "created_at"]
-                ],
+                df_mrs[["title", "role", "state", "created_at"]],
                 width="stretch",
             )
-
-    st.markdown("---")
-    st.subheader("🔍 MR Compliance (Live API)")
-    with st.spinner(f"Fetching Live MR Compliance API for {name}..."):
-        project_ids_to_check = [p["id"] for p in personal_projects] + [
-            p["id"] for p in verified_contributed
-        ]
-        live_stats, prob_mrs = merge_requests.get_single_user_live_mr_compliance(
-            client, project_ids_to_check, name
-        )
-
-        avg_desc_score = 0
-        total_eval = live_stats.get("Total MRs Evaluated", 0)
-        if total_eval > 0:
-            avg_desc_score = int(live_stats.get("Total Desc Score", 0) / total_eval)
-
-        st.markdown(f"**Average MR Description Quality:** {avg_desc_score}/100")
-
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("No Description", live_stats.get("No Description", 0))
-        c2.metric("No Time Spent", live_stats.get("No Time Spent", 0))
-        c3.metric("No Issues Linked", live_stats.get("No Issues Linked", 0))
-        c4.metric("No Unit Tests", live_stats.get("No Unit Tests", 0))
-        c5.metric("Failed Pipelines", live_stats.get("Failed Pipelines", 0))
-
-        st.markdown("### ⚠️ Non-Compliant Merge Requests")
-        if prob_mrs:
-            df_prob = pd.DataFrame(prob_mrs)
-
-            # Map boolean compliance values to professional color indicators
-            bool_cols = [
-                "No Description",
-                "No Time Spent",
-                "No Issues Linked",
-                "No Unit Tests",
-                "Failed Pipeline",
-            ]
-            for col in bool_cols:
-                if col in df_prob.columns:
-                    df_prob[col] = df_prob[col].map(
-                        {True: "✅", False: "", "True": "✅", "False": ""}
-                    )
-
-            st.dataframe(
-                df_prob[
-                    [
-                        "Title",
-                        "State",
-                        "No Description",
-                        "No Time Spent",
-                        "No Issues Linked",
-                        "No Unit Tests",
-                        "Failed Pipeline",
-                    ]
-                ],
-                width="stretch",
-            )
-        else:
-            st.success("All analyzed Merge Requests are compliant!")
 
     # Issues
     st.markdown("---")

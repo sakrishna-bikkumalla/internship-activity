@@ -1,23 +1,32 @@
+import concurrent.futures
+
 def get_user_projects(client, user_id, username):
     """
     Fetches all projects for a user and classifies them into Personal and Contributed.
+    Uses ThreadPoolExecutor to run API calls concurrently.
     """
     try:
-        # Fetch projects where user is a member
-        # User request: "GET /projects?membership=true"
-        # This catches projects the user has access to (member or owner).
+        # Step 1 & 2: Fetch projects and events concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            # 1. projects member
+            f_projects = executor.submit(
+                client._get_paginated,
+                f"/users/{user_id}/projects",
+                params={"simple": "true"},
+                per_page=50,
+                max_pages=10
+            )
+            # 2. projects from events
+            f_events = executor.submit(
+                client._get_paginated,
+                f"/users/{user_id}/events",
+                params={"action": "pushed"},
+                per_page=50,
+                max_pages=5
+            )
 
-        # We need paginated results for potentially many projects.
-        # 1. Fetch direct projects
-        projects_data = client._get_paginated(
-            f"/users/{user_id}/projects", params={"simple": "true"}, per_page=50, max_pages=10
-        )
-
-        # 2. Fetch projects from Events (Contribution discovery)
-        # This catches projects user pushed to but might not be returned by /projects
-        events_data = client._get_paginated(
-            f"/users/{user_id}/events", params={"action": "pushed"}, per_page=50, max_pages=5
-        )
+            projects_data = f_projects.result() or []
+            events_data = f_events.result() or []
 
         seen_ids = set()
         unique_projects = []
@@ -27,20 +36,26 @@ def get_user_projects(client, user_id, username):
                 unique_projects.append(p)
                 seen_ids.add(p["id"])
 
-        # Fetch extra projects found in events
+        # Collect event project IDs that aren't already seen
         event_project_ids = set()
         for e in events_data:
             pid = e.get("project_id")
             if pid and pid not in seen_ids:
                 event_project_ids.add(pid)
 
-        for pid in event_project_ids:
-            # Fetch the project object for this ID
-            p_extra = client._get(f"/projects/{pid}", params={"simple": "true"})
-            if p_extra and isinstance(p_extra, dict) and "id" in p_extra:
-                if p_extra["id"] not in seen_ids:
-                    unique_projects.append(p_extra)
-                    seen_ids.add(p_extra["id"])
+        # Step 3: Fetch extra project details concurrently
+        if event_project_ids:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_pid = {
+                    executor.submit(client._get, f"/projects/{pid}", params={"simple": "true"}): pid
+                    for pid in event_project_ids
+                }
+                for future in concurrent.futures.as_completed(future_to_pid):
+                    p_extra = future.result()
+                    if p_extra and isinstance(p_extra, dict) and "id" in p_extra:
+                        if p_extra["id"] not in seen_ids:
+                            unique_projects.append(p_extra)
+                            seen_ids.add(p_extra["id"])
 
         personal = []
         contributed = []

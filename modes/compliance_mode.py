@@ -1,3 +1,4 @@
+import concurrent.futures
 import http.client
 import time
 from urllib.parse import urlparse
@@ -448,7 +449,8 @@ def render_batch_project_compliance_internal(gl_client):
         results = []
         progress_bar = st.progress(0)
 
-        for i, line in enumerate(lines):
+        def _process_line(line):
+            """Worker to process a single project line."""
             try:
                 pid = extract_path_from_url(line)
                 project = get_project_with_retries(gl_client, pid)
@@ -468,16 +470,17 @@ def render_batch_project_compliance_internal(gl_client):
                     or report.get("merge_request_templates_folder")
                     else "❌",
                 }
-
                 if report.get("error"):
                     row["Error"] = report["error"]
-
-                results.append(row)
-
+                return row
             except Exception as e:
-                results.append({"Project": line, "Error": str(e)})
+                return {"Project": line, "Error": str(e)}
 
-            progress_bar.progress((i + 1) / len(lines))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_line = {executor.submit(_process_line, line): line for line in lines}
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_line)):
+                results.append(future.result())
+                progress_bar.progress((i + 1) / len(lines))
 
         if results:
             st.write("### 📊 Batch Summary")
