@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Test script to verify the changes made to app.py:
 1. File categories functionality is removed
