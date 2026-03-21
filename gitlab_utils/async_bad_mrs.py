@@ -97,20 +97,31 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
             if hp and isinstance(hp, dict) and hp.get("status") == "failed":
                 flags["failed_pipe"] = True
 
-        if not ts or ts.get("total_time_spent", 0) == 0: flags["no_time"] = True
+        # Accuracy fix: Only flag as 'bad' if we got a valid response showing 0 time.
+        # If fetch failed (ts is None), we don't flag to avoid false positives.
+        if ts and isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
+            flags["no_time"] = True
 
+        # Improved Issue Linking: Check linked issues list AND description for various patterns
         has_linked_issue = bool(iss)
         if not has_linked_issue:
             desc_total = (mr.get("description") or "") + " " + (full_mr.get("description") or "" if full_mr else "")
-            if re.search(r"#\d+", desc_total):
+            # GitLab supports many patterns: #123, Related to #123, Fixes #123, etc.
+            if re.search(r"(?:#\d+|fixes|closes|resolves|related to|refs)\s*#?\d+", desc_total, re.IGNORECASE):
                 has_linked_issue = True
 
         if not has_linked_issue:
             flags["no_issues"] = True
 
+        # Improved Unit Test Detection: Check BOTH new_path and old_path
         h_tests = False
         if chg and isinstance(chg, dict):
-            h_tests = any("test" in str(c.get("new_path","")).lower() or "spec" in str(c.get("new_path","")).lower() for c in chg.get("changes", []))
+            for c in chg.get("changes", []):
+                new_p = str(c.get("new_path","")).lower()
+                old_p = str(c.get("old_path","")).lower()
+                if "test" in new_p or "spec" in new_p or "test" in old_p or "spec" in old_p:
+                    h_tests = True
+                    break
         if not h_tests: flags["no_unit_tests"] = True
 
     except Exception as e:
@@ -125,7 +136,8 @@ async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore
         return []
 
     uid = u_data[0]["id"]
-    mrs = await fetch_json(session, f"{api_base}/merge_requests", sem, headers=headers, params={"author_id": str(uid), "scope": "all", "per_page": "20", "page": "1"})
+    # Accuracy over Speed: Fetch 100 MRs instead of 20
+    mrs = await fetch_json(session, f"{api_base}/merge_requests", sem, headers=headers, params={"author_id": str(uid), "scope": "all", "per_page": "100", "page": "1"})
 
     if not mrs:
         return []
@@ -164,13 +176,16 @@ async def _run_batch(client, usernames: list[str]) -> list[dict]:
         for uname, f in eval_results:
             if uname in result_map:
                 row = result_map[uname]
-                if f.get("is_closed"): row["Closed MRs"] += 1
-                if f.get("no_desc"): row["No Description"] += 1
-                if f.get("improper_desc"): row["Improper Description"] += 1
-                if f.get("no_issues"): row["No Issues Linked"] += 1
-                if f.get("no_time"): row["No Time Spent"] += 1
-                if f.get("no_unit_tests"): row["No Unit Tests"] += 1
-                if f.get("failed_pipe"): row["Failed Pipeline"] += 1
+                # CRITICAL FIX: Only count BAD MR metrics for MRs that are actually Closed/Merged.
+                # This ensures the totals align with the "Closed MRs" column.
+                if f.get("is_closed"):
+                    row["Closed MRs"] += 1
+                    if f.get("no_desc"): row["No Description"] += 1
+                    if f.get("improper_desc"): row["Improper Description"] += 1
+                    if f.get("no_issues"): row["No Issues Linked"] += 1
+                    if f.get("no_time"): row["No Time Spent"] += 1
+                    if f.get("no_unit_tests"): row["No Unit Tests"] += 1
+                    if f.get("failed_pipe"): row["Failed Pipeline"] += 1
 
     print(f"DEBUG: Async batch fetch complete. Results for {len(result_map)} users.")
     return sorted(result_map.values(), key=lambda r: r["Closed MRs"], reverse=True)
