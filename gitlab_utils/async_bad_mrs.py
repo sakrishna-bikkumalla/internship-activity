@@ -2,17 +2,23 @@
 async_bad_mrs.py
 ~~~~~~~~~~~~~~~~
 RELIABILITY-FIRST BAD MRs engine.
-- Sequential User ID lookups with aggressive retries.
+Rewritten with full native asyncio/aiohttp concurrency for maximum speed.
+- Parallel User ID lookups.
 - Capped scan depth (20 MRs per user) for guaranteed speed.
-- Smart evaluation: only sub-resource fetch if necessary.
+- Smart evaluation: concurrent sub-resource fetching.
 """
 
 from __future__ import annotations
 
-import concurrent.futures
-import time
+import asyncio
+import aiohttp
+import re
+import nest_asyncio
 
 from gitlab_utils.description_quality import analyze_description
+
+# Allow asyncio loops to be nested, making it Streamlit-safe
+nest_asyncio.apply()
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -34,7 +40,30 @@ _ZERO_ROW = {
     "No Unit Tests": 0, "Failed Pipeline": 0,
 }
 
-def _evaluate_single_mr(client, mr: dict) -> tuple[str, dict]:
+async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Semaphore, **kwargs):
+    retries = 3
+    for attempt in range(retries):
+        async with sem:
+            try:
+                # SSL False for enterprise compatibility if needed
+                async with session.get(url, ssl=False, **kwargs) as resp:
+                    if resp.status == 429:
+                        await asyncio.sleep(3 ** attempt) # aggressive backoff
+                        continue
+                    if resp.status == 200:
+                        return await resp.json()
+                    elif resp.status == 204:
+                        return None
+                    else:
+                        return None
+            except Exception as e:
+                if attempt == retries - 1:
+                    print(f"Error fetching {url}: {e}")
+                    return None
+                await asyncio.sleep(1)
+    return None
+
+async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semaphore, base_url: str, headers: dict, mr: dict) -> tuple[str, dict]:
     uname = mr.get("_username", "unknown")
     pid, iid = mr["project_id"], mr["iid"]
     flags = {
@@ -44,7 +73,6 @@ def _evaluate_single_mr(client, mr: dict) -> tuple[str, dict]:
     }
 
     try:
-        # Description is in list response - check it first
         desc = mr.get("description") or ""
         if not str(desc).strip(): flags["no_desc"] = True
         try:
@@ -52,28 +80,27 @@ def _evaluate_single_mr(client, mr: dict) -> tuple[str, dict]:
                 flags["improper_desc"] = True
         except: pass
 
-        # Pipeline Status (Requires Detail)
-        full_mr = client._get(f"/projects/{pid}/merge_requests/{iid}")
+        api_base = f"{base_url}/api/v4"
+
+        # Parallel fetch for sub-resources
+        full_mr_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}", sem, headers=headers)
+        ts_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/time_stats", sem, headers=headers)
+        iss_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/issues", sem, headers=headers)
+        chg_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/changes", sem, headers=headers)
+
+        full_mr, ts, iss, chg = await asyncio.gather(full_mr_task, ts_task, iss_task, chg_task)
+
         if full_mr:
-            # Re-check description from full detail just in case
             full_desc = full_mr.get("description") or ""
             if not str(full_desc).strip(): flags["no_desc"] = True
-
-            # Pipeline
             hp = full_mr.get("head_pipeline")
             if hp and isinstance(hp, dict) and hp.get("status") == "failed":
                 flags["failed_pipe"] = True
 
-        # Sub-resources
-        # Time Stats
-        ts = client._get(f"/projects/{pid}/merge_requests/{iid}/time_stats")
         if not ts or ts.get("total_time_spent", 0) == 0: flags["no_time"] = True
 
-        # Issues: Check endpoint (closing issues) AND description (mentions like #123)
-        iss = client._get(f"/projects/{pid}/merge_requests/{iid}/issues")
         has_linked_issue = bool(iss)
         if not has_linked_issue:
-            import re
             desc_total = (mr.get("description") or "") + " " + (full_mr.get("description") or "" if full_mr else "")
             if re.search(r"#\d+", desc_total):
                 has_linked_issue = True
@@ -81,8 +108,6 @@ def _evaluate_single_mr(client, mr: dict) -> tuple[str, dict]:
         if not has_linked_issue:
             flags["no_issues"] = True
 
-        # Changes (Unit Tests)
-        chg = client._get(f"/projects/{pid}/merge_requests/{iid}/changes")
         h_tests = False
         if chg and isinstance(chg, dict):
             h_tests = any("test" in str(c.get("new_path","")).lower() or "spec" in str(c.get("new_path","")).lower() for c in chg.get("changes", []))
@@ -93,52 +118,70 @@ def _evaluate_single_mr(client, mr: dict) -> tuple[str, dict]:
 
     return uname, flags
 
-def fetch_all_bad_mrs(client, usernames: list[str]) -> list[dict]:
+async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore, base_url: str, headers: dict, uname: str) -> list[dict]:
+    api_base = f"{base_url}/api/v4"
+    u_data = await fetch_json(session, f"{api_base}/users", sem, headers=headers, params={"username": uname})
+    if not u_data:
+        return []
+
+    uid = u_data[0]["id"]
+    mrs = await fetch_json(session, f"{api_base}/merge_requests", sem, headers=headers, params={"author_id": str(uid), "scope": "all", "per_page": "20", "page": "1"})
+
+    if not mrs:
+        return []
+
+    for mr in mrs:
+        mr["_username"] = uname
+    return mrs
+
+async def _run_batch(client, usernames: list[str]) -> list[dict]:
     result_map = {u: {**_ZERO_ROW, "Username": u} for u in usernames}
-    all_mr_tasks = []
 
-    print(f"DEBUG: Starting batch fetch for {len(usernames)} users...")
+    base_url = client.base_url.rstrip("/")
+    headers = client.headers
 
-    # Stage 1: Sequential identification
-    for i, uname in enumerate(usernames):
-        try:
-            # Sequential for stability
-            u_data = client._get("/users", params={"username": uname})
-            if not u_data:
-                print(f"DEBUG: User {uname} NOT FOUND")
-                continue
+    # 25 concurrent connections is highly optimal and stays below typical GitLab rate limits
+    sem = asyncio.Semaphore(25)
+    connector = aiohttp.TCPConnector(limit=25, ssl=False)
 
-            uid = u_data[0]["id"]
-            # Limit to 20 MRs for fast, reliable reporting in batch mode
-            user_mrs = client._get_paginated("/merge_requests", params={"author_id": uid, "scope": "all"}, per_page=20, max_pages=1)
-            print(f"DEBUG: Found {len(user_mrs)} MRs for {uname}")
+    print(f"DEBUG: Starting async batch fetch for {len(usernames)} users...")
 
-            for mr in user_mrs:
-                mr["_username"] = uname
-                all_mr_tasks.append(mr)
-        except Exception as e:
-            print(f"DEBUG: Error fetching data for {uname}: {e}")
+    async with aiohttp.ClientSession(connector=connector) as session:
+        # 1. Fetch all user MRs concurrently
+        user_tasks = [_fetch_user_mrs(session, sem, base_url, headers, u) for u in usernames]
+        all_users_mrs = await asyncio.gather(*user_tasks)
 
-    # Stage 2: Throttled evaluation
-    # Increased workers slightly now that we have better session management
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(_evaluate_single_mr, client, mr): mr for mr in all_mr_tasks}
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                uname, f = future.result()
-                if uname in result_map:
-                    row = result_map[uname]
-                    if f["is_closed"]: row["Closed MRs"] += 1
-                    if f["no_desc"]: row["No Description"] += 1
-                    if f["improper_desc"]: row["Improper Description"] += 1
-                    if f["no_issues"]: row["No Issues Linked"] += 1
-                    if f["no_time"]: row["No Time Spent"] += 1
-                    if f["no_unit_tests"]: row["No Unit Tests"] += 1
-                    if f["failed_pipe"]: row["Failed Pipeline"] += 1
-            except Exception: pass
+        all_mr_tasks = []
+        for mr_list in all_users_mrs:
+            all_mr_tasks.extend(mr_list)
 
-    print(f"DEBUG: Batch fetch complete. Results for {len(result_map)} users.")
+        print(f"DEBUG: Found {len(all_mr_tasks)} MRs across all users.")
+
+        # 2. Evaluate all MRs concurrently
+        eval_tasks = [_evaluate_single_mr(session, sem, base_url, headers, mr) for mr in all_mr_tasks]
+        eval_results = await asyncio.gather(*eval_tasks)
+
+        for uname, f in eval_results:
+            if uname in result_map:
+                row = result_map[uname]
+                if f.get("is_closed"): row["Closed MRs"] += 1
+                if f.get("no_desc"): row["No Description"] += 1
+                if f.get("improper_desc"): row["Improper Description"] += 1
+                if f.get("no_issues"): row["No Issues Linked"] += 1
+                if f.get("no_time"): row["No Time Spent"] += 1
+                if f.get("no_unit_tests"): row["No Unit Tests"] += 1
+                if f.get("failed_pipe"): row["Failed Pipeline"] += 1
+
+    print(f"DEBUG: Async batch fetch complete. Results for {len(result_map)} users.")
     return sorted(result_map.values(), key=lambda r: r["Closed MRs"], reverse=True)
+
+def fetch_all_bad_mrs(client, usernames: list[str]) -> list[dict]:
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(_run_batch(client, usernames))
 
 def _check_user_compliance(client, username: str) -> dict:
     # Small wrapper for test suite compatibility
