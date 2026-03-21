@@ -97,3 +97,46 @@ def render_bad_mrs_batch_ui(client) -> None:
             )
         except Exception as exc:
             st.error(f"Error generating Excel file: {exc}")
+
+    # --- Single User Fetch Section ---
+    st.markdown("---")
+    st.subheader("👤 Single User Fetch")
+    st.caption("Fetch BAD MR metrics for a single user not in the batch.")
+
+    col1, col2 = st.columns([3, 1])
+    single_user = col1.text_input("Enter GitLab Username", key="_bad_mrs_single_user", placeholder="e.g. john_doe")
+    fetch_clicked = col2.button("🔍 Fetch User", key="_bad_mrs_single_fetch", use_container_width=True)
+
+    if fetch_clicked and single_user:
+        if not client or not client.client:
+            st.error("GitLab client not initialized.")
+            return
+
+        with st.spinner(f"⏳ Analyzing MRs for '{single_user}'..."):
+            try:
+                # fetch_all_bad_mrs takes a list of usernames
+                results = fetch_all_bad_mrs(client, [single_user])
+                if results:
+                    res = results[0]
+                    st.success(f"Analysis complete for {single_user}!")
+
+                    # Show as metrics
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Closed MRs", res["Closed MRs"])
+                    m2.metric("No Description", res["No Description"])
+                    m3.metric("Improper Desc", res["Improper Description"])
+                    m4.metric("No Issues", res["No Issues Linked"])
+
+                    m5, m6, m7 = st.columns(3)
+                    m5.metric("No Time Spent", res["No Time Spent"])
+                    m6.metric("No Unit Tests", res["No Unit Tests"])
+                    m7.metric("Failed Pipeline", res["Failed Pipeline"])
+
+                    # Also show as a small dataframe for consistency
+                    st.dataframe(pd.DataFrame([res]), use_container_width=True, hide_index=True)
+                else:
+                    st.warning(f"No data found for user '{single_user}'.")
+            except Exception as exc:
+                st.error(f"Error fetching data for {single_user}: {exc}")
+    elif fetch_clicked and not single_user:
+        st.warning("Please enter a username first.")
