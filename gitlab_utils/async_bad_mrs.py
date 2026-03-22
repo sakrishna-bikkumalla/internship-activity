@@ -13,12 +13,10 @@ from __future__ import annotations
 import asyncio
 import aiohttp
 import re
-import nest_asyncio
-
+# Allowed imports
 from gitlab_utils.description_quality import analyze_description
 
-# Allow asyncio loops to be nested, making it Streamlit-safe
-nest_asyncio.apply()
+# BATCH_USERNAMES etc constant moved down or kept...
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -35,9 +33,14 @@ BATCH_USERNAMES: list[str] = [
 ]
 
 _ZERO_ROW = {
-    "Username": "", "Closed MRs": 0, "No Description": 0,
-    "Improper Description": 0, "No Issues Linked": 0, "No Time Spent": 0,
-    "No Unit Tests": 0, "Failed Pipeline": 0,
+    "Username": "",
+    "Closed MRs": 0,
+    "No Desc": 0,
+    "Improper Desc": 0,
+    "No Issues": 0,
+    "No Time Spent": 0,
+    "No Unit Tests": 0,
+    "Failed Pipeline": 0,
 }
 
 async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Semaphore, **kwargs):
@@ -67,9 +70,11 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
     uname = mr.get("_username", "unknown")
     pid, iid = mr["project_id"], mr["iid"]
     flags = {
-        "is_closed": mr.get("state") in ("merged", "closed"),
+        "is_terminal": mr.get("state") in ("merged", "closed"),
+        "is_merged": mr.get("state") == "merged",
+        "is_closed_rejected": mr.get("state") == "closed",
         "no_desc": False, "improper_desc": False, "no_issues": False,
-        "no_time": False, "no_unit_tests": False, "failed_pipe": False
+        "no_time": False, "no_unit_tests": False, "failed_pipe": False,
     }
 
     try:
@@ -102,26 +107,33 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
         if ts and isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
             flags["no_time"] = True
 
-        # Improved Issue Linking: Check linked issues list AND description for various patterns
+        # PERMISSIVE Issue Linking: Check linked list + description + title
         has_linked_issue = bool(iss)
         if not has_linked_issue:
-            desc_total = (mr.get("description") or "") + " " + (full_mr.get("description") or "" if full_mr else "")
-            # GitLab supports many patterns: #123, Related to #123, Fixes #123, etc.
-            if re.search(r"(?:#\d+|fixes|closes|resolves|related to|refs)\s*#?\d+", desc_total, re.IGNORECASE):
+            content_to_check = f"{(mr.get('title') or '')} {(mr.get('description') or '')}"
+            if full_mr: content_to_check += f" {full_mr.get('description') or ''}"
+
+            # Catch: #123, issue 123, [123], fixes #123, etc.
+            if re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", content_to_check, re.IGNORECASE):
                 has_linked_issue = True
 
         if not has_linked_issue:
             flags["no_issues"] = True
 
-        # Improved Unit Test Detection: Check BOTH new_path and old_path
+        # PERMISSIVE Unit Test Detection: Check file paths AND title
         h_tests = False
-        if chg and isinstance(chg, dict):
+        title_lower = (mr.get("title") or "").lower()
+        if "test" in title_lower or "spec" in title_lower:
+            h_tests = True
+
+        if not h_tests and chg and isinstance(chg, dict):
             for c in chg.get("changes", []):
                 new_p = str(c.get("new_path","")).lower()
                 old_p = str(c.get("old_path","")).lower()
                 if "test" in new_p or "spec" in new_p or "test" in old_p or "spec" in old_p:
                     h_tests = True
                     break
+
         if not h_tests: flags["no_unit_tests"] = True
 
     except Exception as e:
@@ -129,15 +141,30 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
 
     return uname, flags
 
-async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore, base_url: str, headers: dict, uname: str) -> list[dict]:
+async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore, base_url: str, headers: dict, uname: str, project_id: str | None = None, group_id: str | None = None) -> list[dict]:
     api_base = f"{base_url}/api/v4"
     u_data = await fetch_json(session, f"{api_base}/users", sem, headers=headers, params={"username": uname})
     if not u_data:
         return []
 
-    uid = u_data[0]["id"]
+    # Exact match check to avoid similar usernames (e.g. kumari123 matching kumari1234)
+    target_user = None
+    if isinstance(u_data, list):
+        for u in u_data:
+            if str(u.get("username", "")).lower() == str(uname).lower():
+                target_user = u
+                break
+
+    if not target_user:
+        return []
+
+    uid = target_user["id"]
     # Accuracy over Speed: Fetch 100 MRs instead of 20
-    mrs = await fetch_json(session, f"{api_base}/merge_requests", sem, headers=headers, params={"author_id": str(uid), "scope": "all", "per_page": "100", "page": "1"})
+    params = {"author_id": str(uid), "scope": "all", "per_page": "100", "page": "1"}
+    if project_id: params["project_id"] = project_id
+    if group_id: params["group_id"] = group_id
+
+    mrs = await fetch_json(session, f"{api_base}/merge_requests", sem, headers=headers, params=params)
 
     if not mrs:
         return []
@@ -146,7 +173,7 @@ async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore
         mr["_username"] = uname
     return mrs
 
-async def _run_batch(client, usernames: list[str]) -> list[dict]:
+async def _run_batch(client, usernames: list[str], project_id: str | None = None, group_id: str | None = None) -> list[dict]:
     result_map = {u: {**_ZERO_ROW, "Username": u} for u in usernames}
 
     base_url = client.base_url.rstrip("/")
@@ -160,7 +187,7 @@ async def _run_batch(client, usernames: list[str]) -> list[dict]:
 
     async with aiohttp.ClientSession(connector=connector) as session:
         # 1. Fetch all user MRs concurrently
-        user_tasks = [_fetch_user_mrs(session, sem, base_url, headers, u) for u in usernames]
+        user_tasks = [_fetch_user_mrs(session, sem, base_url, headers, u, project_id, group_id) for u in usernames]
         all_users_mrs = await asyncio.gather(*user_tasks)
 
         all_mr_tasks = []
@@ -176,27 +203,32 @@ async def _run_batch(client, usernames: list[str]) -> list[dict]:
         for uname, f in eval_results:
             if uname in result_map:
                 row = result_map[uname]
-                # CRITICAL FIX: Only count BAD MR metrics for MRs that are actually Closed/Merged.
-                # This ensures the totals align with the "Closed MRs" column.
-                if f.get("is_closed"):
+                # AGGREGATION: Metrics for Closed MRs only
+                if f.get("is_closed_rejected"):
                     row["Closed MRs"] += 1
-                    if f.get("no_desc"): row["No Description"] += 1
-                    if f.get("improper_desc"): row["Improper Description"] += 1
-                    if f.get("no_issues"): row["No Issues Linked"] += 1
+
+                    # 1. Pipeline Audit: Count for Closed MRs only
+                    if f.get("failed_pipe"):
+                        row["Failed Pipeline"] += 1
+
+                    # 2. Compliance Audit: Count ONLY for Closed MRs
+                    if f.get("no_desc"): row["No Desc"] += 1
+                    if f.get("improper_desc"): row["Improper Desc"] += 1
+                    if f.get("no_issues"): row["No Issues"] += 1
                     if f.get("no_time"): row["No Time Spent"] += 1
                     if f.get("no_unit_tests"): row["No Unit Tests"] += 1
-                    if f.get("failed_pipe"): row["Failed Pipeline"] += 1
 
-    print(f"DEBUG: Async batch fetch complete. Results for {len(result_map)} users.")
-    return sorted(result_map.values(), key=lambda r: r["Closed MRs"], reverse=True)
+    return sorted(result_map.values(), key=lambda r: r["Username"])
 
-def fetch_all_bad_mrs(client, usernames: list[str]) -> list[dict]:
+def fetch_all_bad_mrs(client, usernames: list[str], project_id: str | None = None, group_id: str | None = None) -> list[dict]:
+    import nest_asyncio
+    nest_asyncio.apply()
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    return loop.run_until_complete(_run_batch(client, usernames))
+    return loop.run_until_complete(_run_batch(client, usernames, project_id, group_id))
 
 def _check_user_compliance(client, username: str) -> dict:
     # Small wrapper for test suite compatibility

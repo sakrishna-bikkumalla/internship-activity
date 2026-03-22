@@ -6,8 +6,7 @@ Streamlit UI for the "BAD MRs (Batch)" mode.
 Fetches MR data for all 34 users concurrently using ThreadPoolExecutor.
 Single endpoint per user: GET /merge_requests?author_id=<id>&scope=all
 
-Columns: Username | Closed MRs
-         | No Description | Improper Description | No Issues Linked
+Columns: Username | Closed MRs | No Desc | Improper Desc | No Issues
          | No Time Spent | No Unit Tests | Failed Pipeline
 """
 
@@ -52,7 +51,7 @@ def render_bad_mrs_batch_ui(client) -> None:
 
         # ── Results table ────────────────────────────────────────────────────
         st.markdown("### 📋 BAD MR Count per User")
-        st.caption("Sorted by Closed MRs (most active first).")
+        st.caption("Sorted by Username. Metrics include across all Closed MRs.")
         st.dataframe(df, use_container_width=True, hide_index=True)
 
         # ── Excel export ─────────────────────────────────────────────────────
@@ -65,9 +64,9 @@ def render_bad_mrs_batch_ui(client) -> None:
                     "Metric": [
                         "Total Closed MRs",
                         "Total Users",
-                        "Total No Description",
-                        "Total Improper Description",
-                        "Total No Issues Linked",
+                        "Total No Desc",
+                        "Total Improper Desc",
+                        "Total No Issues",
                         "Total No Time Spent",
                         "Total No Unit Tests",
                         "Total Failed Pipeline",
@@ -75,9 +74,9 @@ def render_bad_mrs_batch_ui(client) -> None:
                     "Count": [
                         total_closed,
                         len(df),
-                        int(df["No Description"].sum()),
-                        int(df["Improper Description"].sum()),
-                        int(df["No Issues Linked"].sum()),
+                        int(df["No Desc"].sum()),
+                        int(df["Improper Desc"].sum()),
+                        int(df["No Issues"].sum()),
                         int(df["No Time Spent"].sum()),
                         int(df["No Unit Tests"].sum()),
                         int(df["Failed Pipeline"].sum()),
@@ -112,6 +111,7 @@ def render_bad_mrs_batch_ui(client) -> None:
             st.error("GitLab client not initialized.")
             return
 
+        single_user = single_user.strip()
         with st.spinner(f"⏳ Analyzing MRs for '{single_user}'..."):
             try:
                 # fetch_all_bad_mrs takes a list of usernames
@@ -123,9 +123,9 @@ def render_bad_mrs_batch_ui(client) -> None:
                     # Show as metrics
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("Closed MRs", res["Closed MRs"])
-                    m2.metric("No Description", res["No Description"])
-                    m3.metric("Improper Desc", res["Improper Description"])
-                    m4.metric("No Issues", res["No Issues Linked"])
+                    m2.metric("No Desc", res["No Desc"])
+                    m3.metric("Improper Desc", res["Improper Desc"])
+                    m4.metric("No Issues", res["No Issues"])
 
                     m5, m6, m7 = st.columns(3)
                     m5.metric("No Time Spent", res["No Time Spent"])
