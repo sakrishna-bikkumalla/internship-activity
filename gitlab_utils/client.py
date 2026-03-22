@@ -36,6 +36,7 @@ def safe_api_call(func, *args, **kwargs):
             if attempt < max_retries - 1:
                 time.sleep(1)
                 continue
+            print(f"FAILED API CALL: {e}") # Diagnostic
             return []
     return []
 
@@ -44,15 +45,29 @@ class GitLabClient:
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v4"
         self.headers = {"PRIVATE-TOKEN": private_token}
-        try:
-            self.client = Gitlab(
-                url=self.base_url, private_token=private_token, timeout=20, ssl_verify=False
-            )
-            # Minimal auth check
-            self.client.auth()
-        except Exception as e:
-            print(f"Warning: python-gitlab init failed: {e}")
-            self.client = None
+        self.private_token = private_token
+        self.error_msg = None
+        self._client = None
+
+    @property
+    def client(self):
+        """Lazy-loaded python-gitlab client."""
+        if self._client is None:
+            st.sidebar.write(f"  - Lazy init: connecting to {self.base_url}...")
+            try:
+                self._client = gitlab.Gitlab(
+                    url=self.base_url,
+                    private_token=self.private_token,
+                    timeout=5,
+                    ssl_verify=False
+                )
+                # Note: Skipping .auth() here as well to keep it responsive.
+                st.sidebar.write("  - Lazy init: Success")
+            except Exception as e:
+                self.error_msg = str(e)
+                st.sidebar.write(f"  - Lazy init: FAILED: {e}")
+                self._client = None
+        return self._client
 
     def _request(self, method, endpoint, params=None):
         url = f"{self.api_base}{endpoint}"

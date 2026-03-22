@@ -1323,61 +1323,8 @@ def render_team_leaderboard(client) -> None:
     )
 
     # ── Scoped UI Restyling CSS ──────────────────────────────────────────
-    st.markdown(
-        """
-        <style>
-        /* Target buttons following the toggle marker */
-        div:has(.lb-toggle-container) + div button {
-            border-radius: 10px !important;
-            font-weight: 600 !important;
-            padding: 0.75rem 1rem !important;
-            transition: all 0.2s ease-in-out !important;
-            border: none !important;
-            height: 3rem !important;
-        }
-
-        /* Active Toggle (Primary) */
-        div:has(.lb-toggle-container) + div button[kind="primary"] {
-            background-color: #d32f2f !important;
-            color: white !important;
-            box-shadow: 0 4px 12px rgba(211, 47, 47, 0.4) !important;
-        }
-
-        /* Inactive Toggle (Secondary) */
-        div:has(.lb-toggle-container) + div button[kind="secondary"] {
-            background-color: #2c2c2c !important;
-            color: #888 !important;
-        }
-
-        div:has(.lb-toggle-container) + div button[kind="secondary"]:hover {
-            background-color: #3d3d3d !important;
-            color: #fff !important;
-            transform: translateY(-1px);
-        }
-
-        /* Target button following the run marker */
-        div:has(.lb-run-btn) + div button {
-            border-radius: 10px !important;
-            font-weight: 700 !important;
-            padding: 0.8rem !important;
-            transition: all 0.2s ease-in-out !important;
-            background-color: #d32f2f !important;
-            color: white !important;
-            box-shadow: 0 4px 12px rgba(211, 47, 47, 0.3) !important;
-            width: 100% !important;
-            border: none !important;
-            height: 3.5rem !important;
-        }
-
-        div:has(.lb-run-btn) + div button:hover {
-            background-color: #b71c1c !important;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(183, 28, 28, 0.5) !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Removed temporarily for debugging
+    pass
 
     # ── Page selector (Button Toggle) ────────────────────────────────────
     st.markdown('<div class="lb-toggle-container">', unsafe_allow_html=True)

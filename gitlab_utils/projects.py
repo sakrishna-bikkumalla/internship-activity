@@ -76,3 +76,9 @@ def get_user_projects(client, user_id, username):
     except Exception as e:
         print(f"Error fetching projects: {e}")
         return {"personal": [], "contributed": [], "all": []}
+
+def search_projects(client, query):
+    """
+    Search for projects by name across the GitLab instance.
+    """
+    return client._get("/projects", params={"search": query, "simple": "true", "per_page": 20})

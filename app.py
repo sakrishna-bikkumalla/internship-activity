@@ -1,6 +1,5 @@
-import os
-
 import streamlit as st
+import os
 from dotenv import load_dotenv
 
 # --- Page Config ---
@@ -40,8 +39,8 @@ def main():
     default_url = os.getenv("GITLAB_URL", "https://gitlab.com")
     default_token = os.getenv("GITLAB_TOKEN", "")
 
-    gitlab_url = st.sidebar.text_input("GitLab URL", value=default_url)
-    gitlab_token = st.sidebar.text_input("GitLab Token", value=default_token, type="password")
+    gitlab_url = st.sidebar.text_input("GitLab URL", value=default_url).strip()
+    gitlab_token = st.sidebar.text_input("GitLab Token", value=default_token, type="password").strip()
 
     mode = st.sidebar.radio(
         "Select Mode",
@@ -69,9 +68,10 @@ def main():
         st.stop()
 
     # Initialize Client
-    client = GitLabClient(gitlab_url, gitlab_token)
-    if not client.client:
-        st.error("Failed to initialize GitLab client. Check URL and Token.")
+    try:
+        client = GitLabClient(gitlab_url, gitlab_token)
+    except Exception as e:
+        st.error(f"Critical Error initializing GitLab client: {e}")
         st.stop()
 
     # Routing
@@ -85,6 +85,7 @@ def main():
         user_input = st.text_input("Enter Username", placeholder="username")
 
         if user_input:
+            user_input = user_input.strip()
             with st.spinner(f"Finding user '{user_input}'..."):
                 user_info = users.get_user_by_username(client, user_input)
 
@@ -104,6 +105,9 @@ def main():
 
     elif mode == "BAD MRs (Batch)":
         render_bad_mrs_batch_ui(client)
+
+    else:
+        st.error(f"Routing Error: Unknown mode '{mode}' selected.")
 
 
 if __name__ == "__main__":
