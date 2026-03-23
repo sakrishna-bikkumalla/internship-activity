@@ -17,11 +17,23 @@ def safe_api_call(func, *args, **kwargs):
             return func(*args, **kwargs)
         except requests.exceptions.HTTPError as e:
             if hasattr(e, 'response') and e.response.status_code == 429:
+                retry_after = e.response.headers.get('Retry-After')
+                if retry_after:
+                    try:
+                        wait_limit = int(retry_after)
+                        if wait_limit > 60:
+                            raise Exception(f"GitLab API Rate Limit Exceeded. Please try again after {wait_limit} seconds.")
+                    except ValueError:
+                        pass
+
                 # Aggressive backoff for 429
                 wait_time = (5 * (attempt + 1))
                 print(f"Rate limited (429) on {e.request.url}. Waiting {wait_time}s...")
-                time.sleep(wait_time)
-                continue
+                if attempt < max_retries - 1:
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise Exception("GitLab API Rate Limit Exceeded (429 Too Many Requests). Max retries reached.")
             if attempt < max_retries - 1:
                 time.sleep(2)
                 continue

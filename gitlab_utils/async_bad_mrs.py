@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import aiohttp
 import re
+from datetime import datetime, timezone
 # Allowed imports
 from gitlab_utils.description_quality import analyze_description
 
@@ -41,6 +42,10 @@ _ZERO_ROW = {
     "No Time Spent": 0,
     "No Unit Tests": 0,
     "Failed Pipeline": 0,
+    "No Semantic Commits": 0,
+    "No Internal Review": 0,
+    "Merge > 1 Week": 0,
+    "Merge > 2 Days": 0,
 }
 
 async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Semaphore, **kwargs):
@@ -51,8 +56,20 @@ async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Sema
                 # SSL False for enterprise compatibility if needed
                 async with session.get(url, ssl=False, **kwargs) as resp:
                     if resp.status == 429:
-                        await asyncio.sleep(3 ** attempt) # aggressive backoff
-                        continue
+                        retry_after = resp.headers.get("Retry-After")
+                        if retry_after:
+                            try:
+                                wait_limit = int(retry_after)
+                                if wait_limit > 60:
+                                    raise Exception(f"GitLab API Rate Limit Exceeded. Please try again after {wait_limit} seconds.")
+                            except ValueError:
+                                pass
+
+                        if attempt < retries - 1:
+                            await asyncio.sleep(3 ** attempt) # aggressive backoff
+                            continue
+                        else:
+                            raise Exception("GitLab API Rate Limit Exceeded (429 Too Many Requests). Max retries reached.")
                     if resp.status == 200:
                         return await resp.json()
                     elif resp.status == 204:
@@ -62,7 +79,7 @@ async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Sema
             except Exception as e:
                 if attempt == retries - 1:
                     print(f"Error fetching {url}: {e}")
-                    return None
+                    raise e
                 await asyncio.sleep(1)
     return None
 
@@ -75,6 +92,8 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
         "is_closed_rejected": mr.get("state") == "closed",
         "no_desc": False, "improper_desc": False, "no_issues": False,
         "no_time": False, "no_unit_tests": False, "failed_pipe": False,
+        "no_semantic_commits": False, "no_internal_review": True,
+        "merge_gt_2_days": False, "merge_gt_1_week": False,
     }
 
     try:
@@ -87,56 +106,124 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
 
         api_base = f"{base_url}/api/v4"
 
-        # Parallel fetch for sub-resources
-        full_mr_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}", sem, headers=headers)
-        ts_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/time_stats", sem, headers=headers)
-        iss_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/issues", sem, headers=headers)
-        chg_task = fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/changes", sem, headers=headers)
-
-        full_mr, ts, iss, chg = await asyncio.gather(full_mr_task, ts_task, iss_task, chg_task)
-
-        if full_mr:
-            full_desc = full_mr.get("description") or ""
-            if not str(full_desc).strip(): flags["no_desc"] = True
-            hp = full_mr.get("head_pipeline")
-            if hp and isinstance(hp, dict) and hp.get("status") == "failed":
+        # 1. Pipeline Check (Fetch full MR conditionally if pipeline is missing)
+        pipeline = mr.get("pipeline")
+        if pipeline and isinstance(pipeline, dict):
+            if pipeline.get("status") == "failed":
                 flags["failed_pipe"] = True
+        elif flags["is_closed_rejected"]:
+            # Fallback API call to get pipelines accurately for rejected MRs
+            try:
+                pl = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/pipelines", sem, headers=headers)
+                if pl and isinstance(pl, list) and len(pl) > 0:
+                    if pl[0].get("status") == "failed":
+                        flags["failed_pipe"] = True
+            except Exception as pe:
+                if "Rate Limit" in str(pe): raise pe
 
-        # Accuracy fix: Only flag as 'bad' if we got a valid response showing 0 time.
-        # If fetch failed (ts is None), we don't flag to avoid false positives.
-        if ts and isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
+        # 2. Time Spent Check (Use embedded time_stats from list endpoint)
+        ts = mr.get("time_stats", {})
+        if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
             flags["no_time"] = True
 
-        # PERMISSIVE Issue Linking: Check linked list + description + title
-        has_linked_issue = bool(iss)
-        if not has_linked_issue:
-            content_to_check = f"{(mr.get('title') or '')} {(mr.get('description') or '')}"
-            if full_mr: content_to_check += f" {full_mr.get('description') or ''}"
 
-            # Catch: #123, issue 123, [123], fixes #123, etc.
-            if re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", content_to_check, re.IGNORECASE):
-                has_linked_issue = True
 
-        if not has_linked_issue:
-            flags["no_issues"] = True
+        # 4. Semantic Commits Check (Check all commits in the MR)
+        try:
+            m_commits = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/commits", sem, headers=headers)
+            if m_commits and isinstance(m_commits, list):
+                has_any_semantic = False
+                for c in m_commits:
+                    c_msg = str(c.get("message", "")).lower()
+                    if re.match(r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:", c_msg):
+                        has_any_semantic = True
+                        break
+                flags["no_semantic_commits"] = not has_any_semantic
+            else:
+                # Fallback to title if no commits found (e.g. error)
+                title = str(mr.get("title") or "")
+                title_lower = title.lower()
+                if not re.match(r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:", title_lower):
+                    flags["no_semantic_commits"] = True
+        except Exception as e:
+            if "Rate Limit" in str(e): raise e
+            flags["no_semantic_commits"] = True
 
-        # PERMISSIVE Unit Test Detection: Check file paths AND title
-        h_tests = False
-        title_lower = (mr.get("title") or "").lower()
+        # 5. Internal Review (Verify human notes exist from others)
+        try:
+            m_notes = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/notes", sem, headers=headers)
+            has_external_human_review = False
+            mr_author_id = mr.get("author", {}).get("id")
+
+            if m_notes and isinstance(m_notes, list):
+                for n in m_notes:
+                    # Must be non-system AND not from the MR author
+                    if not n.get("system") and n.get("author", {}).get("id") != mr_author_id:
+                        has_external_human_review = True
+                        break
+
+            # Count upvotes as review too (usually others upvote)
+            if not has_external_human_review and mr.get("upvotes", 0) > 0:
+                has_external_human_review = True
+
+            flags["no_internal_review"] = not has_external_human_review
+        except Exception as e:
+            if "Rate Limit" in str(e): raise e
+            flags["no_internal_review"] = True
+
+        # 6. Issues check (Permissive Regex first, minimizing API calls)
+        title = str(mr.get("title") or "")
+        desc = str(mr.get("description") or "")
+        content_to_check = f"{title} {desc}"
+        if re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", content_to_check, re.IGNORECASE):
+            flags["no_issues"] = False
+        else:
+            # Fallback API call ONLY if regex fails
+            iss = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/issues", sem, headers=headers)
+            if not iss:
+                flags["no_issues"] = True
+
+        # 7. Unit Tests check
         if "test" in title_lower or "spec" in title_lower:
-            h_tests = True
+            flags["no_unit_tests"] = False
+        else:
+            # Fallback API call ONLY if title doesn't state it
+            chg = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/changes", sem, headers=headers)
+            h_tests = False
+            if chg and isinstance(chg, dict):
+                for c in chg.get("changes", []):
+                    new_p = str(c.get("new_path","")).lower()
+                    old_p = str(c.get("old_path","")).lower()
+                    if "test" in new_p or "spec" in new_p or "test" in old_p or "spec" in old_p:
+                        h_tests = True
+                        break
+            if not h_tests:
+                flags["no_unit_tests"] = True
 
-        if not h_tests and chg and isinstance(chg, dict):
-            for c in chg.get("changes", []):
-                new_p = str(c.get("new_path","")).lower()
-                old_p = str(c.get("old_path","")).lower()
-                if "test" in new_p or "spec" in new_p or "test" in old_p or "spec" in old_p:
-                    h_tests = True
-                    break
+        # Time tracking
+        created_s = mr.get("created_at")
+        merged_s = mr.get("merged_at")
+        if created_s:
+            try:
+                created_dt = datetime.strptime(created_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                if merged_s:
+                    end_dt = datetime.strptime(merged_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                elif mr.get("state") == "closed" and mr.get("closed_at"):
+                    end_dt = datetime.strptime(mr.get("closed_at")[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                else:
+                    end_dt = datetime.now(timezone.utc)
 
-        if not h_tests: flags["no_unit_tests"] = True
+                days_diff = (end_dt - created_dt).total_seconds() / 86400
+                if days_diff > 2:
+                    flags["merge_gt_2_days"] = True
+                if days_diff > 7:
+                    flags["merge_gt_1_week"] = True
+            except Exception:
+                pass
 
     except Exception as e:
+        if "Rate Limit Exceeded" in str(e):
+            raise e
         print(f"Error evaluating MR {iid} for {uname}: {e}")
 
     return uname, flags
@@ -203,6 +290,7 @@ async def _run_batch(client, usernames: list[str], project_id: str | None = None
         for uname, f in eval_results:
             if uname in result_map:
                 row = result_map[uname]
+
                 # AGGREGATION: Metrics for Closed MRs only
                 if f.get("is_closed_rejected"):
                     row["Closed MRs"] += 1
@@ -217,6 +305,12 @@ async def _run_batch(client, usernames: list[str], project_id: str | None = None
                     if f.get("no_issues"): row["No Issues"] += 1
                     if f.get("no_time"): row["No Time Spent"] += 1
                     if f.get("no_unit_tests"): row["No Unit Tests"] += 1
+
+                    # 3. New metrics - count ONLY for Closed MRs to maintain mathematical consistency
+                    if f.get("no_semantic_commits"): row["No Semantic Commits"] += 1
+                    if f.get("no_internal_review"): row["No Internal Review"] += 1
+                    if f.get("merge_gt_1_week"): row["Merge > 1 Week"] += 1
+                    if f.get("merge_gt_2_days"): row["Merge > 2 Days"] += 1
 
     return sorted(result_map.values(), key=lambda r: r["Username"])
 

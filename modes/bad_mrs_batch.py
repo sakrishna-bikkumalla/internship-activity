@@ -70,6 +70,10 @@ def render_bad_mrs_batch_ui(client) -> None:
                         "Total No Time Spent",
                         "Total No Unit Tests",
                         "Total Failed Pipeline",
+                        "Total No Semantic Commits",
+                        "Total No Internal Review",
+                        "Total Merge > 2 Days",
+                        "Total Merge > 1 Week",
                     ],
                     "Count": [
                         total_closed,
@@ -80,6 +84,10 @@ def render_bad_mrs_batch_ui(client) -> None:
                         int(df["No Time Spent"].sum()),
                         int(df["No Unit Tests"].sum()),
                         int(df["Failed Pipeline"].sum()),
+                        int(df["No Semantic Commits"].sum()),
+                        int(df["No Internal Review"].sum()),
+                        int(df["Merge > 2 Days"].sum()),
+                        int(df["Merge > 1 Week"].sum()),
                     ],
                 }
                 pd.DataFrame(summary_data).to_excel(
@@ -120,7 +128,6 @@ def render_bad_mrs_batch_ui(client) -> None:
                     res = results[0]
                     st.success(f"Analysis complete for {single_user}!")
 
-                    # Show as metrics
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("Closed MRs", res["Closed MRs"])
                     m2.metric("No Desc", res["No Desc"])
@@ -131,6 +138,14 @@ def render_bad_mrs_batch_ui(client) -> None:
                     m5.metric("No Time Spent", res["No Time Spent"])
                     m6.metric("No Unit Tests", res["No Unit Tests"])
                     m7.metric("Failed Pipeline", res["Failed Pipeline"])
+
+                    m8, m9, m10 = st.columns(3)
+                    m8.metric("No Semantic Commits", res["No Semantic Commits"])
+                    m9.metric("No Internal Review", res["No Internal Review"])
+                    m10.metric("Merge > 2 Days", res["Merge > 2 Days"])
+
+                    m11, _, _ = st.columns(3)
+                    m11.metric("Merge > 1 Week", res["Merge > 1 Week"])
 
                     # Also show as a small dataframe for consistency
                     st.dataframe(pd.DataFrame([res]), use_container_width=True, hide_index=True)

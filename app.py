@@ -87,9 +87,16 @@ def main():
         if user_input:
             user_input = user_input.strip()
             with st.spinner(f"Finding user '{user_input}'..."):
-                user_info = users.get_user_by_username(client, user_input)
+                error_msg = None
+                try:
+                    user_info = users.get_user_by_username(client, user_input)
+                except Exception as e:
+                    user_info = None
+                    error_msg = str(e)
 
-            if user_info:
+            if error_msg:
+                st.error(f"Error: {error_msg}")
+            elif user_info:
                 render_user_profile(client, user_info)
             else:
                 st.error(f"User '{user_input}' not found.")
