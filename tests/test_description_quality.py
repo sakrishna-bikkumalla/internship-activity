@@ -1,4 +1,3 @@
-import pytest
 from gitlab_utils.description_quality import analyze_description
 
 

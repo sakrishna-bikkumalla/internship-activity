@@ -1,5 +1,5 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from gitlab_utils.async_bad_mrs import BATCH_USERNAMES, _check_user_compliance, fetch_all_bad_mrs
 
 

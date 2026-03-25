@@ -1,6 +1,5 @@
-import asyncio
-from gitlab_utils.client import GitLabClient
 from gitlab_utils.async_bad_mrs import fetch_all_bad_mrs
+from gitlab_utils.client import GitLabClient
 
 
 def main():

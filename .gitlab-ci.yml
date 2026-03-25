@@ -18,9 +18,8 @@ cache:
 before_script:
   - python -V
   - pip install uv
-  - uv venv
+  - uv sync --dev
   - source .venv/bin/activate
-  - uv pip install .[dev]
 
 lint_job:
   stage: lint

@@ -7,13 +7,11 @@ Validates concurrent execution, error handling, and edge cases.
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from gitlab_utils.batch import process_batch_users_async
-
 
 # ---------------------------------------------------------------------------
 # Helpers

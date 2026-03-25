@@ -45,7 +45,8 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "C", "B"]
 ignore = ["E501", "C901", "E701", "N806", "B904"]
-exclude = ["tests/*"]
+# exclude = ["tests/*"]
+
 
 [tool.pytest.ini_options]
 minversion = "7.0"

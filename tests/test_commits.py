@@ -12,10 +12,7 @@ Covers all fixes made:
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from gitlab_utils.commits import get_user_commits
-
 
 # ---------------------------------------------------------------------------
 # Helpers
