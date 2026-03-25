@@ -13,6 +13,7 @@ def test_ssl_verify_disabled():
         print("❌ FAIL: ssl_verify is NOT set to False in client.py")
         return False
 
+
 def test_default_users_exist():
     batch_file = "modes/batch_mode.py"
     with open(batch_file, "r") as f:
@@ -38,6 +39,7 @@ def test_default_users_exist():
         passed = False
 
     return passed
+
 
 if __name__ == "__main__":
     s1 = test_ssl_verify_disabled()

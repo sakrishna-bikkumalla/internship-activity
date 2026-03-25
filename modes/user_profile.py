@@ -82,9 +82,7 @@ def render_user_profile(client, simple_user_info):
             # Use pandas for table
             df_commits = pd.DataFrame(all_commits)
             # Display updated columns
-            st.dataframe(
-                df_commits[["project_name", "message", "date", "time", "slot"]], width="stretch"
-            )
+            st.dataframe(df_commits[["project_name", "message", "date", "time", "slot"]], width="stretch")
 
     # Groups
     st.markdown("---")

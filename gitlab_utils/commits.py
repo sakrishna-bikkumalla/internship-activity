@@ -38,28 +38,28 @@ def get_user_commits(client, user, projects, since=None, until=None):
 
     def _fetch_project_commits(project):
         """Worker to fetch commits for a single project."""
-        p_res = {
-            "pid": project.get("id"),
-            "commits": [],
-            "count": 0,
-            "error": None
-        }
+        p_res = {"pid": project.get("id"), "commits": [], "count": 0, "error": None}
         try:
             pid = project.get("id")
             pname = project.get("name_with_namespace")
 
             author_search_terms = []
-            if author_name: author_search_terms.append(author_name)
-            if username and username not in author_search_terms: author_search_terms.append(username)
-            if not author_search_terms and author_email: author_search_terms.append(author_email)
+            if author_name:
+                author_search_terms.append(author_name)
+            if username and username not in author_search_terms:
+                author_search_terms.append(username)
+            if not author_search_terms and author_email:
+                author_search_terms.append(author_email)
 
             project_seen_shas = set()
             valid_project_commits = 0
 
             for search_term in author_search_terms:
                 api_params = {"author": search_term, "all": True}
-                if since: api_params["since"] = since
-                if until: api_params["until"] = until
+                if since:
+                    api_params["since"] = since
+                if until:
+                    api_params["until"] = until
 
                 commits_data = client._get_paginated(
                     f"/projects/{pid}/repository/commits",
@@ -84,7 +84,9 @@ def get_user_commits(client, user, projects, since=None, until=None):
                         is_match = True
                     elif author_email and c_author_email.lower() == author_email.lower():
                         is_match = True
-                    elif username and (username.lower() in c_author_name.lower() or username.lower() in c_author_email.lower()):
+                    elif username and (
+                        username.lower() in c_author_name.lower() or username.lower() in c_author_email.lower()
+                    ):
                         is_match = True
 
                     if not is_match:
@@ -94,14 +96,16 @@ def get_user_commits(client, user, projects, since=None, until=None):
                     valid_project_commits += 1
 
                     # Store for processing (time parsing is done in main thread to avoid dict sync issues)
-                    p_res["commits"].append({
-                        "sha": sha,
-                        "pname": pname,
-                        "title": c.get("title"),
-                        "created_at": c.get("created_at"),
-                        "author_name": c_author_name,
-                        "short_id": c.get("short_id")
-                    })
+                    p_res["commits"].append(
+                        {
+                            "sha": sha,
+                            "pname": pname,
+                            "title": c.get("title"),
+                            "created_at": c.get("created_at"),
+                            "author_name": c_author_name,
+                            "short_id": c.get("short_id"),
+                        }
+                    )
 
             p_res["count"] = valid_project_commits
 
@@ -154,14 +158,16 @@ def get_user_commits(client, user, projects, since=None, until=None):
                     time_str = "N/A"
                     slot = "N/A"
 
-                all_commits.append({
-                    "project_name": c["pname"],
-                    "message": c["title"],
-                    "date": date_str,
-                    "time": time_str,
-                    "slot": slot,
-                    "author_name": c["author_name"],
-                    "short_id": c["short_id"],
-                })
+                all_commits.append(
+                    {
+                        "project_name": c["pname"],
+                        "message": c["title"],
+                        "date": date_str,
+                        "time": time_str,
+                        "slot": slot,
+                        "author_name": c["author_name"],
+                        "short_id": c["short_id"],
+                    }
+                )
 
     return all_commits, project_commit_counts, stats

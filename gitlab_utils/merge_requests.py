@@ -40,9 +40,7 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
     def fetch_and_add(base_params: dict, role_label: str) -> None:
         try:
             params = {**base_params, **date_params}
-            items = client._get_paginated(
-                "/merge_requests", params=params, per_page=50, max_pages=10
-            )
+            items = client._get_paginated("/merge_requests", params=params, per_page=50, max_pages=10)
             for item in items:
                 # Apply project filter if specified
                 if pid_set is not None and item.get("project_id") not in pid_set:
@@ -163,11 +161,7 @@ def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):
                     # e) No Unit Tests — use mr.changes() to inspect file paths
                     try:
                         changes_data = mr.changes()
-                        changed_files = (
-                            changes_data.get("changes", [])
-                            if isinstance(changes_data, dict)
-                            else []
-                        )
+                        changed_files = changes_data.get("changes", []) if isinstance(changes_data, dict) else []
                         has_tests = any(
                             "test" in str(ch.get("new_path", "")).lower()
                             or "spec" in str(ch.get("new_path", "")).lower()

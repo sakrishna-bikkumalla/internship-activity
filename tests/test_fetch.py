@@ -2,6 +2,7 @@ import asyncio
 from gitlab_utils.client import GitLabClient
 from gitlab_utils.async_bad_mrs import fetch_all_bad_mrs
 
+
 def main():
     client = GitLabClient()
     # Assuming client is initialized automatically from .env
@@ -9,6 +10,7 @@ def main():
     res = fetch_all_bad_mrs(client, ["prav2702"])
     for row in res:
         print(row)
+
 
 if __name__ == "__main__":
     main()

@@ -2,6 +2,7 @@
 Batch processing service for analyzing multiple GitLab projects.
 No Streamlit dependencies - can be used in any context.
 """
+
 from gitlab_utils.api_helpers import (
     check_project_compliance,
     classify_repository_files,
@@ -13,35 +14,35 @@ from gitlab_utils.retry_helper import get_project_with_retries
 
 class BatchProcessingService:
     """Service for processing multiple projects in batch mode."""
-    
+
     def __init__(self, gl_client):
         """Initialize with GitLab client.
-        
+
         Args:
             gl_client: python-gitlab Gitlab instance
         """
         self.gl_client = gl_client
-    
+
     def process_project(self, path_or_id):
         """Process a single project and return compliance report.
-        
+
         Args:
             path_or_id: Project path, URL, or ID
-            
+
         Returns:
             Dict with project metadata, branch, report, and classification
         """
         try:
             proj = get_project_with_retries(self.gl_client, path_or_id)
-            
+
             # Get default branch and compliance report
             branch = getattr(proj, "default_branch", "main")
             report = check_project_compliance(proj, branch=branch)
-            
+
             # Classify files
             files = list_all_files(proj, branch=branch)
             classification = classify_repository_files(files)
-            
+
             return {
                 "project": proj,
                 "report": report,
@@ -58,13 +59,13 @@ class BatchProcessingService:
                 "error": str(e),
                 "path_or_id": path_or_id,
             }
-    
+
     def process_projects(self, paths_or_ids):
         """Process multiple projects.
-        
+
         Args:
             paths_or_ids: List of project paths/URLs/IDs
-            
+
         Returns:
             List of processing results (including errors)
         """
@@ -73,13 +74,13 @@ class BatchProcessingService:
             result = self.process_project(path_or_id)
             results.append(result)
         return results
-    
+
     def create_summary_rows(self, results):
         """Create export-ready summary rows from processing results.
-        
+
         Args:
             results: List of processing results from process_projects()
-            
+
         Returns:
             List of dicts suitable for CSV/Excel export
         """
@@ -87,41 +88,45 @@ class BatchProcessingService:
         for result in results:
             if result.get("error"):
                 # Error case
-                rows.append({
-                    "project_id": None,
-                    "path": result.get("path_or_id", "unknown"),
-                    "branch": None,
-                    "python_count": 0,
-                    "js_count": 0,
-                    "common_requirements": [],
-                    "project_files": [],
-                    "tech_files": [],
-                    "license_status": None,
-                    "license_valid": False,
-                    "readme_status": "error",
-                    "readme_notes": result.get("error", ""),
-                    "error": result.get("error"),
-                })
+                rows.append(
+                    {
+                        "project_id": None,
+                        "path": result.get("path_or_id", "unknown"),
+                        "branch": None,
+                        "python_count": 0,
+                        "js_count": 0,
+                        "common_requirements": [],
+                        "project_files": [],
+                        "tech_files": [],
+                        "license_status": None,
+                        "license_valid": False,
+                        "readme_status": "error",
+                        "readme_notes": result.get("error", ""),
+                        "error": result.get("error"),
+                    }
+                )
             else:
                 # Success case
                 proj = result.get("project")
                 report = result.get("report")
                 classification = result.get("classification")
-                
+
                 if proj and report and classification:
-                    rows.append({
-                        "project_id": proj.id,
-                        "path": proj.path_with_namespace,
-                        "branch": result.get("branch"),
-                        "python_count": len(classification.get("python_files", [])),
-                        "js_count": len(classification.get("js_files", [])),
-                        "common_requirements": classification.get("common_requirements", []),
-                        "project_files": classification.get("project_files", []),
-                        "tech_files": classification.get("tech_files", []),
-                        "license_status": report.get("license_status"),
-                        "license_valid": report.get("license_valid"),
-                        "readme_status": report.get("readme_status"),
-                        "readme_notes": ";".join(report.get("readme_sections", [])),
-                    })
-        
+                    rows.append(
+                        {
+                            "project_id": proj.id,
+                            "path": proj.path_with_namespace,
+                            "branch": result.get("branch"),
+                            "python_count": len(classification.get("python_files", [])),
+                            "js_count": len(classification.get("js_files", [])),
+                            "common_requirements": classification.get("common_requirements", []),
+                            "project_files": classification.get("project_files", []),
+                            "tech_files": classification.get("tech_files", []),
+                            "license_status": report.get("license_status"),
+                            "license_valid": report.get("license_valid"),
+                            "readme_status": report.get("readme_status"),
+                            "readme_notes": ";".join(report.get("readme_sections", [])),
+                        }
+                    )
+
         return rows

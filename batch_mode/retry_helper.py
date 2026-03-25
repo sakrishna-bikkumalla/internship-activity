@@ -2,6 +2,7 @@
 Retry logic for GitLab API calls with exponential backoff.
 No Streamlit dependencies.
 """
+
 import http.client
 import time
 
@@ -27,9 +28,7 @@ def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
     last_exc = None
     for attempt in range(1, retries + 1):
         try:
-            return gl_client.projects.get(
-                int(path_or_id) if str(path_or_id).isdigit() else path_or_id
-            )
+            return gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
         except GitlabGetError as e:
             # If it's a 404-like error (project not found), re-raise immediately
             last_exc = e

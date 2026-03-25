@@ -28,9 +28,7 @@ def resolve_project_paths(client, repo_paths: list[str]) -> tuple[list[int], lis
     return resolved_ids, failed
 
 
-def process_single_user(
-    client, username, since=None, until=None, project_ids: list[int] | None = None
-):
+def process_single_user(client, username, since=None, until=None, project_ids: list[int] | None = None):
     """
     Worker function to process a single user.
     Refactored to fetch all components (projects, groups, MRs, issues, commits)
@@ -59,12 +57,10 @@ def process_single_user(
             f_projs = executor.submit(projects.get_user_projects, client, user_id, username)
             f_groups = executor.submit(groups.get_user_groups, client, user_id)
             f_mrs = executor.submit(
-                merge_requests.get_user_mrs,
-                client, user_id, since=since, until=until, project_ids=project_ids
+                merge_requests.get_user_mrs, client, user_id, since=since, until=until, project_ids=project_ids
             )
             f_issues = executor.submit(
-                issues.get_user_issues,
-                client, user_id, since=since, until=until, project_ids=project_ids
+                issues.get_user_issues, client, user_id, since=since, until=until, project_ids=project_ids
             )
 
             # Wait for projects to resolve commit targets
@@ -89,8 +85,7 @@ def process_single_user(
 
             # 3. Commits (Start after projects list is ready)
             f_commits = executor.submit(
-                commits.get_user_commits,
-                client, user_obj, all_projs_list, since=since, until=until
+                commits.get_user_commits, client, user_obj, all_projs_list, since=since, until=until
             )
 
             # Gather final results
@@ -110,8 +105,7 @@ def process_single_user(
 
         # Refine Contributed projects display - only those with verified commits
         result["data"]["projects"]["contributed"] = [
-            p for p in projs["contributed"]
-            if p["id"] in commit_counts and commit_counts[p["id"]] > 0
+            p for p in projs["contributed"] if p["id"] in commit_counts and commit_counts[p["id"]] > 0
         ]
 
     except Exception as e:
@@ -121,9 +115,7 @@ def process_single_user(
     return result
 
 
-def process_batch_users(
-    client, usernames, since=None, until=None, project_ids: list[int] | None = None
-):
+def process_batch_users(client, usernames, since=None, until=None, project_ids: list[int] | None = None):
     """
     Concurrent processing of multiple users using ThreadPoolExecutor.
     Safe to call from Streamlit.
@@ -133,8 +125,7 @@ def process_batch_users(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_user = {
-            executor.submit(process_single_user, client, u, since, until, project_ids): u
-            for u in clean_usernames
+            executor.submit(process_single_user, client, u, since, until, project_ids): u for u in clean_usernames
         }
         for future in concurrent.futures.as_completed(future_to_user):
             try:
@@ -148,9 +139,7 @@ def process_batch_users(
     return results
 
 
-async def process_batch_users_async(
-    client, usernames, since=None, until=None, project_ids: list[int] | None = None
-):
+async def process_batch_users_async(client, usernames, since=None, until=None, project_ids: list[int] | None = None):
     """
     Async version for non-Streamlit contexts.
     """
@@ -158,9 +147,7 @@ async def process_batch_users_async(
 
     async def _safe_single(uname: str):
         try:
-            result = await asyncio.to_thread(
-                process_single_user, client, uname, since, until, project_ids
-            )
+            result = await asyncio.to_thread(process_single_user, client, uname, since, until, project_ids)
             return result
         except Exception as exc:
             return {"username": uname, "status": "Crash", "error": str(exc)}

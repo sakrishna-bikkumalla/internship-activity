@@ -15,9 +15,7 @@ def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
 
     for attempt in range(1, retries + 1):
         try:
-            return gl_client.projects.get(
-                int(path_or_id) if str(path_or_id).isdigit() else path_or_id
-            )
+            return gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
 
         except GitlabGetError as e:
             last_exc = e

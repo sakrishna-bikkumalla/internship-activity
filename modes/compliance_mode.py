@@ -23,9 +23,7 @@ def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
     last_exc = None
     for attempt in range(1, retries + 1):
         try:
-            return gl_client.projects.get(
-                int(path_or_id) if str(path_or_id).isdigit() else path_or_id
-            )
+            return gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
         except GitlabGetError as e:
             last_exc = e
             if getattr(e, "response", None) is not None and e.response.status_code == 404:
@@ -65,9 +63,7 @@ def check_vscode_file_exists(project, filename, branch="main"):
 
 
 def check_license_content(project, branch="main"):
-    content = read_file_content(project, "LICENSE", branch) or read_file_content(
-        project, "LICENSE.md", branch
-    )
+    content = read_file_content(project, "LICENSE", branch) or read_file_content(project, "LICENSE.md", branch)
     if not content:
         return "not_found"
 
@@ -137,9 +133,7 @@ def check_extensions_json_for_ruff(project, branch="main"):
 
         config = json.loads(content)
         recommendations = config.get("recommendations", [])
-        return "charliermarsh.ruff" in recommendations or any(
-            "ruff" in ext.lower() for ext in recommendations
-        )
+        return "charliermarsh.ruff" in recommendations or any("ruff" in ext.lower() for ext in recommendations)
     except Exception:
         return False
 
@@ -188,9 +182,7 @@ def check_project_compliance(project, branch=None):
         readme_present = any(n for n in filenames if n.startswith("readme"))
         report["README.md"] = readme_present
         if readme_present:
-            content = read_file_content(project, "README.md", branch) or read_file_content(
-                project, "README", branch
-            )
+            content = read_file_content(project, "README.md", branch) or read_file_content(project, "README", branch)
             if not content or not content.strip():
                 report["readme_status"] = "empty"
                 report["readme_sections"] = []
@@ -211,9 +203,7 @@ def check_project_compliance(project, branch=None):
                 found_sections = [s for s in expected_sections if s in lc]
                 report["readme_status"] = "present"
                 report["readme_sections"] = found_sections
-                report["readme_needs_improvement"] = (
-                    len(found_sections) < 3 or len(content.strip()) < 150
-                )
+                report["readme_needs_improvement"] = len(found_sections) < 3 or len(content.strip()) < 150
         else:
             report["readme_status"] = "missing"
             report["readme_sections"] = []
@@ -235,9 +225,7 @@ def check_project_compliance(project, branch=None):
         vscode_content = check_vscode_settings_content(project, branch)
         report["vscode_config_exists"] = vscode_content["exists"]
         report["vscode_ruff_in_extensions"] = check_extensions_json_for_ruff(project, branch)
-        report["vscode_extensions_exists"] = check_vscode_file_exists(
-            project, "extensions.json", branch
-        )
+        report["vscode_extensions_exists"] = check_vscode_file_exists(project, "extensions.json", branch)
         report["vscode_launch_exists"] = check_vscode_file_exists(project, "launch.json", branch)
         report["vscode_tasks_exists"] = check_vscode_file_exists(project, "tasks.json", branch)
 
@@ -317,9 +305,7 @@ def get_suggestions_for_missing_items(report):
     elif readme_status == "empty":
         st.markdown("❌ **README is empty** — Add meaningful content.")
     elif report.get("readme_needs_improvement"):
-        st.markdown(
-            "🟡 **README needs improvement** — Consider adding Installation/Usage/License/Contributing."
-        )
+        st.markdown("🟡 **README needs improvement** — Consider adding Installation/Usage/License/Contributing.")
 
 
 def render_project_compliance_ui(report, project=None, branch=None, classification=None):
@@ -408,10 +394,7 @@ def render_compliance_mode(gl_client):
                 st.error(f"Error fetching project: {e}")
 
         # Display Project Info & Run Analysis if loaded
-        if (
-            "current_project" in st.session_state
-            and st.session_state.get("compliance_project_id") == project_input
-        ):
+        if "current_project" in st.session_state and st.session_state.get("compliance_project_id") == project_input:
             project = st.session_state["current_project"]
             st.info(f"Active Project: **{project.name_with_namespace}** ({project.web_url})")
 
@@ -466,8 +449,7 @@ def render_batch_project_compliance_internal(gl_client):
                     "Metdata": "✅" if report.get("description_present") else "❌",
                     "CI/CD": "✅" if report.get(".gitlab-ci.yml") else "❌",
                     "GitProcess": "✅"
-                    if report.get("issue_templates_folder")
-                    or report.get("merge_request_templates_folder")
+                    if report.get("issue_templates_folder") or report.get("merge_request_templates_folder")
                     else "❌",
                 }
                 if report.get("error"):

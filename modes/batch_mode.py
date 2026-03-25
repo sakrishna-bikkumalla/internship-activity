@@ -96,9 +96,7 @@ def render_batch_mode_ui(client, report_type):
                 )
                 project_ids = resolved_ids
             else:
-                st.error(
-                    "None of the entered repo paths could be resolved. Check the paths and try again."
-                )
+                st.error("None of the entered repo paths could be resolved. Check the paths and try again.")
                 return
 
         st.info(f"Processing {len(usernames)} users...")
@@ -120,9 +118,7 @@ def render_batch_mode_ui(client, report_type):
             projects = data.get("projects", {})
 
             # Stats Access
-            c_stats = data.get(
-                "commit_stats", {"total": 0, "morning_commits": 0, "afternoon_commits": 0}
-            )
+            c_stats = data.get("commit_stats", {"total": 0, "morning_commits": 0, "afternoon_commits": 0})
             m_stats = data.get("mr_stats", {"total": 0, "merged": 0, "opened": 0, "closed": 0})
             i_stats = data.get("issue_stats", {"total": 0, "opened": 0, "closed": 0})
 
@@ -135,9 +131,7 @@ def render_batch_mode_ui(client, report_type):
             row["Status"] = status
 
             # Add Generation Timestamp
-            now_ist = datetime.datetime.now(
-                datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-            )
+            now_ist = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
             row["Report Date"] = now_ist.strftime("%Y-%m-%d")
             row["Report Time"] = now_ist.strftime("%I:%M %p")
 
@@ -182,9 +176,7 @@ def render_batch_mode_ui(client, report_type):
         # Export
         try:
             output = io.BytesIO()
-            now_ist = datetime.datetime.now(
-                datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-            )
+            now_ist = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
             today = now_ist.strftime("%Y-%m-%d")
             filename = f"{report_type}_Report_{today}.xlsx"
 

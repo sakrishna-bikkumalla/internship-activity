@@ -49,6 +49,7 @@ USER_MAPPING = {
     "Klaxmi": "klaxmi1908",
 }
 
+
 async def verify():
     url = os.getenv("GITLAB_URL")
     token = os.getenv("GITLAB_TOKEN")
@@ -67,22 +68,22 @@ async def verify():
 
     # Map back to display names for easy comparison
     reverse_mapping = {v: k for k, v in USER_MAPPING.items()}
-    df['Display Name'] = df['Username'].map(reverse_mapping)
+    df["Display Name"] = df["Username"].map(reverse_mapping)
 
     # Select and rename columns to match the user's table
     cols = {
-        'Display Name': 'Name',
-        'Closed MRs': 'Closed MRs',
-        'Improper Desc': 'MRs with Improper Description',
-        'No Desc': 'MRs without Description',
-        'No Time Spent': 'MRs without time spent',
-        'No Issues': 'MRs without Issues linked',
-        'No Unit Tests': 'MRs without unit tests',
-        'Failed Pipeline': 'MRs with failed pipelines',
-        'No Semantic Commits': 'MRs without semantic commit messages',
-        'No Internal Review': 'MRs without internal review',
-        'Merge > 2 Days': 'MRs didn\'t merge within 2 days of opening',
-        'Merge > 1 Week': 'MRs didn\'t merge within 1 week of opening'
+        "Display Name": "Name",
+        "Closed MRs": "Closed MRs",
+        "Improper Desc": "MRs with Improper Description",
+        "No Desc": "MRs without Description",
+        "No Time Spent": "MRs without time spent",
+        "No Issues": "MRs without Issues linked",
+        "No Unit Tests": "MRs without unit tests",
+        "Failed Pipeline": "MRs with failed pipelines",
+        "No Semantic Commits": "MRs without semantic commit messages",
+        "No Internal Review": "MRs without internal review",
+        "Merge > 2 Days": "MRs didn't merge within 2 days of opening",
+        "Merge > 1 Week": "MRs didn't merge within 1 week of opening",
     }
 
     # Ensure all columns exist (even if 0)
@@ -98,6 +99,7 @@ async def verify():
     # Save to CSV for full comparison if needed
     df_final.to_csv("fetched_verify_results.csv", index=False)
     print("\nFull results saved to fetched_verify_results.csv")
+
 
 if __name__ == "__main__":
     asyncio.run(verify())

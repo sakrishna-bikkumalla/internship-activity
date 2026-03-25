@@ -168,12 +168,8 @@ class GitLabUsersAPI:
             print(f"[commits] no projects found for user_id={user_id}")
             return []
 
-        author_name = (
-            (user_info.get("name") or "").strip().lower() if isinstance(user_info, dict) else ""
-        )
-        username = (
-            (user_info.get("username") or "").strip().lower() if isinstance(user_info, dict) else ""
-        )
+        author_name = (user_info.get("name") or "").strip().lower() if isinstance(user_info, dict) else ""
+        username = (user_info.get("username") or "").strip().lower() if isinstance(user_info, dict) else ""
         author_email = (
             (user_info.get("email") or user_info.get("public_email") or "").strip().lower()
             if isinstance(user_info, dict)
@@ -227,9 +223,7 @@ class GitLabUsersAPI:
         for project in projects:
             project_id = project.get("id")
             project_name = project.get("name") or project.get("path_with_namespace") or str(project_id)
-            namespace_path = (
-                (project.get("namespace", {}) or {}).get("full_path", "").strip().lower()
-            )
+            namespace_path = (project.get("namespace", {}) or {}).get("full_path", "").strip().lower()
             creator_id = project.get("creator_id")
             is_personal_project = namespace_path == username or creator_id == user_id
             project_scope = "Personal" if is_personal_project else "Contributed"

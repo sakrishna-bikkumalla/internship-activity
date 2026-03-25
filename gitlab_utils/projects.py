@@ -15,15 +15,11 @@ def get_user_projects(client, user_id, username):
                 f"/users/{user_id}/projects",
                 params={"simple": "true"},
                 per_page=50,
-                max_pages=10
+                max_pages=10,
             )
             # 2. projects from events
             f_events = executor.submit(
-                client._get_paginated,
-                f"/users/{user_id}/events",
-                params={"action": "pushed"},
-                per_page=50,
-                max_pages=5
+                client._get_paginated, f"/users/{user_id}/events", params={"action": "pushed"}, per_page=50, max_pages=5
             )
 
             projects_data = f_projects.result() or []
@@ -77,6 +73,7 @@ def get_user_projects(client, user_id, username):
     except Exception as e:
         print(f"Error fetching projects: {e}")
         return {"personal": [], "contributed": [], "all": []}
+
 
 def search_projects(client, query):
     """

@@ -19,6 +19,7 @@ from gitlab_utils.batch import process_batch_users_async
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_mock_result(username: str, status: str = "Success") -> dict:
     return {
         "username": username,

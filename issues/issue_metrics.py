@@ -50,9 +50,7 @@ def calculate_issue_metrics(open_issues, assigned_issues):
 
     if open_issues > 0:
         metrics["assignment_percentage"] = round((assigned_issues / open_issues) * 100, 2)
-        metrics["unassigned_percentage"] = round(
-            (metrics["unassigned_issues"] / open_issues) * 100, 2
-        )
+        metrics["unassigned_percentage"] = round((metrics["unassigned_issues"] / open_issues) * 100, 2)
     else:
         metrics["assignment_percentage"] = 0.0
         metrics["unassigned_percentage"] = 0.0

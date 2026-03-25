@@ -3,6 +3,7 @@ import aiohttp
 import os
 from gitlab_utils.client import GitLabClient
 
+
 async def fetch_json(session, url, headers, params=None):
     print(f"DEBUG FETCH: {url} {params}")
     async with session.get(url, headers=headers, params=params, ssl=False) as resp:
@@ -13,9 +14,11 @@ async def fetch_json(session, url, headers, params=None):
         print(f"Error {resp.status}: {text}")
         return None
 
+
 async def main():
     try:
         from dotenv import load_dotenv
+
         load_dotenv()
     except Exception:
         pass
@@ -33,11 +36,14 @@ async def main():
     async with aiohttp.ClientSession() as session:
         u_data = await fetch_json(session, f"{api_base}/users", headers, {"username": "prav2702"})
         if u_data and isinstance(u_data, list):
-            uid = u_data[0]['id']
-            mrs = await fetch_json(session, f"{api_base}/merge_requests", headers, {"author_id": uid, "scope": "all", "per_page": 5})
+            uid = u_data[0]["id"]
+            mrs = await fetch_json(
+                session, f"{api_base}/merge_requests", headers, {"author_id": uid, "scope": "all", "per_page": 5}
+            )
             print(f"MRs found: {len(mrs) if mrs else 0}")
         else:
             print("USER FETCH FAILED")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

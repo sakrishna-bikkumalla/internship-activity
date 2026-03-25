@@ -129,9 +129,7 @@ class TestUsernameMatching:
         assert stats["total"] == 1
 
     def test_match_by_username_in_name(self):
-        commit = _make_commit(
-            "sha1", "alicedev (contractor)", "x@x.com", "2024-01-15T10:00:00+00:00"
-        )
+        commit = _make_commit("sha1", "alicedev (contractor)", "x@x.com", "2024-01-15T10:00:00+00:00")
         client = _make_client([commit])
         user = {"name": "Alice Dev", "email": "alice@example.com", "username": "alicedev"}
 
@@ -210,9 +208,7 @@ class TestTimezoneHandling:
 
 class TestDeduplication:
     def test_same_sha_across_two_projects_counted_once(self):
-        commit = _make_commit(
-            "sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00"
-        )
+        commit = _make_commit("sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00")
         client = _make_client([commit])
         user = {"name": "Alice Dev", "email": "alice@example.com", "username": "alicedev"}
         projects = [_make_project(1, "proj/one"), _make_project(2, "proj/two")]
@@ -227,9 +223,7 @@ class TestDeduplication:
 
     def test_deduplication_within_single_project(self):
         """Commits returned twice (e.g. from two search terms) should be counted once per project."""
-        commit = _make_commit(
-            "sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00"
-        )
+        commit = _make_commit("sha_dup", "Alice Dev", "alice@example.com", "2024-01-15T10:00:00+00:00")
 
         # Return same commit on every _get_paginated call (name search + username search)
         client = _make_client([commit])

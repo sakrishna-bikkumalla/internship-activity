@@ -90,9 +90,7 @@ def render_bad_mrs_batch_ui(client) -> None:
                         int(df["Merge > 1 Week"].sum()),
                     ],
                 }
-                pd.DataFrame(summary_data).to_excel(
-                    writer, index=False, sheet_name="Summary"
-                )
+                pd.DataFrame(summary_data).to_excel(writer, index=False, sheet_name="Summary")
 
             st.download_button(
                 label="📥 Download bad_mrs_report.xlsx",

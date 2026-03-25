@@ -48,10 +48,42 @@ def test_get_user_mrs_counts_states_correctly():
     """MR state counts should be tallied correctly from API response items."""
     mock_client = MagicMock()
     mock_client._get_paginated.return_value = [
-        {"id": 1, "title": "MR1", "state": "merged", "project_id": 10, "web_url": "", "created_at": "", "description": "desc"},
-        {"id": 2, "title": "MR2", "state": "opened", "project_id": 10, "web_url": "", "created_at": "", "description": "desc"},
-        {"id": 3, "title": "MR3", "state": "opened", "project_id": 10, "web_url": "", "created_at": "", "description": "desc"},
-        {"id": 4, "title": "MR4", "state": "closed", "project_id": 10, "web_url": "", "created_at": "", "description": "desc"},
+        {
+            "id": 1,
+            "title": "MR1",
+            "state": "merged",
+            "project_id": 10,
+            "web_url": "",
+            "created_at": "",
+            "description": "desc",
+        },
+        {
+            "id": 2,
+            "title": "MR2",
+            "state": "opened",
+            "project_id": 10,
+            "web_url": "",
+            "created_at": "",
+            "description": "desc",
+        },
+        {
+            "id": 3,
+            "title": "MR3",
+            "state": "opened",
+            "project_id": 10,
+            "web_url": "",
+            "created_at": "",
+            "description": "desc",
+        },
+        {
+            "id": 4,
+            "title": "MR4",
+            "state": "closed",
+            "project_id": 10,
+            "web_url": "",
+            "created_at": "",
+            "description": "desc",
+        },
     ]
 
     # Simulate: author call returns MRs, assignee call returns nothing
@@ -78,8 +110,13 @@ def test_get_user_mrs_deduplicates_by_id():
     mock_client = MagicMock()
 
     duplicate_mr = {
-        "id": 99, "title": "Dup MR", "state": "merged",
-        "project_id": 1, "web_url": "", "created_at": "", "description": "x",
+        "id": 99,
+        "title": "Dup MR",
+        "state": "merged",
+        "project_id": 1,
+        "web_url": "",
+        "created_at": "",
+        "description": "x",
     }
 
     # Both author and assignee queries return the same MR

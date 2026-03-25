@@ -2,6 +2,7 @@
 GitLab API helpers for compliance checking and project analysis.
 No Streamlit dependencies.
 """
+
 import os
 
 
@@ -193,6 +194,7 @@ def check_extensions_json_for_ruff(project, branch="main", read_file_fn=None):
     if read_file_fn is None:
         # Import here to avoid circular dependencies
         from gitlab_utils.file_reader import read_file_content_no_cache
+
         read_file_fn = read_file_content_no_cache
 
     content = read_file_fn(project, ".vscode/extensions.json", branch)
@@ -200,11 +202,10 @@ def check_extensions_json_for_ruff(project, branch="main", read_file_fn=None):
         return False
     try:
         import json
+
         config = json.loads(content)
         recommendations = config.get("recommendations", [])
-        return "charliermarsh.ruff" in recommendations or any(
-            "ruff" in ext.lower() for ext in recommendations
-        )
+        return "charliermarsh.ruff" in recommendations or any("ruff" in ext.lower() for ext in recommendations)
     except Exception:
         return False
 
@@ -275,11 +276,10 @@ def check_license_content(project, branch="main", read_file_fn=None):
     """
     if read_file_fn is None:
         from gitlab_utils.file_reader import read_file_content_no_cache
+
         read_file_fn = read_file_content_no_cache
 
-    content = read_file_fn(project, "LICENSE", branch) or read_file_fn(
-        project, "LICENSE.md", branch
-    )
+    content = read_file_fn(project, "LICENSE", branch) or read_file_fn(project, "LICENSE.md", branch)
     if not content:
         return "not_found"
 
@@ -361,6 +361,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
     """
     if read_file_fn is None:
         from gitlab_utils.file_reader import read_file_content_cached
+
         read_file_fn = read_file_content_cached
 
     required_files = {
@@ -383,9 +384,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
         report["README.md"] = readme_present
         if readme_present:
             # Try common README filename variants
-            content = read_file_fn(project, "README.md", branch) or read_file_fn(
-                project, "README", branch
-            )
+            content = read_file_fn(project, "README.md", branch) or read_file_fn(project, "README", branch)
             if not content or not content.strip():
                 report["readme_status"] = "empty"
                 report["readme_sections"] = []
@@ -406,9 +405,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
                 found_sections = [s for s in expected_sections if s in lc]
                 report["readme_status"] = "present"
                 report["readme_sections"] = found_sections
-                report["readme_needs_improvement"] = (
-                    len(found_sections) < 3 or len(content.strip()) < 150
-                )
+                report["readme_needs_improvement"] = len(found_sections) < 3 or len(content.strip()) < 150
         else:
             report["readme_status"] = "missing"
             report["readme_sections"] = []
@@ -440,9 +437,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
         report["vscode_ruff_in_extensions"] = check_extensions_json_for_ruff(project, branch, read_file_fn)
 
         # Other VSCode files
-        report["vscode_extensions_exists"] = check_vscode_file_exists(
-            project, "extensions.json", branch
-        )
+        report["vscode_extensions_exists"] = check_vscode_file_exists(project, "extensions.json", branch)
         report["vscode_launch_exists"] = check_vscode_file_exists(project, "launch.json", branch)
         report["vscode_tasks_exists"] = check_vscode_file_exists(project, "tasks.json", branch)
 

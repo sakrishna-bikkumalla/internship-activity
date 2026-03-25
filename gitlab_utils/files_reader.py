@@ -32,11 +32,7 @@ def list_all_files(project, branch: str = "main") -> List[str]:
                 recursive=True,
             )
 
-        return [
-            item.get("path")
-            for item in items
-            if item.get("type") == "blob"
-        ]
+        return [item.get("path") for item in items if item.get("type") == "blob"]
 
     except Exception:
         return []

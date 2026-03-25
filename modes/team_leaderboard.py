@@ -250,9 +250,7 @@ def _render_date_filter() -> tuple[str | None, str | None]:
     return since_iso, until_iso
 
 
-def _calculate_score(
-    total_commits: int, merged_mrs: int, total_mrs: int, issues_closed: int
-) -> int:
+def _calculate_score(total_commits: int, merged_mrs: int, total_mrs: int, issues_closed: int) -> int:
     """Return individual productivity score."""
     return total_commits * 1 + merged_mrs * 5 + total_mrs * 2 + issues_closed * 3
 
@@ -422,8 +420,7 @@ def _render_json_upload() -> None:
 
     with st.expander("📂 Upload JSON File", expanded=True):
         st.markdown(
-            "Upload a `.json` file to import multiple teams at once. "
-            "Existing teams will **not** be overwritten."
+            "Upload a `.json` file to import multiple teams at once. Existing teams will **not** be overwritten."
         )
         _SAMPLE_JSON = (
             "{"
@@ -510,9 +507,7 @@ def _render_create_team_form() -> None:
     btn_col1, btn_col2 = st.columns([1, 1])
 
     with btn_col1:
-        create_label = (
-            "✖ Cancel" if st.session_state["_lb_show_create_form"] else "➕ Create New Team"
-        )
+        create_label = "✖ Cancel" if st.session_state["_lb_show_create_form"] else "➕ Create New Team"
         if st.button(create_label, key="_lb_toggle_form", use_container_width=True):
             st.session_state["_lb_show_create_form"] = not st.session_state["_lb_show_create_form"]
             st.session_state["_lb_show_upload_form"] = False  # close the other panel
@@ -520,11 +515,7 @@ def _render_create_team_form() -> None:
             st.rerun()
 
     with btn_col2:
-        upload_label = (
-            "✖ Cancel Upload"
-            if st.session_state["_lb_show_upload_form"]
-            else "📂 Add All Teams Using JSON"
-        )
+        upload_label = "✖ Cancel Upload" if st.session_state["_lb_show_upload_form"] else "📂 Add All Teams Using JSON"
         if st.button(upload_label, key="_lb_toggle_upload", use_container_width=True):
             st.session_state["_lb_show_upload_form"] = not st.session_state["_lb_show_upload_form"]
             st.session_state["_lb_show_create_form"] = False  # close the other panel
@@ -542,13 +533,9 @@ def _render_create_team_form() -> None:
     st.markdown("#### 🆕 New Team")
     col_a, col_b = st.columns(2)
     with col_a:
-        team_name = st.text_input(
-            "Team Name *", key="_lb_new_team_name", placeholder="e.g. Team Alpha"
-        )
+        team_name = st.text_input("Team Name *", key="_lb_new_team_name", placeholder="e.g. Team Alpha")
     with col_b:
-        project_name = st.text_input(
-            "Project Name", key="_lb_new_project_name", placeholder="e.g. Project Phoenix"
-        )
+        project_name = st.text_input("Project Name", key="_lb_new_project_name", placeholder="e.g. Project Phoenix")
 
     st.markdown("##### ➕ Add Members")
     mc1, mc2, mc3 = st.columns([2, 2, 1])
@@ -562,9 +549,7 @@ def _render_create_team_form() -> None:
     if st.button("➕ Add Member", key="_lb_create_add_member"):
         if not m_user.strip():
             st.warning("GitLab Username is required.")
-        elif m_user.strip().lower() in [
-            x["username"].lower() for x in st.session_state["_lb_draft_members"]
-        ]:
+        elif m_user.strip().lower() in [x["username"].lower() for x in st.session_state["_lb_draft_members"]]:
             st.warning(f"**{m_user}** is already in the list.")
         else:
             st.session_state["_lb_draft_members"].append(
@@ -645,9 +630,7 @@ def _render_edit_form(edit_idx: int) -> None:
 
     col_a, col_b = st.columns(2)
     with col_a:
-        new_team_name = st.text_input(
-            "Team Name *", value=draft["team_name"], key="_lb_edit_team_name"
-        )
+        new_team_name = st.text_input("Team Name *", value=draft["team_name"], key="_lb_edit_team_name")
     with col_b:
         new_project_name = st.text_input(
             "Project Name", value=draft.get("project_name", ""), key="_lb_edit_project_name"
@@ -674,9 +657,7 @@ def _render_edit_form(edit_idx: int) -> None:
             with mc3:
                 uid = member.get("user_id") or 0
                 members[m_idx]["user_id"] = (
-                    st.number_input(
-                        "User ID", value=int(uid), min_value=0, step=1, key=f"_lb_edit_m_id_{m_idx}"
-                    )
+                    st.number_input("User ID", value=int(uid), min_value=0, step=1, key=f"_lb_edit_m_id_{m_idx}")
                     or None
                 )
             with mc4:
@@ -690,13 +671,9 @@ def _render_edit_form(edit_idx: int) -> None:
     with nc1:
         new_m_name = st.text_input("Member Name", key="_lb_edit_new_m_name", placeholder="Jane Doe")
     with nc2:
-        new_m_user = st.text_input(
-            "GitLab Username *", key="_lb_edit_new_m_user", placeholder="jane_doe"
-        )
+        new_m_user = st.text_input("GitLab Username *", key="_lb_edit_new_m_user", placeholder="jane_doe")
     with nc3:
-        new_m_id = st.number_input(
-            "User ID (opt.)", key="_lb_edit_new_m_id", min_value=0, step=1, value=0
-        )
+        new_m_id = st.number_input("User ID (opt.)", key="_lb_edit_new_m_id", min_value=0, step=1, value=0)
 
     if st.button("➕ Add Member", key="_lb_edit_add_member"):
         if not new_m_user.strip():
@@ -816,9 +793,7 @@ def _render_teams_overview() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_team_result(
-    team_name: str, project_name: str, member_rows: list[dict], totals: dict
-) -> None:
+def _render_team_result(team_name: str, project_name: str, member_rows: list[dict], totals: dict) -> None:
     """Render analytics for one team: metrics, member table, group breakdown."""
     st.subheader(f"🏅 {team_name}")
     if project_name:
@@ -851,9 +826,7 @@ def _render_team_result(
     st.dataframe(df[available], use_container_width=True, hide_index=True)
 
     group_rows = [
-        {"Username": r["Username"], "Groups": r.get("Groups", 0)}
-        for r in member_rows
-        if r.get("Status") == "Success"
+        {"Username": r["Username"], "Groups": r.get("Groups", 0)} for r in member_rows if r.get("Status") == "Success"
     ]
     if group_rows:
         with st.expander("👥 Group Breakdown"):
@@ -1223,9 +1196,7 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
                 badge_parts.append(
                     f'<div class="lb-badge">{svg}<span class="lb-badge-label">{escape(label)}</span></div>'
                 )
-        badge_html = (
-            f'<div class="lb-badges-row">{"".join(badge_parts)}</div>' if badge_parts else ""
-        )
+        badge_html = f'<div class="lb-badges-row">{"".join(badge_parts)}</div>' if badge_parts else ""
 
         table_rows.append(
             "<tr>"
@@ -1269,9 +1240,7 @@ def _render_ranking_page() -> None:
 
     ranked_rows = st.session_state.get("_lb_last_ranking_rows", [])
     if not ranked_rows:
-        st.info(
-            "No ranking data available yet. Go to **Workspace**, run analysis, then return here."
-        )
+        st.info("No ranking data available yet. Go to **Workspace**, run analysis, then return here.")
         return
 
     _render_ranking_table_html(ranked_rows)
@@ -1399,9 +1368,7 @@ def render_team_leaderboard(client) -> None:
             {
                 "team_name": t["team_name"],
                 "project_name": t.get("project_name", ""),
-                "members": sorted(
-                    [m["username"] for m in t.get("members", []) if m.get("username")]
-                ),
+                "members": sorted([m["username"] for m in t.get("members", []) if m.get("username")]),
             }
             for t in teams
         ],

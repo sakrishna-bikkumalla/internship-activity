@@ -26,6 +26,7 @@ lint_job:
   stage: lint
   script:
     - ruff check .
+    - ruff format --check .
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

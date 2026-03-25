@@ -25,14 +25,40 @@ from gitlab_utils.description_quality import analyze_description
 # Constants
 # ---------------------------------------------------------------------------
 BATCH_USERNAMES: list[str] = [
-    "prav2702", "saikrishna_b", "MohanaSriBhavitha", "praneethashish",
-    "kanukuntagreeshma2004", "vandana1735", "vandana_rajuldev",
-    "Mukthanand21", "Shanmukh16", "Sathwikareddy_Damanagari", "Sahasraa",
-    "laxmanreddypatlolla", "Abhilash653", "LagichettyKushal", "Lakshy",
-    "Suma2304", "koushik_18", "kumari123", "Habeebunissa", "Bhaskar_Battula",
-    "Pranav_rs", "vai5h", "Saiharshavardhan", "Rushika_1105", "swarna_4539",
-    "satish05", "aravindswamy", "pavaninagireddi", "jeevana_31", "saiteja3005",
-    "SandhyaRani_111", "klaxmi1908", "Kaveri_Mamidi", "Pavani_Pothuganti",
+    "prav2702",
+    "saikrishna_b",
+    "MohanaSriBhavitha",
+    "praneethashish",
+    "kanukuntagreeshma2004",
+    "vandana1735",
+    "vandana_rajuldev",
+    "Mukthanand21",
+    "Shanmukh16",
+    "Sathwikareddy_Damanagari",
+    "Sahasraa",
+    "laxmanreddypatlolla",
+    "Abhilash653",
+    "LagichettyKushal",
+    "Lakshy",
+    "Suma2304",
+    "koushik_18",
+    "kumari123",
+    "Habeebunissa",
+    "Bhaskar_Battula",
+    "Pranav_rs",
+    "vai5h",
+    "Saiharshavardhan",
+    "Rushika_1105",
+    "swarna_4539",
+    "satish05",
+    "aravindswamy",
+    "pavaninagireddi",
+    "jeevana_31",
+    "saiteja3005",
+    "SandhyaRani_111",
+    "klaxmi1908",
+    "Kaveri_Mamidi",
+    "Pavani_Pothuganti",
 ]
 
 _ZERO_ROW = {
@@ -50,6 +76,7 @@ _ZERO_ROW = {
     "Merge > 2 Days": 0,
 }
 
+
 async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Semaphore, **kwargs):
     retries = 3
     for attempt in range(retries):
@@ -63,15 +90,19 @@ async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Sema
                             try:
                                 wait_limit = int(retry_after)
                                 if wait_limit > 60:
-                                    raise Exception(f"GitLab API Rate Limit Exceeded. Please try again after {wait_limit} seconds.")
+                                    raise Exception(
+                                        f"GitLab API Rate Limit Exceeded. Please try again after {wait_limit} seconds."
+                                    )
                             except ValueError:
                                 pass
 
                         if attempt < retries - 1:
-                            await asyncio.sleep(3 ** attempt) # aggressive backoff
+                            await asyncio.sleep(3**attempt)  # aggressive backoff
                             continue
                         else:
-                            raise Exception("GitLab API Rate Limit Exceeded (429 Too Many Requests). Max retries reached.")
+                            raise Exception(
+                                "GitLab API Rate Limit Exceeded (429 Too Many Requests). Max retries reached."
+                            )
                     if resp.status == 200:
                         return await resp.json()
                     elif resp.status == 204:
@@ -85,26 +116,37 @@ async def fetch_json(session: aiohttp.ClientSession, url: str, sem: asyncio.Sema
                 await asyncio.sleep(1)
     return None
 
-async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semaphore, base_url: str, headers: dict, mr: dict) -> tuple[str, dict]:
+
+async def _evaluate_single_mr(
+    session: aiohttp.ClientSession, sem: asyncio.Semaphore, base_url: str, headers: dict, mr: dict
+) -> tuple[str, dict]:
     uname = mr.get("_username", "unknown")
     pid, iid = mr["project_id"], mr["iid"]
     flags = {
         "is_terminal": mr.get("state") in ("merged", "closed"),
         "is_merged": mr.get("state") == "merged",
         "is_closed_rejected": mr.get("state") == "closed",
-        "no_desc": False, "improper_desc": False, "no_issues": False,
-        "no_time": False, "no_unit_tests": False, "failed_pipe": False,
-        "no_semantic_commits": False, "no_internal_review": True,
-        "merge_gt_2_days": False, "merge_gt_1_week": False,
+        "no_desc": False,
+        "improper_desc": False,
+        "no_issues": False,
+        "no_time": False,
+        "no_unit_tests": False,
+        "failed_pipe": False,
+        "no_semantic_commits": False,
+        "no_internal_review": True,
+        "merge_gt_2_days": False,
+        "merge_gt_1_week": False,
     }
 
     try:
         desc = mr.get("description") or ""
-        if not str(desc).strip(): flags["no_desc"] = True
+        if not str(desc).strip():
+            flags["no_desc"] = True
         try:
             if analyze_description(desc)["quality_label"] != "High":
                 flags["improper_desc"] = True
-        except Exception: pass
+        except Exception:
+            pass
 
         api_base = f"{base_url}/api/v4"
 
@@ -116,23 +158,26 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
         elif flags["is_closed_rejected"]:
             # Fallback API call to get pipelines accurately for rejected MRs
             try:
-                pl = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/pipelines", sem, headers=headers)
+                pl = await fetch_json(
+                    session, f"{api_base}/projects/{pid}/merge_requests/{iid}/pipelines", sem, headers=headers
+                )
                 if pl and isinstance(pl, list) and len(pl) > 0:
                     if pl[0].get("status") == "failed":
                         flags["failed_pipe"] = True
             except Exception as pe:
-                if "Rate Limit" in str(pe): raise pe
+                if "Rate Limit" in str(pe):
+                    raise pe
 
         # 2. Time Spent Check (Use embedded time_stats from list endpoint)
         ts = mr.get("time_stats", {})
         if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
             flags["no_time"] = True
 
-
-
         # 4. Semantic Commits Check (Check all commits in the MR)
         try:
-            m_commits = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/commits", sem, headers=headers)
+            m_commits = await fetch_json(
+                session, f"{api_base}/projects/{pid}/merge_requests/{iid}/commits", sem, headers=headers
+            )
             if m_commits and isinstance(m_commits, list):
                 has_any_semantic = False
                 for c in m_commits:
@@ -145,15 +190,20 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
                 # Fallback to title if no commits found (e.g. error)
                 title = str(mr.get("title") or "")
                 title_lower = title.lower()
-                if not re.match(r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:", title_lower):
+                if not re.match(
+                    r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:", title_lower
+                ):
                     flags["no_semantic_commits"] = True
         except Exception as e:
-            if "Rate Limit" in str(e): raise e
+            if "Rate Limit" in str(e):
+                raise e
             flags["no_semantic_commits"] = True
 
         # 5. Internal Review (Verify human notes exist from others)
         try:
-            m_notes = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/notes", sem, headers=headers)
+            m_notes = await fetch_json(
+                session, f"{api_base}/projects/{pid}/merge_requests/{iid}/notes", sem, headers=headers
+            )
             has_external_human_review = False
             mr_author_id = mr.get("author", {}).get("id")
 
@@ -170,7 +220,8 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
 
             flags["no_internal_review"] = not has_external_human_review
         except Exception as e:
-            if "Rate Limit" in str(e): raise e
+            if "Rate Limit" in str(e):
+                raise e
             flags["no_internal_review"] = True
 
         # 6. Issues check (Permissive Regex first, minimizing API calls)
@@ -181,7 +232,9 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
             flags["no_issues"] = False
         else:
             # Fallback API call ONLY if regex fails
-            iss = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/issues", sem, headers=headers)
+            iss = await fetch_json(
+                session, f"{api_base}/projects/{pid}/merge_requests/{iid}/issues", sem, headers=headers
+            )
             if not iss:
                 flags["no_issues"] = True
 
@@ -190,12 +243,14 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
             flags["no_unit_tests"] = False
         else:
             # Fallback API call ONLY if title doesn't state it
-            chg = await fetch_json(session, f"{api_base}/projects/{pid}/merge_requests/{iid}/changes", sem, headers=headers)
+            chg = await fetch_json(
+                session, f"{api_base}/projects/{pid}/merge_requests/{iid}/changes", sem, headers=headers
+            )
             h_tests = False
             if chg and isinstance(chg, dict):
                 for c in chg.get("changes", []):
-                    new_p = str(c.get("new_path","")).lower()
-                    old_p = str(c.get("old_path","")).lower()
+                    new_p = str(c.get("new_path", "")).lower()
+                    old_p = str(c.get("old_path", "")).lower()
                     if "test" in new_p or "spec" in new_p or "test" in old_p or "spec" in old_p:
                         h_tests = True
                         break
@@ -211,7 +266,9 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
                 if merged_s:
                     end_dt = datetime.strptime(merged_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                 elif mr.get("state") == "closed" and mr.get("closed_at"):
-                    end_dt = datetime.strptime(mr.get("closed_at")[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                    end_dt = datetime.strptime(mr.get("closed_at")[:19], "%Y-%m-%dT%H:%M:%S").replace(
+                        tzinfo=timezone.utc
+                    )
                 else:
                     end_dt = datetime.now(timezone.utc)
 
@@ -230,7 +287,16 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
 
     return uname, flags
 
-async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore, base_url: str, headers: dict, uname: str, project_id: str | None = None, group_id: str | None = None) -> list[dict]:
+
+async def _fetch_user_mrs(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    base_url: str,
+    headers: dict,
+    uname: str,
+    project_id: str | None = None,
+    group_id: str | None = None,
+) -> list[dict]:
     api_base = f"{base_url}/api/v4"
     u_data = await fetch_json(session, f"{api_base}/users", sem, headers=headers, params={"username": uname})
     if not u_data:
@@ -250,8 +316,10 @@ async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore
     uid = target_user["id"]
     # Accuracy over Speed: Fetch 100 MRs instead of 20
     params = {"author_id": str(uid), "scope": "all", "per_page": "100", "page": "1"}
-    if project_id: params["project_id"] = project_id
-    if group_id: params["group_id"] = group_id
+    if project_id:
+        params["project_id"] = project_id
+    if group_id:
+        params["group_id"] = group_id
 
     mrs = await fetch_json(session, f"{api_base}/merge_requests", sem, headers=headers, params=params)
 
@@ -262,7 +330,10 @@ async def _fetch_user_mrs(session: aiohttp.ClientSession, sem: asyncio.Semaphore
         mr["_username"] = uname
     return mrs
 
-async def _run_batch(client, usernames: list[str], project_id: str | None = None, group_id: str | None = None) -> list[dict]:
+
+async def _run_batch(
+    client, usernames: list[str], project_id: str | None = None, group_id: str | None = None
+) -> list[dict]:
     result_map = {u: {**_ZERO_ROW, "Username": u} for u in usernames}
 
     base_url = client.base_url.rstrip("/")
@@ -302,22 +373,35 @@ async def _run_batch(client, usernames: list[str], project_id: str | None = None
                         row["Failed Pipeline"] += 1
 
                     # 2. Compliance Audit: Count ONLY for Closed MRs
-                    if f.get("no_desc"): row["No Desc"] += 1
-                    if f.get("improper_desc"): row["Improper Desc"] += 1
-                    if f.get("no_issues"): row["No Issues"] += 1
-                    if f.get("no_time"): row["No Time Spent"] += 1
-                    if f.get("no_unit_tests"): row["No Unit Tests"] += 1
+                    if f.get("no_desc"):
+                        row["No Desc"] += 1
+                    if f.get("improper_desc"):
+                        row["Improper Desc"] += 1
+                    if f.get("no_issues"):
+                        row["No Issues"] += 1
+                    if f.get("no_time"):
+                        row["No Time Spent"] += 1
+                    if f.get("no_unit_tests"):
+                        row["No Unit Tests"] += 1
 
                     # 3. New metrics - count ONLY for Closed MRs to maintain mathematical consistency
-                    if f.get("no_semantic_commits"): row["No Semantic Commits"] += 1
-                    if f.get("no_internal_review"): row["No Internal Review"] += 1
-                    if f.get("merge_gt_1_week"): row["Merge > 1 Week"] += 1
-                    if f.get("merge_gt_2_days"): row["Merge > 2 Days"] += 1
+                    if f.get("no_semantic_commits"):
+                        row["No Semantic Commits"] += 1
+                    if f.get("no_internal_review"):
+                        row["No Internal Review"] += 1
+                    if f.get("merge_gt_1_week"):
+                        row["Merge > 1 Week"] += 1
+                    if f.get("merge_gt_2_days"):
+                        row["Merge > 2 Days"] += 1
 
     return sorted(result_map.values(), key=lambda r: r["Username"])
 
-def fetch_all_bad_mrs(client, usernames: list[str], project_id: str | None = None, group_id: str | None = None) -> list[dict]:
+
+def fetch_all_bad_mrs(
+    client, usernames: list[str], project_id: str | None = None, group_id: str | None = None
+) -> list[dict]:
     import nest_asyncio
+
     nest_asyncio.apply()
     try:
         loop = asyncio.get_event_loop()
@@ -325,6 +409,7 @@ def fetch_all_bad_mrs(client, usernames: list[str], project_id: str | None = Non
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(_run_batch(client, usernames, project_id, group_id))
+
 
 def _check_user_compliance(client, username: str) -> dict:
     # Small wrapper for test suite compatibility

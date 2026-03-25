@@ -2,6 +2,7 @@
 Export service for generating CSV and Excel reports from batch compliance data.
 No Streamlit dependencies - can be used in any context.
 """
+
 import csv
 import io
 import os
@@ -9,10 +10,10 @@ import os
 
 def reports_to_csv(rows):
     """Convert a list of per-project summary dicts into CSV string.
-    
+
     Args:
         rows: List of project report dicts
-        
+
     Returns:
         CSV content as string
     """
@@ -55,15 +56,15 @@ def reports_to_csv(rows):
 
 def reports_to_excel(rows):
     """Return Excel bytes for rows using pandas.
-    
+
     Chooses an available engine (openpyxl or xlsxwriter).
-    
+
     Args:
         rows: List of project report dicts
-        
+
     Returns:
         Excel file content as bytes
-        
+
     Raises:
         RuntimeError: If pandas or Excel engine is unavailable
     """
@@ -85,12 +86,8 @@ def reports_to_excel(rows):
                 "branch": r.get("branch"),
                 "python_count": r.get("python_count"),
                 "js_count": r.get("js_count"),
-                "common_requirements": ";".join(
-                    [os.path.basename(p) for p in r.get("common_requirements", [])]
-                ),
-                "project_files": ";".join(
-                    [os.path.basename(p) for p in r.get("project_files", [])]
-                ),
+                "common_requirements": ";".join([os.path.basename(p) for p in r.get("common_requirements", [])]),
+                "project_files": ";".join([os.path.basename(p) for p in r.get("project_files", [])]),
                 "tech_files": ";".join([os.path.basename(p) for p in r.get("tech_files", [])]),
                 "license_status": r.get("license_status"),
                 "license_valid": r.get("license_valid"),
@@ -107,15 +104,17 @@ def reports_to_excel(rows):
     # Check available engines
     openpyxl_available = False
     xlsxwriter_available = False
-    
+
     try:
         import openpyxl  # noqa: F401
+
         openpyxl_available = True
     except Exception:
         pass
-    
+
     try:
         import xlsxwriter  # noqa: F401
+
         xlsxwriter_available = True
     except Exception:
         pass
