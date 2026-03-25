@@ -103,8 +103,14 @@ def main():
     total = len(tests)
 
     for test in tests:
-        if test():
+        try:
+            test()
             passed += 1
+            print(f"✅ PASS: {test.__name__}")
+        except AssertionError as e:
+            print(f"❌ FAIL: {test.__name__} - {str(e)}")
+        except Exception as e:
+            print(f"⚠️ ERROR: {test.__name__} - {str(e)}")
         print()
 
     print("=" * 50)
