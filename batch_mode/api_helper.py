@@ -193,9 +193,9 @@ def check_extensions_json_for_ruff(project, branch="main", read_file_fn=None):
     """
     if read_file_fn is None:
         # Import here to avoid circular dependencies
-        from gitlab_utils.file_reader import read_file_content_no_cache
+        from gitlab_utils.files_reader import read_file_content
 
-        read_file_fn = read_file_content_no_cache
+        read_file_fn = read_file_content
 
     content = read_file_fn(project, ".vscode/extensions.json", branch)
     if not content:
@@ -275,9 +275,9 @@ def check_license_content(project, branch="main", read_file_fn=None):
         String indicating license status: 'valid', 'gnu_other', or 'invalid'
     """
     if read_file_fn is None:
-        from gitlab_utils.file_reader import read_file_content_no_cache
+        from gitlab_utils.files_reader import read_file_content
 
-        read_file_fn = read_file_content_no_cache
+        read_file_fn = read_file_content
 
     content = read_file_fn(project, "LICENSE", branch) or read_file_fn(project, "LICENSE.md", branch)
     if not content:
@@ -360,9 +360,9 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
         Dict with compliance report
     """
     if read_file_fn is None:
-        from gitlab_utils.file_reader import read_file_content_cached
+        from gitlab_utils.files_reader import read_file_content
 
-        read_file_fn = read_file_content_cached
+        read_file_fn = read_file_content
 
     required_files = {
         "README.md": ["README.md"],

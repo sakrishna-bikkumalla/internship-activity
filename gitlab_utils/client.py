@@ -53,7 +53,6 @@ def safe_api_call(func, *args, **kwargs):
                 continue
             print(f"FAILED API CALL: {e}")  # Diagnostic
             return []
-    return []
 
 
 class GitLabClient:

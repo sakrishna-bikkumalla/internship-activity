@@ -35,6 +35,3 @@ def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
             if attempt == retries:
                 raise
             time.sleep(backoff * (2 ** (attempt - 1)))
-
-    if last_exc:
-        raise last_exc

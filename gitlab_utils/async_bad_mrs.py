@@ -139,6 +139,8 @@ async def _evaluate_single_mr(
     }
 
     try:
+        title = str(mr.get("title") or "")
+        title_lower = title.lower()
         desc = mr.get("description") or ""
         if not str(desc).strip():
             flags["no_desc"] = True

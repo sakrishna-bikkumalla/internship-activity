@@ -10,7 +10,7 @@ def extract_path_from_url(input_str):
         path = urlparse(input_str).path.strip("/")
         return path[:-4] if path.endswith(".git") else path
     except Exception:
-        return input_str.strip()
+        return str(input_str).strip()
 
 
 def get_project_branches(project):

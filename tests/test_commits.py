@@ -302,3 +302,27 @@ class TestEdgeCases:
         ]
         assert any("since" in str(p) for p in called_params)
         assert any("until" in str(p) for p in called_params)
+
+    def test_search_by_email_only(self):
+        """If name and username are missing, should use email for search."""
+        commit = _make_commit("sha1", "Alice", "alice@test.com", "2024-01-15T10:00:00Z")
+        client = _make_client([commit])
+        user = {"email": "alice@test.com"} # No name or username
+
+        get_user_commits(client, user, [_make_project(1)])
+        # Check that search was attempted with email
+        called_params = [
+            call.kwargs.get("params", {}) or call.args[1] if call.args else {}
+            for call in client._get_paginated.call_args_list
+        ]
+        assert any("alice@test.com" in str(p) for p in called_params)
+
+    def test_invalid_date_format_handled(self):
+        """Commits with weird dates should return N/A slot."""
+        commit = _make_commit("sha1", "Alice", "a@b.com", "not-a-date")
+        client = _make_client([commit])
+        user = {"name": "Alice"}
+
+        commits, _, _ = get_user_commits(client, user, [_make_project(1)])
+        assert commits[0]["slot"] == "N/A"
+        assert commits[0]["time"] == "N/A"
