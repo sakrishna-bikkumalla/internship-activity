@@ -1,7 +1,7 @@
 # gitlab_utils/api_helpers.py
 
-import os
 from urllib.parse import urlparse
+
 import requests
 
 

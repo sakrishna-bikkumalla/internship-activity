@@ -1,7 +1,8 @@
 # gitlab_utils/retry_helper.py
 
-import time
 import http.client
+import time
+
 import requests
 from gitlab import GitlabGetError
 

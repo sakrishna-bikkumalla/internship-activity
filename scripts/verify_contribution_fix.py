@@ -1,5 +1,6 @@
 import sys
 
+
 def test_event_discovery_implemented():
     projects_file = "gitlab_utils/projects.py"
     with open(projects_file, "r") as f:

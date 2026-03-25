@@ -11,9 +11,11 @@ Rewritten with full native asyncio/aiohttp concurrency for maximum speed.
 from __future__ import annotations
 
 import asyncio
-import aiohttp
 import re
 from datetime import datetime, timezone
+
+import aiohttp
+
 # Allowed imports
 from gitlab_utils.description_quality import analyze_description
 
@@ -102,7 +104,7 @@ async def _evaluate_single_mr(session: aiohttp.ClientSession, sem: asyncio.Semap
         try:
             if analyze_description(desc)["quality_label"] != "High":
                 flags["improper_desc"] = True
-        except: pass
+        except Exception: pass
 
         api_base = f"{base_url}/api/v4"
 

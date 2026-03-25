@@ -1,5 +1,6 @@
 import concurrent.futures
 
+
 def get_user_projects(client, user_id, username):
     """
     Fetches all projects for a user and classifies them into Personal and Contributed.

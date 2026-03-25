@@ -1,8 +1,8 @@
+import time
+
 import gitlab
 import requests
 import streamlit as st
-from gitlab import Gitlab
-import time
 
 # Use a global session for connection pooling
 _SESSION = requests.Session()

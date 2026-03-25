@@ -69,6 +69,7 @@ def reports_to_excel(rows):
     """
     try:
         from io import BytesIO
+
         import pandas as pd
     except Exception as e:
         raise RuntimeError(

@@ -19,7 +19,7 @@ def render_user_profile(client, user_info):
 
     try:
         groups = client.users.get_user_groups(user_id)
-    except Exception as e:
+    except Exception:
         # Keep UI clean even if groups API is unavailable, but log for debug
         # st.warning(f"Debug: Could not load groups: {e}")
         groups = []

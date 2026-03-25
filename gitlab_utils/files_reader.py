@@ -1,6 +1,6 @@
 # gitlab_utils/file_reader.py
 
-from typing import Optional, List
+from typing import List, Optional
 
 
 def read_file_content(project, file_path: str, ref: str) -> Optional[str]:

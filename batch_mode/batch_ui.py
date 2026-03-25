@@ -5,9 +5,9 @@ No Streamlit dependencies - can be used in any context.
 from gitlab_utils.api_helpers import (
     check_project_compliance,
     classify_repository_files,
-    extract_path_from_url,
     list_all_files,
 )
+
 from gitlab_utils.retry_helper import get_project_with_retries
 
 

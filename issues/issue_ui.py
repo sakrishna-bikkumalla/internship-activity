@@ -4,7 +4,6 @@ This module handles all Streamlit-based rendering for issues.
 Pure business logic should be in issue_service.py and issue_metrics.py.
 """
 
-import os
 
 import streamlit as st
 

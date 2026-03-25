@@ -1,5 +1,5 @@
 import sys
-import os
+
 
 def test_ssl_verify_disabled():
     client_file = "gitlab_utils/client.py"

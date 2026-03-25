@@ -1,0 +1,49 @@
+stages:
+  - lint
+  - test
+  - build
+
+variables:
+  PYTHON_VERSION: "3.11"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+default:
+  image: python:${PYTHON_VERSION}-slim
+
+cache:
+  paths:
+    - .cache/pip
+    - .venv
+
+before_script:
+  - python -V
+  - pip install uv
+  - uv venv
+  - source .venv/bin/activate
+  - uv pip install .[dev]
+
+lint_job:
+  stage: lint
+  script:
+    - ruff check .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+test_job:
+  stage: test
+  script:
+    - pytest tests/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+build_job:
+  stage: build
+  script:
+    - uv build
+  artifacts:
+    paths:
+      - dist/
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
