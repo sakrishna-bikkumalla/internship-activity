@@ -32,7 +32,8 @@ def render_user_profile(client, simple_user_info):
         user_data = batch.process_single_user(client, username)
 
     if not user_data or user_data.get("status") != "Success":
-        st.error(f"Error fetching data: {user_data.get('error', 'Unknown error')}")
+        error_msg = user_data.get("error", "Unknown error") if user_data else "Unknown error"
+        st.error(f"Error fetching data: {error_msg}")
         return
 
     # Extract data from the resulting dict

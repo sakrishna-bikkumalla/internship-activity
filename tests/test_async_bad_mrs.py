@@ -375,12 +375,13 @@ async def test_run_batch_full(mock_eval, mock_fetch):
 def test_fetch_all_bad_mrs_runtime_error():
     mock_client = MagicMock(base_url="http://gl", headers={})
     # Use a real RuntimeError instance and return it only once
-    with patch("asyncio.get_event_loop") as mock_get:
+    # Match against the local asyncio reference in the target module
+    with patch("gitlab_utils.async_bad_mrs.asyncio.get_event_loop") as mock_get:
         mock_get.side_effect = RuntimeError("no loop")
-        with patch("asyncio.new_event_loop") as mock_new:
+        with patch("gitlab_utils.async_bad_mrs.asyncio.new_event_loop") as mock_new:
             mock_loop = MagicMock()
             mock_new.return_value = mock_loop
-            with patch("asyncio.set_event_loop"):
+            with patch("gitlab_utils.async_bad_mrs.asyncio.set_event_loop"):
                 with patch("gitlab_utils.async_bad_mrs._run_batch", return_value=[]):
                     async_bad_mrs.fetch_all_bad_mrs(mock_client, ["u1"])
                     mock_get.assert_called()
