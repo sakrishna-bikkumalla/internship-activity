@@ -24,8 +24,8 @@ before_script:
 lint_job:
   stage: lint
   script:
-    - ruff check .
-    - ruff format --check .
+    - uv run ruff check .
+    - uv run ruff format --check .
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -34,7 +34,8 @@ lint_job:
 test_job:
   stage: test
   script:
-    - pytest tests/
+    - uv run pytest tests/
+
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
