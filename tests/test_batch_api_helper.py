@@ -10,6 +10,7 @@ def test_extract_path_from_url():
     with patch("urllib.parse.urlparse", side_effect=Exception):
         assert api_helper.extract_path_from_url("raw_path") == "raw_path"
 
+
 def test_get_project_branches():
     project = MagicMock()
     mock_branch = MagicMock()
@@ -20,6 +21,7 @@ def test_get_project_branches():
     project.branches.list.side_effect = Exception("error")
     assert api_helper.get_project_branches(project) == []
 
+
 def test_list_all_files():
     project = MagicMock()
     project.repository_tree.return_value = [{"path": "f1.py", "type": "blob"}, {"path": "d1", "type": "tree"}]
@@ -29,10 +31,16 @@ def test_list_all_files():
     project.repository_tree.side_effect = [TypeError("all not supported"), [{"path": "fallback.py", "type": "blob"}]]
     assert api_helper.list_all_files(project) == ["fallback.py"]
 
+
 def test_classify_repository_files():
     files = [
-        "requirements.txt", "README.md", "Dockerfile", "src/main.py",
-        "tests/test.py", "style.js", ".vscode/settings.json"
+        "requirements.txt",
+        "README.md",
+        "Dockerfile",
+        "src/main.py",
+        "tests/test.py",
+        "style.js",
+        ".vscode/settings.json",
     ]
     res = api_helper.classify_repository_files(files)
     assert "requirements.txt" in res["common_requirements"]
@@ -43,9 +51,15 @@ def test_classify_repository_files():
 
     # Empty case
     assert api_helper.classify_repository_files(None) == {
-        "common_requirements": [], "project_files": [], "tech_files": [],
-        "python_files": [], "js_files": [], "java_files": [], "c#_files": []
+        "common_requirements": [],
+        "project_files": [],
+        "tech_files": [],
+        "python_files": [],
+        "js_files": [],
+        "java_files": [],
+        "c#_files": [],
     }
+
 
 def test_check_vscode_settings():
     project = MagicMock()
@@ -55,6 +69,7 @@ def test_check_vscode_settings():
     project.repository_tree.side_effect = Exception("error")
     assert api_helper.check_vscode_settings(project) is False
 
+
 def test_check_vscode_file_exists():
     project = MagicMock()
     project.repository_tree.return_value = [{"name": "launch.json"}]
@@ -63,8 +78,10 @@ def test_check_vscode_file_exists():
     project.repository_tree.side_effect = Exception("error")
     assert api_helper.check_vscode_file_exists(project, "launch.json") is False
 
+
 def test_check_extensions_json_for_ruff():
     project = MagicMock()
+
     def mock_read(p, f, b):
         if f == ".vscode/extensions.json":
             return '{"recommendations": ["charliermarsh.ruff"]}'
@@ -73,10 +90,11 @@ def test_check_extensions_json_for_ruff():
     assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=mock_read) is True
 
     # Not found case
-    assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=lambda p,f,b: None) is False
+    assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=lambda p, f, b: None) is False
 
     # Invalid JSON
-    assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=lambda p,f,b: "{invalid}") is False
+    assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=lambda p, f, b: "{invalid}") is False
+
 
 def test_list_markdown_files_in_folder():
     project = MagicMock()
@@ -86,8 +104,10 @@ def test_list_markdown_files_in_folder():
     project.repository_tree.side_effect = Exception("error")
     assert api_helper.list_markdown_files_in_folder(project, "docs") == []
 
+
 def test_check_templates_presence():
     project = MagicMock()
+
     # Mock issue templates find
     def mock_tree(path, ref):
         if path == ".gitlab/issue_templates":
@@ -108,45 +128,50 @@ def test_check_templates_presence():
     res = api_helper.check_templates_presence(project)
     assert res["issue_templates_folder"] is False
 
+
 def test_check_license_content():
     project = MagicMock()
 
     # Valid AGPLv3
     agpl_content = "GNU Affero General Public License version 3 19 November 2007"
-    assert api_helper.check_license_content(project, read_file_fn=lambda p,f,b: agpl_content) == "valid"
+    assert api_helper.check_license_content(project, read_file_fn=lambda p, f, b: agpl_content) == "valid"
 
     # GPLv3
     gpl_content = "GNU General Public License version 3 29 June 2007"
-    assert api_helper.check_license_content(project, read_file_fn=lambda p,f,b: gpl_content) == "gnu_other"
+    assert api_helper.check_license_content(project, read_file_fn=lambda p, f, b: gpl_content) == "gnu_other"
 
     # LGPLv3
     lgpl_content = "GNU Lesser General Public License version 3"
-    assert api_helper.check_license_content(project, read_file_fn=lambda p,f,b: lgpl_content) == "gnu_other"
+    assert api_helper.check_license_content(project, read_file_fn=lambda p, f, b: lgpl_content) == "gnu_other"
 
     # MIT (invalid for this compliance check)
-    assert api_helper.check_license_content(project, read_file_fn=lambda p,f,b: "MIT License") == "invalid"
+    assert api_helper.check_license_content(project, read_file_fn=lambda p, f, b: "MIT License") == "invalid"
 
     # Generic license
-    assert api_helper.check_license_content(project, read_file_fn=lambda p,f,b: "Copyright 2024 License") == "invalid"
+    assert api_helper.check_license_content(project, read_file_fn=lambda p, f, b: "Copyright 2024 License") == "invalid"
     # Malformed GNU
-    assert api_helper.check_license_content(project, read_file_fn=lambda p,f,b: "Copyright GNU License") == "gnu_other"
+    assert (
+        api_helper.check_license_content(project, read_file_fn=lambda p, f, b: "Copyright GNU License") == "gnu_other"
+    )
 
     # Not found
-    assert api_helper.check_license_content(project, read_file_fn=lambda p,f,b: None) == "not_found"
+    assert api_helper.check_license_content(project, read_file_fn=lambda p, f, b: None) == "not_found"
+
 
 def test_check_project_compliance():
     project = MagicMock()
     project.default_branch = "main"
-    project.repository_tree.return_value = [
-        {"name": "README.md"}, {"name": "LICENSE"}, {"name": ".gitignore"}
-    ]
+    project.repository_tree.return_value = [{"name": "README.md"}, {"name": "LICENSE"}, {"name": ".gitignore"}]
     project.description = "Test project"
     project.tags.list.return_value = [MagicMock()]
 
     def mock_read(p, f, b):
-        if f == "README.md": return "Installation Usage Setup"
-        if f == "LICENSE": return "GNU Affero General Public License version 3 19 November 2007"
+        if f == "README.md":
+            return "Installation Usage Setup"
+        if f == "LICENSE":
+            return "GNU Affero General Public License version 3 19 November 2007"
         return None
+
 
 def test_check_project_compliance_extended():
     project = MagicMock()
@@ -154,7 +179,7 @@ def test_check_project_compliance_extended():
 
     # CASE: Missing README, Missing LICENSE
     project.repository_tree.return_value = []
-    res = api_helper.check_project_compliance(project, read_file_fn=lambda p,f,b: None)
+    res = api_helper.check_project_compliance(project, read_file_fn=lambda p, f, b: None)
     assert res["README.md"] is False
     assert res["LICENSE"] is False
     assert res["license_status"] == "not_found"
@@ -162,18 +187,19 @@ def test_check_project_compliance_extended():
 
     # CASE: Empty README
     project.repository_tree.return_value = [{"name": "README.md"}]
-    res = api_helper.check_project_compliance(project, read_file_fn=lambda p,f,b: " ")
+    res = api_helper.check_project_compliance(project, read_file_fn=lambda p, f, b: " ")
     assert res["readme_status"] == "empty"
 
     # CASE: README quality improvement needed
     project.repository_tree.return_value = [{"name": "README.md"}]
-    res = api_helper.check_project_compliance(project, read_file_fn=lambda p,f,b: "Short README")
+    res = api_helper.check_project_compliance(project, read_file_fn=lambda p, f, b: "Short README")
     assert res["readme_needs_improvement"] is True
 
     # CASE: Exception
     project.repository_tree.side_effect = Exception("Crash")
     res = api_helper.check_project_compliance(project)
     assert "error" in res
+
 
 def test_internal_import_coverage():
     project = MagicMock()

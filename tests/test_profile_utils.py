@@ -9,6 +9,7 @@ from user_profile.profile_utils import (
 
 # ---------------- DATETIME HELPERS ----------------
 
+
 def test_parse_gitlab_datetime_valid_z():
     """UTC timestamp with 'Z' should be converted to IST."""
     ts = "2024-03-25T10:00:00Z"
@@ -18,6 +19,7 @@ def test_parse_gitlab_datetime_valid_z():
     assert dt.hour == 15
     assert dt.minute == 30
 
+
 def test_parse_gitlab_datetime_valid_offset():
     """UTC timestamp with '+00:00' should be converted to IST."""
     ts = "2024-03-25T10:00:00+00:00"
@@ -25,6 +27,7 @@ def test_parse_gitlab_datetime_valid_offset():
     assert dt.tzinfo == LOCAL_TZ
     assert dt.hour == 15
     assert dt.minute == 30
+
 
 def test_parse_gitlab_datetime_naive():
     """Naive timestamp should be treated as UTC then converted to IST."""
@@ -34,16 +37,20 @@ def test_parse_gitlab_datetime_naive():
     assert dt.hour == 15
     assert dt.minute == 30
 
+
 def test_parse_gitlab_datetime_empty():
     """Empty or None timestamp should return None."""
     assert parse_gitlab_datetime("") is None
     assert parse_gitlab_datetime(None) is None
 
+
 def test_parse_gitlab_datetime_invalid():
     """Invalid timestamp string should return None (exception handling)."""
     assert parse_gitlab_datetime("not-a-date") is None
 
+
 # ---------------- TIME SLOT CLASSIFICATION ----------------
+
 
 def test_classify_time_slot_morning():
     """Morning: 09:00 – 12:30 (IST)."""
@@ -54,6 +61,7 @@ def test_classify_time_slot_morning():
     # 03:30 UTC = 09:00 IST (Start boundary)
     assert classify_time_slot("2024-03-25T03:30:00Z") == "Morning"
 
+
 def test_classify_time_slot_afternoon():
     """Afternoon: 14:00 – 17:00 (IST)."""
     # 08:30 UTC = 14:00 IST
@@ -62,6 +70,7 @@ def test_classify_time_slot_afternoon():
     assert classify_time_slot("2024-03-25T10:30:00Z") == "Afternoon"
     # 11:30 UTC = 17:00 IST (End boundary inclusive)
     assert classify_time_slot("2024-03-25T11:30:00Z") == "Afternoon"
+
 
 def test_classify_time_slot_other():
     """All other times."""
@@ -76,12 +85,15 @@ def test_classify_time_slot_other():
     # Night time
     assert classify_time_slot("2024-03-25T20:00:00Z") == "Other"
 
+
 def test_classify_time_slot_invalid():
     """Invalid/None inputs should return None."""
     assert classify_time_slot("") is None
     assert classify_time_slot(None) is None
 
+
 # ---------------- FORMAT DATE TIME ----------------
+
 
 def test_format_date_time_valid():
     """Valid timestamp should return ISO date and 12h time."""
@@ -89,12 +101,15 @@ def test_format_date_time_valid():
     assert date_str == "2024-03-25"
     assert time_str == "03:30 PM"
 
+
 def test_format_date_time_invalid():
     """Invalid/Empty timestamp should return ('-', '-')."""
     assert format_date_time("") == ("-", "-")
     assert format_date_time(None) == ("-", "-")
 
+
 # ---------------- DATA PROCESSING ----------------
+
 
 def test_process_commits_normal():
     """Process commit list into structured rows."""
@@ -110,7 +125,7 @@ def test_process_commits_normal():
             "project_scope": "Public",
             "project_name": "Project B",
             "message": "Update README",
-        }
+        },
     ]
     processed = process_commits(commits)
     assert len(processed) == 2
@@ -118,6 +133,7 @@ def test_process_commits_normal():
     assert processed[0]["message"] == "Fix bug"
     assert processed[1]["slot"] == "Afternoon"
     assert processed[1]["message"] == "Update README"
+
 
 def test_process_commits_edge_cases():
     """Empty list, None, and invalid entries."""
@@ -135,6 +151,7 @@ def test_process_commits_edge_cases():
     assert processed[0]["project"] == "-"
     assert processed[0]["message"] == ""
 
+
 def test_process_groups_normal():
     """Process group list into structured rows."""
     groups = [
@@ -149,6 +166,7 @@ def test_process_groups_normal():
     assert len(processed) == 1
     assert processed[0]["name"] == "Group A"
     assert processed[0]["path"] == "path/a"
+
 
 def test_process_groups_edge_cases():
     """Empty list, None, and missing fields."""

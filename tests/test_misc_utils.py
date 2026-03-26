@@ -7,6 +7,7 @@ from gitlab_utils.users import get_user_by_username
 
 # ---------------- USERS TESTS ----------------
 
+
 def test_get_user_by_username():
     mock_client = MagicMock()
     # Found
@@ -22,7 +23,9 @@ def test_get_user_by_username():
     mock_client._get.return_value = None
     assert get_user_by_username(mock_client, "none") is None
 
+
 # ---------------- GROUPS TESTS ----------------
+
 
 def test_get_user_groups():
     mock_client = MagicMock()
@@ -33,16 +36,19 @@ def test_get_user_groups():
     ]
 
     res = get_user_groups(mock_client, 1)
-    assert len(res) == 2 # Deduplicated
+    assert len(res) == 2  # Deduplicated
     assert res[0]["name"] == "Group 1"
     assert res[1]["visibility"] == "private"
+
 
 def test_get_user_groups_exception():
     mock_client = MagicMock()
     mock_client._get_paginated.side_effect = Exception("error")
     assert get_user_groups(mock_client, 1) == []
 
+
 # ---------------- ISSUES TESTS ----------------
+
 
 def test_get_user_issues():
     mock_client = MagicMock()
@@ -68,6 +74,7 @@ def test_get_user_issues():
     assert kwargs["params"]["created_after"] == "2024-01-01"
     assert kwargs["params"]["created_before"] == "2024-01-31"
 
+
 def test_get_user_issues_exception():
     mock_client = MagicMock()
     mock_client._get_paginated.side_effect = Exception("error")
@@ -75,15 +82,17 @@ def test_get_user_issues_exception():
     assert issues == []
     assert stats["total"] == 0
 
+
 # ---------------- PROJECTS TESTS ----------------
+
 
 def test_get_user_projects_success():
     mock_client = MagicMock()
 
     # projects_data
     mock_client._get_paginated.side_effect = [
-        [{"id": 1, "name": "Project 1", "namespace": {"path": "user1", "kind": "user"}}], # projects
-        [{"project_id": 2}] # events
+        [{"id": 1, "name": "Project 1", "namespace": {"path": "user1", "kind": "user"}}],  # projects
+        [{"project_id": 2}],  # events
     ]
 
     # extra details for project 2
@@ -91,16 +100,18 @@ def test_get_user_projects_success():
 
     res = get_user_projects(mock_client, 1, "user1")
     assert len(res["all"]) == 2
-    assert len(res["personal"]) == 1 # Project 1
-    assert len(res["contributed"]) == 1 # Project 2
+    assert len(res["personal"]) == 1  # Project 1
+    assert len(res["contributed"]) == 1  # Project 2
     assert res["personal"][0]["id"] == 1
     assert res["contributed"][0]["id"] == 2
+
 
 def test_get_user_projects_exception():
     mock_client = MagicMock()
     mock_client._get_paginated.side_effect = Exception("error")
     res = get_user_projects(mock_client, 1, "user")
     assert res == {"personal": [], "contributed": [], "all": []}
+
 
 def test_search_projects():
     mock_client = MagicMock()

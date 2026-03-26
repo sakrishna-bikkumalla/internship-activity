@@ -14,6 +14,7 @@ from gitlab_utils import merge_requests
 # Tests for get_user_mrs
 # ---------------------------------------------------------------------------
 
+
 def test_get_user_mrs_stats_structure():
     """mr_stats dict returned by get_user_mrs must contain all required keys."""
     mock_client = MagicMock()
@@ -22,6 +23,7 @@ def test_get_user_mrs_stats_structure():
     required = {"total", "merged", "closed", "opened", "pending"}
     assert required.issubset(stats.keys())
 
+
 def test_get_user_mrs_empty_response():
     """Empty API response should return zero stats."""
     mock_client = MagicMock()
@@ -29,6 +31,7 @@ def test_get_user_mrs_empty_response():
     mrs_list, stats = merge_requests.get_user_mrs(mock_client, user_id=1)
     assert mrs_list == []
     assert stats["total"] == 0
+
 
 def test_get_user_mrs_with_filters():
     """Test date and project filtering in get_user_mrs."""
@@ -50,6 +53,7 @@ def test_get_user_mrs_with_filters():
     assert kwargs["params"]["created_after"] == "2024-01-01"
     assert kwargs["params"]["created_before"] == "2024-01-02"
 
+
 def test_get_user_mrs_exception_in_subcall():
     """Verify that exceptions in fetch_and_add are caught silently."""
     mock_client = MagicMock()
@@ -58,9 +62,11 @@ def test_get_user_mrs_exception_in_subcall():
     assert mrs_list == []
     assert stats["total"] == 0
 
+
 # ---------------------------------------------------------------------------
 # Tests for get_single_user_live_mr_compliance
 # ---------------------------------------------------------------------------
+
 
 def test_get_single_user_live_mr_compliance_no_client():
     """Should return empty stats if client is not initialized."""
@@ -69,6 +75,7 @@ def test_get_single_user_live_mr_compliance_no_client():
     stats, problematic = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "user")
     assert stats["Total MRs Evaluated"] == 0
     assert problematic == []
+
 
 @patch("gitlab_utils.merge_requests.analyze_description")
 def test_get_single_user_live_mr_compliance_full_flow(mock_analyze):
@@ -92,11 +99,7 @@ def test_get_single_user_live_mr_compliance_full_flow(mock_analyze):
     mock_project.mergerequests.list.return_value = [mock_mr_cached]
     mock_project.mergerequests.get.return_value = mock_mr_full
 
-    mock_analyze.return_value = {
-        "description_score": 5,
-        "quality_label": "Good",
-        "feedback": []
-    }
+    mock_analyze.return_value = {"description_score": 5, "quality_label": "Good", "feedback": []}
 
     stats, problematic = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "target_user")
 
@@ -108,6 +111,7 @@ def test_get_single_user_live_mr_compliance_full_flow(mock_analyze):
     assert len(problematic) == 1
     assert problematic[0]["No Unit Tests"] is True
 
+
 def test_get_single_user_live_mr_compliance_edge_cases():
     """Test exceptions and missing attributes in compliance checks."""
     mock_client = MagicMock()
@@ -116,8 +120,8 @@ def test_get_single_user_live_mr_compliance_edge_cases():
     mock_mr_cached.author = {"name": "user"}
 
     mock_mr_full = MagicMock()
-    mock_mr_full.description = "" # No description
-    del mock_mr_full.head_pipeline # Attribute missing
+    mock_mr_full.description = ""  # No description
+    del mock_mr_full.head_pipeline  # Attribute missing
     mock_mr_full.time_stats.side_effect = Exception("error")
     mock_mr_full.references = None
     mock_mr_full.changes.side_effect = Exception("error")
@@ -132,6 +136,7 @@ def test_get_single_user_live_mr_compliance_edge_cases():
     assert stats["No Time Spent"] == 1
     assert stats["No Issues Linked"] == 1
     assert stats["No Unit Tests"] == 1
+
 
 def test_get_single_user_live_mr_compliance_various_unit_tests():
     """Test unit test detection logic in changes."""
@@ -155,12 +160,14 @@ def test_get_single_user_live_mr_compliance_various_unit_tests():
     stats, _ = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "user")
     assert stats["No Unit Tests"] == 0
 
+
 def test_get_user_mrs_closed_state():
     """Test 'closed' state in get_user_mrs."""
     mock_client = MagicMock()
     mock_client._get_paginated.return_value = [{"id": 1, "state": "closed", "created_at": "2024-01-01T00:00:00Z"}]
     _, stats = merge_requests.get_user_mrs(mock_client, user_id=1)
     assert stats["closed"] == 1
+
 
 def test_get_single_user_live_mr_compliance_different_author():
     """MRs from other authors should be skipped."""
@@ -174,6 +181,7 @@ def test_get_single_user_live_mr_compliance_different_author():
 
     stats, _ = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "target_user")
     assert stats["Total MRs Evaluated"] == 0
+
 
 def test_get_single_user_live_mr_compliance_exceptions():
     """Trigger explicit exception blocks."""

@@ -9,9 +9,11 @@ from batch_mode.batch_ui import BatchProcessingService
 def mock_gl():
     return MagicMock()
 
+
 @pytest.fixture
 def service(mock_gl):
     return BatchProcessingService(mock_gl)
+
 
 def test_process_project_success(service, mock_gl):
     # Mock dependencies
@@ -23,7 +25,12 @@ def test_process_project_success(service, mock_gl):
         mock_get.return_value = proj
 
         with patch("batch_mode.batch_ui.check_project_compliance") as mock_comp:
-            mock_comp.return_value = {"license_status": "valid", "license_valid": True, "readme_status": "present", "readme_sections": ["s1"]}
+            mock_comp.return_value = {
+                "license_status": "valid",
+                "license_valid": True,
+                "readme_status": "present",
+                "readme_sections": ["s1"],
+            }
 
             with patch("batch_mode.batch_ui.list_all_files") as mock_list:
                 mock_list.return_value = ["f1.py", "README.md"]
@@ -41,6 +48,7 @@ def test_process_project_success(service, mock_gl):
                     assert rows[0]["project_id"] == 123
                     assert rows[0]["python_count"] == 1
 
+
 def test_process_project_failure(service, mock_gl):
     with patch("batch_mode.batch_ui.get_project_with_retries", side_effect=Exception("API Error")):
         res = service.process_project("bad")
@@ -51,10 +59,12 @@ def test_process_project_failure(service, mock_gl):
         assert len(rows) == 1
         assert rows[0]["readme_status"] == "error"
 
+
 def test_process_projects_batch(service):
     with patch.object(BatchProcessingService, "process_project", return_value={"id": 1}):
         res = service.process_projects(["p1", "p2"])
         assert len(res) == 2
+
 
 def test_create_summary_rows_missing_data(service):
     # Case where results don't have proj/report/class

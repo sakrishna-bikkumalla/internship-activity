@@ -12,6 +12,7 @@ def target_func():
         loop = asyncio.new_event_loop()
     return loop
 
+
 def test_patch():
     # Patch it in the module where target_func will look for it
     with patch("nest_asyncio.apply"):
@@ -20,6 +21,7 @@ def test_patch():
             target_func()
             assert mock_get.called
             print("Success!")
+
 
 if __name__ == "__main__":
     test_patch()

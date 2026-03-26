@@ -13,7 +13,7 @@ def test_render_issue_compliance_ui():
             "issue_templates_folder": False,
             "issue_template_files": [],
             "merge_request_templates_folder": True,
-            "merge_request_template_files": ["feature.md"]
+            "merge_request_template_files": ["feature.md"],
         }
         issue_ui.render_issue_compliance_ui(report)
 
@@ -22,10 +22,11 @@ def test_render_issue_compliance_ui():
             "issue_templates_folder": True,
             "issue_template_files": ["bug.md"],
             "merge_request_templates_folder": False,
-            "merge_request_template_files": []
+            "merge_request_template_files": [],
         }
         issue_ui.render_issue_compliance_ui(report2)
         assert mock_cols.call_count == 2
+
 
 def test_render_issue_suggestions():
     with patch("streamlit.markdown") as mock_md:
@@ -39,13 +40,9 @@ def test_render_issue_suggestions():
         issue_ui.render_issue_suggestions({"issue_templates_folder": True, "merge_request_templates_folder": True})
         mock_md.assert_not_called()
 
+
 def test_render_issue_metrics_ui():
-    metrics = {
-        "open_issues": 10,
-        "assigned_issues": 9,
-        "unassigned_issues": 1,
-        "assignment_percentage": 90.0
-    }
+    metrics = {"open_issues": 10, "assigned_issues": 9, "unassigned_issues": 1, "assignment_percentage": 90.0}
     with patch("streamlit.columns") as mock_cols:
         mock_cols.return_value = [MagicMock(), MagicMock(), MagicMock()]
         with patch("streamlit.metric") as mock_metric:
@@ -71,11 +68,9 @@ def test_render_issue_metrics_ui():
             issue_ui.render_issue_metrics_ui({"assignment_percentage": 10})
             mock_err.assert_called_once()
 
+
 def test_render_issue_summary_card():
-    summary = {
-        "compliance_score": 90,
-        "metrics": {"open_issues": 10, "assigned_issues": 10}
-    }
+    summary = {"compliance_score": 90, "metrics": {"open_issues": 10, "assigned_issues": 10}}
     with patch("streamlit.markdown") as mock_md:
         with patch("streamlit.expander") as mock_exp:
             # Mock expander as context manager

@@ -7,12 +7,14 @@ from gitlab_utils import api_helper, files_reader, network, parse_uvlock, retry_
 
 # ---------------- API HELPER TESTS ----------------
 
+
 def test_extract_path_from_url():
     assert api_helper.extract_path_from_url("http://gl.com/group/proj.git") == "group/proj"
     assert api_helper.extract_path_from_url("http://gl.com/group/proj") == "group/proj"
     assert api_helper.extract_path_from_url("simple/path") == "simple/path"
     # test with None to trigger exception block
     assert api_helper.extract_path_from_url(None) == "None"
+
 
 def test_get_project_branches():
     project = MagicMock()
@@ -23,6 +25,7 @@ def test_get_project_branches():
 
     project.branches.list.side_effect = Exception("error")
     assert api_helper.get_project_branches(project) == []
+
 
 @patch("requests.get")
 def test_get_user_from_token(mock_get):
@@ -35,6 +38,7 @@ def test_get_user_from_token(mock_get):
 
     mock_get.side_effect = Exception("Fail")
     assert "Error validating token" in api_helper.get_user_from_token("http://gl.com", "token")
+
 
 @patch("requests.get")
 def test_get_user_groups_by_token(mock_get):
@@ -54,7 +58,9 @@ def test_get_user_groups_by_token(mock_get):
     mock_get.side_effect = Exception("error")
     assert "Error fetching groups" in api_helper.get_user_groups_by_token("http://gl.com", "token")
 
+
 # ---------------- FILES READER TESTS ----------------
+
 
 def test_read_file_content():
     project = MagicMock()
@@ -65,6 +71,7 @@ def test_read_file_content():
 
     project.files.get.side_effect = Exception("404")
     assert files_reader.read_file_content(project, "f.txt", "main") is None
+
 
 def test_list_all_files():
     project = MagicMock()
@@ -78,7 +85,9 @@ def test_list_all_files():
     project.repository_tree.side_effect = Exception("Fatal")
     assert files_reader.list_all_files(project) == []
 
+
 # ---------------- NETWORK TESTS ----------------
+
 
 @patch("requests.request")
 def test_network_make_request(mock_req):
@@ -86,6 +95,7 @@ def test_network_make_request(mock_req):
     mock_req.return_value = mock_response
     assert network.make_request("GET", "http://test") == mock_response
     mock_response.raise_for_status.assert_called_once()
+
 
 @patch("gitlab_utils.network.make_request")
 def test_network_get_user_from_token(mock_make):
@@ -97,6 +107,7 @@ def test_network_get_user_from_token(mock_make):
 
     mock_make.side_effect = Exception("Fail")
     assert network.validate_token("http://gl.com", "tok") is False
+
 
 @patch("gitlab_utils.network.make_request")
 def test_network_get_user_groups(mock_make):
@@ -110,7 +121,9 @@ def test_network_get_user_groups(mock_make):
     network.get_user_groups("http://gl.com", "tok")
     assert mock_make.call_count == 2
 
+
 # ---------------- PARSE UVLOCK TESTS ----------------
+
 
 def test_parse_uvlock_content():
     content = '[[package]]\nname = "pkg1"\nversion = "1.0"\n'
@@ -119,6 +132,7 @@ def test_parse_uvlock_content():
     assert res["packages"][0]["name"] == "pkg1"
 
     assert "error" in parse_uvlock.parse_uvlock_content("invalid { toml")
+
 
 def test_extract_dependencies_from_project():
     project = MagicMock()
@@ -131,7 +145,9 @@ def test_extract_dependencies_from_project():
     project.files.get.side_effect = Exception("error")
     assert "error" in parse_uvlock.extract_dependencies_from_project(project)
 
+
 # ---------------- RETRY HELPER TESTS ----------------
+
 
 @patch("time.sleep")
 def test_get_project_with_retries(mock_sleep):

@@ -11,6 +11,7 @@ def test_empty_description():
     result = analyze_description("   ")
     assert result["description_score"] == 0
 
+
 def test_high_quality_description():
     """A structured, detailed description with action verbs and lists."""
     desc = """
@@ -28,6 +29,7 @@ def test_high_quality_description():
     assert result["description_score"] >= 80
     assert result["quality_label"] == "High"
 
+
 def test_moderate_quality_description():
     """A basic description with some length and an action verb but lacking structure."""
     desc = "Fixed the database migration issue where indices were not created properly."
@@ -36,12 +38,14 @@ def test_moderate_quality_description():
     assert result["description_score"] <= 79
     assert result["quality_label"] == "Low" or result["quality_label"] == "Moderate"
 
+
 def test_low_quality_description():
     """Very short, vague description."""
     desc = "update Readme file"
     result = analyze_description(desc)
     assert result["description_score"] < 50
     assert result["quality_label"] == "Low"
+
 
 def test_keyword_only_description():
     """Keyword-only description."""
@@ -50,6 +54,7 @@ def test_keyword_only_description():
     assert result["description_score"] < 25
     assert result["quality_label"] == "Low"
 
+
 def test_large_irrelevant_text():
     """A large block of text without MR structures or keywords."""
     desc = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. " * 20
@@ -57,6 +62,7 @@ def test_large_irrelevant_text():
     assert result["description_score"] == 40
     assert result["quality_label"] == "Low"
     assert "Description is long but lacks structure and key MR context." in result["feedback"]
+
 
 def test_structured_description():
     """Sections and lists."""
@@ -72,16 +78,20 @@ def test_structured_description():
     assert result["description_score"] >= 80
     assert result["quality_label"] == "High"
 
+
 def test_perfect_quality_description():
     """Achieve a score of 100."""
-    desc = """
+    desc = (
+        """
     ## Summary
     This MR is implemented because we need to fix the issue of slow loading.
     It added several optimizations in order to resolve the impact on users.
     - Optimized database queries
     - Added caching layer
     - Removed redundant loops
-    """ + "x" * 400
+    """
+        + "x" * 400
+    )
     result = analyze_description(desc)
     assert result["description_score"] == 100
     assert result["feedback"] == "Excellent description"

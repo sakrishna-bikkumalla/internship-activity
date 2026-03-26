@@ -307,7 +307,7 @@ class TestEdgeCases:
         """If name and username are missing, should use email for search."""
         commit = _make_commit("sha1", "Alice", "alice@test.com", "2024-01-15T10:00:00Z")
         client = _make_client([commit])
-        user = {"email": "alice@test.com"} # No name or username
+        user = {"email": "alice@test.com"}  # No name or username
 
         get_user_commits(client, user, [_make_project(1)])
         # Check that search was attempted with email
