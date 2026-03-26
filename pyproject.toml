@@ -24,7 +24,8 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "requests-mock",
-  "pre-commit"
+  "pre-commit",
+  "openpyxl"
 ]
 
 [tool.hatch.build]
