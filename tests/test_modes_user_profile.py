@@ -1,7 +1,9 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import pandas as pd
+
+import pytest
+
 from modes import user_profile
+
 
 @pytest.fixture
 def mock_client():

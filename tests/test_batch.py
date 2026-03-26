@@ -1,6 +1,7 @@
-import pytest
-import asyncio
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from gitlab_utils import batch
 
 # ---------------- RESOLVE PROJECT PATHS TESTS ----------------
@@ -81,7 +82,7 @@ def test_process_single_user_with_project_ids(
         Exception("404") # Fail for project 60
     ]
 
-    res = batch.process_single_user(mock_client, "user1", project_ids=[50, 60])
+    batch.process_single_user(mock_client, "user1", project_ids=[50, 60])
 
     # Verify that get_user_commits was called with project 50
     args = mock_commits.call_args.args

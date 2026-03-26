@@ -1,8 +1,9 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import pandas as pd
-import io
+
+import pytest
+
 from modes import batch_mode
+
 
 @pytest.fixture
 def mock_client():
@@ -65,7 +66,7 @@ def test_render_batch_mode_ui_repo_resolve_fail(mock_client):
         with patch("streamlit.button", return_value=True):
             with patch("streamlit.spinner"):
                 with patch("gitlab_utils.batch.resolve_project_paths", return_value=([], ["bad/repo"])):
-                     with patch("streamlit.error") as mock_err:
+                     with patch("streamlit.error"):
                          batch_mode.render_batch_mode_ui(mock_client, "ICFAI")
 
 def test_render_batch_mode_ui_no_usernames(mock_client):
@@ -90,5 +91,5 @@ def test_render_batch_mode_ui_excel_error(mock_client):
             with patch("streamlit.spinner"):
                 with patch("gitlab_utils.batch.process_batch_users", return_value=[]):
                     with patch("pandas.ExcelWriter", side_effect=Exception("XLSX Error")):
-                        with patch("streamlit.error") as mock_err:
+                        with patch("streamlit.error"):
                             batch_mode.render_batch_mode_ui(mock_client, "ICFAI")

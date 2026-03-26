@@ -1,7 +1,9 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from batch_mode.client import GitLabClient, GitLabUsersAPI
-import requests
+
 
 @pytest.fixture
 def mock_client():
@@ -30,7 +32,7 @@ def test_client_request_204(mock_client):
 def test_client_get_paginated(mock_client):
     with patch("batch_mode.client.GitLabClient._get") as mock_get:
         # Page 1: 100 items, Page 2: 50 items
-        mock_get.side_effect = [[i for i in range(100)], [i for i in range(50)]]
+        mock_get.side_effect = [list(range(100)), list(range(50))]
 
         res = mock_client._get_paginated("/test", per_page=100)
         assert len(res) == 150

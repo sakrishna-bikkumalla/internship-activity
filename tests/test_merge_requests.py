@@ -5,7 +5,9 @@ Tests for GitLab Merge Request utilities and compliance analysis.
 """
 
 from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
+
 from gitlab_utils import merge_requests
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 from gitlab_utils.description_quality import analyze_description
 
+
 def test_empty_description():
     """Empty description should get 0 score and Low quality."""
     result = analyze_description(None)

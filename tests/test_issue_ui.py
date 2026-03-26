@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from issues import issue_ui
+
 
 def test_render_issue_compliance_ui():
     with patch("streamlit.columns") as mock_cols:

@@ -1,13 +1,10 @@
-import pytest
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 from user_profile.profile_utils import (
-    parse_gitlab_datetime,
+    LOCAL_TZ,
     classify_time_slot,
     format_date_time,
+    parse_gitlab_datetime,
     process_commits,
     process_groups,
-    LOCAL_TZ,
 )
 
 # ---------------- DATETIME HELPERS ----------------

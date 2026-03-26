@@ -1,9 +1,10 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from batch_mode import file_reader, retry_helper
-from gitlab import GitlabGetError
+
+import pytest
 import requests
-import sys
+from gitlab import GitlabGetError
+
+from batch_mode import file_reader, retry_helper
 
 # --- Tests for file_reader.py ---
 

@@ -1,5 +1,5 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from issues import issue_metrics, issue_service
 
 # --- Tests for issue_metrics.py ---

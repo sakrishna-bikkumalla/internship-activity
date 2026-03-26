@@ -1,6 +1,9 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from batch_mode.batch_ui import BatchProcessingService
+
 
 @pytest.fixture
 def mock_gl():

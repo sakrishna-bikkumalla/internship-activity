@@ -1,9 +1,10 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import streamlit as st
-from modes import compliance_mode
+
+import pytest
 from gitlab import GitlabGetError
-import requests
+
+from modes import compliance_mode
+
 
 @pytest.fixture
 def mock_project():
@@ -139,7 +140,6 @@ def test_check_license_edge_cases(mock_project):
         assert compliance_mode.check_license_content(mock_project) == "invalid"
 
 def test_render_batch_project_compliance_internal(mock_client):
-    projects_input = ["gp/p1"]
     with patch("modes.compliance_mode.get_project_with_retries") as mock_get:
         proj = MagicMock()
         proj.name_with_namespace = "P1"

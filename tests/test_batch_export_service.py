@@ -1,9 +1,11 @@
-import pytest
-from unittest.mock import MagicMock, patch
-from batch_mode import export_service
 import io
+from unittest.mock import patch
+
 import pandas as pd
-import os
+import pytest
+
+from batch_mode import export_service
+
 
 def test_reports_to_csv():
     rows = [

@@ -1,7 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 import requests
-from unittest.mock import MagicMock, patch, PropertyMock
-from gitlab_utils.client import safe_api_call, GitLabClient
+
+from gitlab_utils.client import GitLabClient, safe_api_call
 
 # ---------------- SAFE API CALL TESTS ----------------
 
