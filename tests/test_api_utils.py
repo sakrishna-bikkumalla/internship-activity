@@ -1,8 +1,9 @@
-import pytest
-import requests
 from unittest.mock import MagicMock, patch
-from gitlab_utils import api_helper, files_reader, network, parse_uvlock, retry_helper
+
+import pytest
 from gitlab import GitlabGetError
+
+from gitlab_utils import api_helper, files_reader, network, parse_uvlock, retry_helper
 
 # ---------------- API HELPER TESTS ----------------
 
@@ -15,7 +16,8 @@ def test_extract_path_from_url():
 
 def test_get_project_branches():
     project = MagicMock()
-    mock_branch = MagicMock(); mock_branch.name = "main"
+    mock_branch = MagicMock()
+    mock_branch.name = "main"
     project.branches.list.return_value = [mock_branch]
     assert api_helper.get_project_branches(project) == ["main"]
 
@@ -141,7 +143,8 @@ def test_get_project_with_retries(mock_sleep):
     assert retry_helper.get_project_with_retries(mock_gl, 123) == "project"
 
     # 404 should raise immediately
-    mock_response = MagicMock(); mock_response.status_code = 404
+    mock_response = MagicMock()
+    mock_response.status_code = 404
     err_404 = GitlabGetError()
     err_404.response = mock_response
     mock_gl.projects.get.side_effect = err_404
@@ -149,7 +152,8 @@ def test_get_project_with_retries(mock_sleep):
         retry_helper.get_project_with_retries(mock_gl, "path")
 
     # Other GitlabGetError retry
-    mock_response_500 = MagicMock(); mock_response_500.status_code = 500
+    mock_response_500 = MagicMock()
+    mock_response_500.status_code = 500
     err_500 = GitlabGetError()
     err_500.response = mock_response_500
     mock_gl.projects.get.side_effect = [err_500, "project"]

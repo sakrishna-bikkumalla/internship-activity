@@ -1,7 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from batch_mode import api_helper
-import os
+
 
 def test_extract_path_from_url():
     assert api_helper.extract_path_from_url("http://gl.com/group/proj.git") == "group/proj"
@@ -12,7 +12,8 @@ def test_extract_path_from_url():
 
 def test_get_project_branches():
     project = MagicMock()
-    mock_branch = MagicMock(); mock_branch.name = "main"
+    mock_branch = MagicMock()
+    mock_branch.name = "main"
     project.branches.list.return_value = [mock_branch]
     assert api_helper.get_project_branches(project) == ["main"]
 

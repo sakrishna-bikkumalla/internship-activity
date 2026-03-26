@@ -1,8 +1,8 @@
-import pytest
 import asyncio
-import aiohttp
-from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import datetime, timezone, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from gitlab_utils import async_bad_mrs
 
 # ---------------- FETCH JSON TESTS ----------------
@@ -30,8 +30,10 @@ async def test_fetch_json_429_retry():
     mock_resp_200.status = 200
     mock_resp_200.json.return_value = {"ok": True}
 
-    cm_429 = AsyncMock(); cm_429.__aenter__.return_value = mock_resp_429
-    cm_200 = AsyncMock(); cm_200.__aenter__.return_value = mock_resp_200
+    cm_429 = AsyncMock()
+    cm_429.__aenter__.return_value = mock_resp_429
+    cm_200 = AsyncMock()
+    cm_200.__aenter__.return_value = mock_resp_200
     mock_session.get.side_effect = [cm_429, cm_200]
 
     sem = asyncio.Semaphore(1)
@@ -158,7 +160,9 @@ def test_fetch_all_bad_mrs_wrapper():
 @pytest.mark.asyncio
 async def test_fetch_json_429_no_retry_after():
     mock_session = MagicMock()
-    mock_resp = AsyncMock(); mock_resp.status = 429; mock_resp.headers = {}
+    mock_resp = AsyncMock()
+    mock_resp.status = 429
+    mock_resp.headers = {}
     mock_session.get.return_value.__aenter__.return_value = mock_resp
     sem = asyncio.Semaphore(1)
     with patch("asyncio.sleep", return_value=None):
@@ -260,8 +264,12 @@ async def test_fetch_json_edge_cases():
     sem = asyncio.Semaphore(1)
 
     # 1. ValueError in Retry-After
-    mock_resp_429 = AsyncMock(); mock_resp_429.status = 429; mock_resp_429.headers = {"Retry-After": "abc"}
-    mock_resp_200 = AsyncMock(); mock_resp_200.status = 200; mock_resp_200.json.return_value = {"ok": True}
+    mock_resp_429 = AsyncMock()
+    mock_resp_429.status = 429
+    mock_resp_429.headers = {"Retry-After": "abc"}
+    mock_resp_200 = AsyncMock()
+    mock_resp_200.status = 200
+    mock_resp_200.json.return_value = {"ok": True}
     mock_session.get.side_effect = [
         AsyncMock(__aenter__=AsyncMock(return_value=mock_resp_429)),
         AsyncMock(__aenter__=AsyncMock(return_value=mock_resp_200))
@@ -271,13 +279,15 @@ async def test_fetch_json_edge_cases():
     assert res == {"ok": True}
 
     # 2. 204 Status
-    mock_resp_204 = AsyncMock(); mock_resp_204.status = 204
+    mock_resp_204 = AsyncMock()
+    mock_resp_204.status = 204
     mock_session.get.side_effect = [AsyncMock(__aenter__=AsyncMock(return_value=mock_resp_204))]
     res = await async_bad_mrs.fetch_json(mock_session, "http://test", sem)
     assert res is None
 
     # 3. Final return None
-    mock_resp_500 = AsyncMock(); mock_resp_500.status = 500
+    mock_resp_500 = AsyncMock()
+    mock_resp_500.status = 500
     mock_session.get.side_effect = [AsyncMock(__aenter__=AsyncMock(return_value=mock_resp_500))]
     res = await async_bad_mrs.fetch_json(mock_session, "http://test", sem)
     assert res is None
@@ -374,16 +384,16 @@ async def test_run_batch_full(mock_eval, mock_fetch):
 
 def test_fetch_all_bad_mrs_runtime_error():
     mock_client = MagicMock(base_url="http://gl", headers={})
-    # Use a real RuntimeError instance and return it only once
-    # Match against the local asyncio reference in the target module
-    with patch("gitlab_utils.async_bad_mrs.asyncio.get_event_loop") as mock_get:
-        mock_get.side_effect = RuntimeError("no loop")
-        with patch("gitlab_utils.async_bad_mrs.asyncio.new_event_loop") as mock_new:
-            mock_loop = MagicMock()
-            mock_new.return_value = mock_loop
-            with patch("gitlab_utils.async_bad_mrs.asyncio.set_event_loop"):
-                with patch("gitlab_utils.async_bad_mrs._run_batch", return_value=[]):
-                    async_bad_mrs.fetch_all_bad_mrs(mock_client, ["u1"])
-                    mock_get.assert_called()
-                    mock_new.assert_called_once()
-                    mock_loop.run_until_complete.assert_called_once()
+    # Patch nest_asyncio.apply to prevent it from overriding our mock
+    with patch("nest_asyncio.apply"):
+        with patch("gitlab_utils.async_bad_mrs.asyncio.get_event_loop") as mock_get:
+            mock_get.side_effect = RuntimeError("no loop")
+            with patch("gitlab_utils.async_bad_mrs.asyncio.new_event_loop") as mock_new:
+                mock_loop = MagicMock()
+                mock_new.return_value = mock_loop
+                with patch("gitlab_utils.async_bad_mrs.asyncio.set_event_loop"):
+                    with patch("gitlab_utils.async_bad_mrs._run_batch", return_value=[]):
+                        async_bad_mrs.fetch_all_bad_mrs(mock_client, ["u1"])
+                        mock_get.assert_called()
+                        mock_new.assert_called_once()
+                        mock_loop.run_until_complete.assert_called_once()
