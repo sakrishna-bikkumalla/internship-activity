@@ -1,9 +1,10 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import pandas as pd
-import io
-import datetime
+
+import pytest
+import streamlit as st
+
 from modes import team_leaderboard
+
 
 @pytest.fixture
 def mock_client():
@@ -155,5 +156,3 @@ def test_render_edit_form_update():
                      with patch("streamlit.rerun"):
                          team_leaderboard._render_edit_form(0)
                          assert state["teams"][0]["team_name"] == "T1-New"
-
-import streamlit as st
