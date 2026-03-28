@@ -4,8 +4,8 @@ from gitlab_utils.async_bad_mrs import BATCH_USERNAMES, _check_user_compliance, 
 
 
 def test_hardcoded_usernames_list():
-    """Verify BATCH_USERNAMES contains all 34 required users."""
-    assert len(BATCH_USERNAMES) == 34
+    """Verify BATCH_USERNAMES contains all 39 required users."""
+    assert len(BATCH_USERNAMES) == 39
     assert "prav2702" in BATCH_USERNAMES
     assert "Pavani_Pothuganti" in BATCH_USERNAMES
 

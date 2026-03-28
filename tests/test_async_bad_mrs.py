@@ -181,9 +181,11 @@ async def test_fetch_json_429_no_retry_after():
 
 
 @pytest.mark.asyncio
+@patch("gitlab_utils.async_bad_mrs.fetch_json")
 @patch("gitlab_utils.async_bad_mrs.analyze_description")
-async def test_evaluate_single_mr_analyze_description_exception(mock_analyze):
+async def test_evaluate_single_mr_analyze_description_exception(mock_analyze, mock_fetch):
     mock_analyze.side_effect = Exception("Analyze fail")
+    mock_fetch.return_value = []
     mr = {"project_id": 1, "iid": 1, "_username": "u1", "description": "desc"}
     _, flags = await async_bad_mrs._evaluate_single_mr(AsyncMock(), asyncio.Semaphore(1), "h", {}, mr)
     # Exception is caught, improper_desc remains False (default)
@@ -412,7 +414,8 @@ def test_fetch_all_bad_mrs_runtime_error():
                 mock_loop = MagicMock()
                 mock_new.return_value = mock_loop
                 with patch("gitlab_utils.async_bad_mrs.asyncio.set_event_loop"):
-                    with patch("gitlab_utils.async_bad_mrs._run_batch", return_value=[]):
+                    with patch("gitlab_utils.async_bad_mrs._run_batch", new_callable=MagicMock) as mock_run:
+                        mock_run.return_value = []
                         async_bad_mrs.fetch_all_bad_mrs(mock_client, ["u1"])
                         mock_get.assert_called()
                         mock_new.assert_called_once()

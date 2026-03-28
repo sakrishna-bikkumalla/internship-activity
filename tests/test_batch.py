@@ -111,7 +111,7 @@ def test_process_batch_users(mock_single):
 
 
 @pytest.mark.asyncio
-@patch("gitlab_utils.batch.process_single_user")
+@patch("gitlab_utils.batch.process_single_user", new_callable=MagicMock)
 async def test_process_batch_users_async(mock_single):
     mock_single.return_value = {"username": "u1", "status": "Success"}
     res = await batch.process_batch_users_async(MagicMock(), ["u1"])
@@ -120,7 +120,7 @@ async def test_process_batch_users_async(mock_single):
 
 
 @pytest.mark.asyncio
-@patch("gitlab_utils.batch.process_single_user")
+@patch("gitlab_utils.batch.process_single_user", new_callable=MagicMock)
 async def test_process_batch_users_async_error(mock_single):
     mock_single.side_effect = Exception("Async fail")
     res = await batch.process_batch_users_async(MagicMock(), ["u1"])
