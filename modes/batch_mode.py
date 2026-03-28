@@ -141,31 +141,18 @@ def render_batch_mode_ui(client, report_type):
             row["Report Time"] = now_ist.strftime("%I:%M %p")
 
             if status == "Success":
-                if report_type == "ICFAI":
-                    # ICFAI Columns
-                    row["Personal Projects"] = p_personal
-                    row["Contributed Projects"] = p_contributed
-                    row["Total Commits"] = c_stats["total"]
-                    row["Morning Count"] = c_stats["morning_commits"]
-                    row["Afternoon Count"] = c_stats["afternoon_commits"]
-                    row["MR Open"] = m_stats["opened"]
-                    row["MR Closed"] = m_stats["closed"]
-                    row["MR Merged"] = m_stats["merged"]
-                    row["Issues Open"] = i_stats["opened"]
-                    row["Issues Closed"] = i_stats["closed"]
-                    row["Groups Count"] = g_count
-
-                elif report_type == "RCTS":
-                    # RCTS Columns
-                    row["Total Projects"] = p_personal + p_contributed
-                    row["Total Commits"] = c_stats["total"]
-                    row["MR Total"] = m_stats["total"]
-                    row["MR Merged"] = m_stats["merged"]
-                    row["MR Pending"] = m_stats["opened"]
-                    row["Issues Total"] = i_stats["total"]
-                    row["Groups"] = g_count
-                    row["Morning Active"] = "Yes" if c_stats["morning_commits"] > 0 else "No"
-                    row["Afternoon Active"] = "Yes" if c_stats["afternoon_commits"] > 0 else "No"
+                # Use the same detailed columns for both ICFAI and RCTS
+                row["Personal Projects"] = p_personal
+                row["Contributed Projects"] = p_contributed
+                row["Total Commits"] = c_stats["total"]
+                row["Morning Count"] = c_stats["morning_commits"]
+                row["Afternoon Count"] = c_stats["afternoon_commits"]
+                row["MR Open"] = m_stats["opened"]
+                row["MR Closed"] = m_stats["closed"]
+                row["MR Merged"] = m_stats["merged"]
+                row["Issues Open"] = i_stats["opened"]
+                row["Issues Closed"] = i_stats["closed"]
+                row["Groups Count"] = g_count
             else:
                 row["Error"] = err
 

@@ -30,11 +30,12 @@ def test_get_project_branches():
 @patch("aiohttp.ClientSession.get")
 def test_get_user_from_token(mock_get):
     mock_response = MagicMock()
-    
+
     # We need an async mock for json()
     from unittest.mock import AsyncMock
+
     mock_response.json = AsyncMock(return_value={"username": "user1"})
-    
+
     # get() returns an async context manager
     mock_get.return_value.__aenter__.return_value = mock_response
 
@@ -49,6 +50,7 @@ def test_get_user_from_token(mock_get):
 def test_get_user_groups_by_token(mock_get):
     mock_response = MagicMock()
     from unittest.mock import AsyncMock
+
     mock_response.json = AsyncMock(return_value=[{"name": "g1"}])
     mock_get.return_value.__aenter__.return_value = mock_response
 
@@ -99,6 +101,7 @@ def test_list_all_files():
 def test_network_make_request(mock_req):
     mock_response = MagicMock()
     from unittest.mock import AsyncMock
+
     mock_response.json = AsyncMock(return_value={"id": 10})
     mock_req.return_value.__aenter__.return_value = mock_response
     assert network.make_request("GET", "http://test") == {"id": 10}

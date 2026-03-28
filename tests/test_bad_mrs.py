@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from gitlab_utils.client import BATCH_USERNAMES, _ZERO_ROW
+from gitlab_utils.client import _ZERO_ROW, BATCH_USERNAMES
 
 
 def test_hardcoded_usernames_list():

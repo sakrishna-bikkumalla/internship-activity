@@ -43,9 +43,9 @@ def test_render_bad_mrs_batch_ui_generate_success(mock_client):
             ]
             mock_client.batch_evaluate_mrs.return_value = rows
             with patch("streamlit.columns", side_effect=mock_columns):
-                    with patch("streamlit.dataframe"):
-                        with patch("streamlit.download_button"):
-                            bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
+                with patch("streamlit.dataframe"):
+                    with patch("streamlit.download_button"):
+                        bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
 
 
 def test_render_bad_mrs_batch_ui_not_initialized():
@@ -89,8 +89,8 @@ def test_render_bad_mrs_batch_ui_single_user_success(mock_client):
                     }
                     mock_client.batch_evaluate_mrs.return_value = [res]
                     with patch("streamlit.success"):
-                            with patch("streamlit.metric"):
-                                bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
+                        with patch("streamlit.metric"):
+                            bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
 
 
 def test_render_bad_mrs_batch_ui_single_user_empty(mock_client):
@@ -116,8 +116,8 @@ def test_render_bad_mrs_batch_ui_single_user_no_data(mock_client):
             col1.text_input.return_value = "unknown"
             mock_client.batch_evaluate_mrs.return_value = []
             with patch("streamlit.warning") as mock_warn:
-                    bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
-                    mock_warn.assert_called_with("No data found for user 'unknown'.")
+                bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
+                mock_warn.assert_called_with("No data found for user 'unknown'.")
 
 
 def test_render_bad_mrs_batch_ui_single_user_error(mock_client):
@@ -130,6 +130,6 @@ def test_render_bad_mrs_batch_ui_single_user_error(mock_client):
             col1.text_input.return_value = "john"
             mock_client.batch_evaluate_mrs.side_effect = Exception("API Fail")
             with patch("streamlit.error") as mock_err:
-                    with patch("streamlit.spinner"):
-                        bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
-                        mock_err.assert_called_with("Error fetching data for john: API Fail")
+                with patch("streamlit.spinner"):
+                    bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
+                    mock_err.assert_called_with("Error fetching data for john: API Fail")

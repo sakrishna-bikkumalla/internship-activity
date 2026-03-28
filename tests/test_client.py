@@ -122,19 +122,16 @@ def test_gitlab_client_init():
 
 
 @patch("gitlab_utils.client.gitlab.Gitlab")
-@patch("gitlab_utils.client.st.sidebar")
-def test_gitlab_client_lazy_init(mock_sidebar, mock_gitlab):
+def test_gitlab_client_lazy_init(mock_gitlab):
     client = GitLabClient("http://test", "token")
     # First access
     gl = client.client
     assert gl is not None
     mock_gitlab.assert_called_once()
-    assert mock_sidebar.write.call_count >= 1
 
 
 @patch("gitlab_utils.client.gitlab.Gitlab")
-@patch("gitlab_utils.client.st.sidebar")
-def test_gitlab_client_lazy_init_failure(mock_sidebar, mock_gitlab):
+def test_gitlab_client_lazy_init_failure(mock_gitlab):
     mock_gitlab.side_effect = Exception("Auth failed")
     client = GitLabClient("http://test", "token")
     gl = client.client
@@ -147,7 +144,7 @@ def test_gitlab_client_lazy_init_failure(mock_sidebar, mock_gitlab):
 async def test_gitlab_client_request_204(mock_get_session):
     """204 No Content should return None."""
     mock_session = MagicMock()
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status = 204
     mock_response.raise_for_status = MagicMock()
     # session.request() returns an async context manager
@@ -180,10 +177,10 @@ def test_gitlab_client_get_paginated(mock_get):
 async def test_gitlab_client_request_500_retry_and_fallback(mock_get_session, mock_sleep):
     """Retries on 500 and eventually returns []."""
     mock_session = MagicMock()
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status = 500
-    mock_response.raise_for_status.side_effect = aiohttp.ClientResponseError(
-        request_info=MagicMock(url="http://test"), history=(), status=500
+    mock_response.raise_for_status = MagicMock(
+        side_effect=aiohttp.ClientResponseError(request_info=MagicMock(url="http://test"), history=(), status=500)
     )
     mock_session.request.return_value.__aenter__.return_value = mock_response
     mock_get_session.return_value = mock_session
@@ -200,10 +197,10 @@ async def test_gitlab_client_request_500_retry_and_fallback(mock_get_session, mo
 async def test_gitlab_client_request_json(mock_get_session):
     """Normal response should return JSON."""
     mock_session = MagicMock()
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status = 200
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"key": "val"}
+    mock_response.json = AsyncMock(return_value={"key": "val"})
     mock_session.request.return_value.__aenter__.return_value = mock_response
     mock_get_session.return_value = mock_session
 

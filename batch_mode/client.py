@@ -37,7 +37,6 @@ class GitLabClient:
     def _get(self, endpoint, params=None):
         return self._request("GET", endpoint, params=params)
 
-
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
         all_items = []
         base_params = dict(params or {})

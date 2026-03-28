@@ -19,7 +19,7 @@ async def _make_request_async(method, url, headers=None, params=None, json=None,
                 response.raise_for_status()
                 return await response.json()
             except Exception:
-                # To emulate legacy behavior which returns the response object on success 
+                # To emulate legacy behavior which returns the response object on success
                 # or throws exception. Since JSON is always expected here:
                 pass
             return await response.json()
@@ -31,7 +31,6 @@ def make_request(method, url, headers=None, params=None, json=None, timeout=DEFA
     Raises exception on failure.
     """
     return asyncio.run(_make_request_async(method, url, headers, params, json, timeout))
-
 
 
 def get_user_from_token(base_url: str, token: str):

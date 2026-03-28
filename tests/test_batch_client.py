@@ -15,6 +15,7 @@ def test_client_request_success(mock_client):
         mock_resp = MagicMock()
         mock_resp.status = 200
         from unittest.mock import AsyncMock
+
         mock_resp.json = AsyncMock(return_value={"id": 1})
         mock_req.return_value.__aenter__.return_value = mock_resp
 

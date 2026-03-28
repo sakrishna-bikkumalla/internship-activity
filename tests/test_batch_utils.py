@@ -113,14 +113,14 @@ def test_get_project_with_retries_transient_then_success():
 
 def test_get_project_with_retries_all_fail():
     gl_client = MagicMock()
-    
-    class RequestException(Exception):
+
+    class RequestError(Exception):
         pass
-        
-    gl_client.projects.get.side_effect = RequestException("timeout")
+
+    gl_client.projects.get.side_effect = RequestError("timeout")
 
     with patch("time.sleep"):
-        with pytest.raises(RequestException):
+        with pytest.raises(RequestError):
             retry_helper.get_project_with_retries(gl_client, "123", retries=2)
 
 
