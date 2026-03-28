@@ -265,7 +265,7 @@ elements.append(Spacer(1, 0.2 * inch))
 elements.append(Paragraph("2.3 Other Libraries", subheading_style))
 other_libs = [
     ["Library", "Purpose"],
-    ["requests", "HTTP client for API calls & retries"],
+    ["aiohttp", "Asynchronous HTTP client for API calls & retries"],
     ["pandas", "Data manipulation & analysis"],
     ["openpyxl/xlsxwriter", "Excel file generation"],
     ["python-dotenv", "Environment variable loading"],
@@ -590,7 +590,7 @@ elements.append(
         "Catches errors:<br/>"
         "• ConnectionResetError<br/>"
         "• ConnectionAbortedError<br/>"
-        "• requests.exceptions.RequestException<br/>"
+        "• aiohttp.ClientError<br/>"
         "• OSError<br/>"
         "• http.client.RemoteDisconnected<br/>"
         "<br/>"
@@ -782,7 +782,7 @@ elements.append(
         "<b>Batch Analysis (10 projects):</b><br/>"
         "• Average time: 30-50 seconds<br/>"
         "• API calls: ~50-100<br/>"
-        "• Parallel processing not implemented (sequential)<br/>"
+        "• Parallel processing implemented for Bad MRs via Semaphore<br/>"
         "<br/>"
         "<b>Report Generation:</b><br/>"
         "• CSV export: <1 second<br/>"

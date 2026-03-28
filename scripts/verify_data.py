@@ -4,7 +4,6 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 
-from gitlab_utils.async_bad_mrs import fetch_all_bad_mrs
 from gitlab_utils.client import GitLabClient
 
 # Load environment
@@ -62,7 +61,7 @@ async def verify():
     usernames = list(USER_MAPPING.values())
 
     print(f"Fetching data for {len(usernames)} users...")
-    results = fetch_all_bad_mrs(client, usernames)
+    results = client.batch_evaluate_mrs(usernames)
 
     df = pd.DataFrame(results)
 

@@ -165,9 +165,10 @@ pytest
 - Main entry point: `app.py`
 - UI modes live in `modes/`
 - GitLab API wrappers/utilities are in `gitlab_utils/`
+- High-performance async scanning is built into `GitLabClient`
 - Additional verification scripts:
-  - `verify_batch_users.py`
-  - `verify_contribution_fix.py`
+  - `verify_data.py`
+  - `diagnose_review.py`
 
 ## Documentation & Governance
 

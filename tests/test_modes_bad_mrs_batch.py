@@ -41,8 +41,8 @@ def test_render_bad_mrs_batch_ui_generate_success(mock_client):
                     "Merge > 1 Week": 0,
                 }
             ]
-            with patch("modes.bad_mrs_batch.fetch_all_bad_mrs", return_value=rows):
-                with patch("streamlit.columns", side_effect=mock_columns):
+            mock_client.batch_evaluate_mrs.return_value = rows
+            with patch("streamlit.columns", side_effect=mock_columns):
                     with patch("streamlit.dataframe"):
                         with patch("streamlit.download_button"):
                             bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
@@ -87,8 +87,8 @@ def test_render_bad_mrs_batch_ui_single_user_success(mock_client):
                         "Merge > 2 Days": 0,
                         "Merge > 1 Week": 0,
                     }
-                    with patch("modes.bad_mrs_batch.fetch_all_bad_mrs", return_value=[res]):
-                        with patch("streamlit.success"):
+                    mock_client.batch_evaluate_mrs.return_value = [res]
+                    with patch("streamlit.success"):
                             with patch("streamlit.metric"):
                                 bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
 
@@ -114,8 +114,8 @@ def test_render_bad_mrs_batch_ui_single_user_no_data(mock_client):
             col2.button.return_value = True
 
             col1.text_input.return_value = "unknown"
-            with patch("modes.bad_mrs_batch.fetch_all_bad_mrs", return_value=[]):
-                with patch("streamlit.warning") as mock_warn:
+            mock_client.batch_evaluate_mrs.return_value = []
+            with patch("streamlit.warning") as mock_warn:
                     bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
                     mock_warn.assert_called_with("No data found for user 'unknown'.")
 
@@ -128,8 +128,8 @@ def test_render_bad_mrs_batch_ui_single_user_error(mock_client):
             col2.button.return_value = True
 
             col1.text_input.return_value = "john"
-            with patch("modes.bad_mrs_batch.fetch_all_bad_mrs", side_effect=Exception("API Fail")):
-                with patch("streamlit.error") as mock_err:
+            mock_client.batch_evaluate_mrs.side_effect = Exception("API Fail")
+            with patch("streamlit.error") as mock_err:
                     with patch("streamlit.spinner"):
                         bad_mrs_batch.render_bad_mrs_batch_ui(mock_client)
                         mock_err.assert_called_with("Error fetching data for john: API Fail")

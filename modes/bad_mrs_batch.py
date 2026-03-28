@@ -17,7 +17,7 @@ import io
 import pandas as pd
 import streamlit as st
 
-from gitlab_utils.async_bad_mrs import BATCH_USERNAMES, fetch_all_bad_mrs
+from gitlab_utils.client import BATCH_USERNAMES
 
 
 def render_bad_mrs_batch_ui(client) -> None:
@@ -35,7 +35,7 @@ def render_bad_mrs_batch_ui(client) -> None:
             f"⏳ Performing High-Accuracy Analysis for {len(BATCH_USERNAMES)} users... This may take 1-3 minutes to stay within GitLab's rate limits."
         ):
             try:
-                rows = fetch_all_bad_mrs(client, BATCH_USERNAMES)
+                rows = client.batch_evaluate_mrs(BATCH_USERNAMES)
             except Exception as exc:
                 st.error(f"Error during batch fetch: {exc}")
                 return
@@ -121,7 +121,7 @@ def render_bad_mrs_batch_ui(client) -> None:
         with st.spinner(f"⏳ Analyzing MRs for '{single_user}'..."):
             try:
                 # fetch_all_bad_mrs takes a list of usernames
-                results = fetch_all_bad_mrs(client, [single_user])
+                results = client.batch_evaluate_mrs([single_user])
                 if results:
                     res = results[0]
                     st.success(f"Analysis complete for {single_user}!")

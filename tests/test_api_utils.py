@@ -27,11 +27,16 @@ def test_get_project_branches():
     assert api_helper.get_project_branches(project) == []
 
 
-@patch("requests.get")
+@patch("aiohttp.ClientSession.get")
 def test_get_user_from_token(mock_get):
     mock_response = MagicMock()
-    mock_response.json.return_value = {"username": "user1"}
-    mock_get.return_value = mock_response
+    
+    # We need an async mock for json()
+    from unittest.mock import AsyncMock
+    mock_response.json = AsyncMock(return_value={"username": "user1"})
+    
+    # get() returns an async context manager
+    mock_get.return_value.__aenter__.return_value = mock_response
 
     res = api_helper.get_user_from_token("http://gl.com", "token")
     assert res == {"username": "user1"}
@@ -40,11 +45,12 @@ def test_get_user_from_token(mock_get):
     assert "Error validating token" in api_helper.get_user_from_token("http://gl.com", "token")
 
 
-@patch("requests.get")
+@patch("aiohttp.ClientSession.get")
 def test_get_user_groups_by_token(mock_get):
     mock_response = MagicMock()
-    mock_response.json.return_value = [{"name": "g1"}]
-    mock_get.return_value = mock_response
+    from unittest.mock import AsyncMock
+    mock_response.json = AsyncMock(return_value=[{"name": "g1"}])
+    mock_get.return_value.__aenter__.return_value = mock_response
 
     # Path with /api/v4
     api_helper.get_user_groups_by_token("http://gl.com/api/v4", "token")
@@ -89,19 +95,20 @@ def test_list_all_files():
 # ---------------- NETWORK TESTS ----------------
 
 
-@patch("requests.request")
+@patch("aiohttp.ClientSession.request")
 def test_network_make_request(mock_req):
     mock_response = MagicMock()
-    mock_req.return_value = mock_response
-    assert network.make_request("GET", "http://test") == mock_response
+    from unittest.mock import AsyncMock
+    mock_response.json = AsyncMock(return_value={"id": 10})
+    mock_req.return_value.__aenter__.return_value = mock_response
+    assert network.make_request("GET", "http://test") == {"id": 10}
     mock_response.raise_for_status.assert_called_once()
 
 
 @patch("gitlab_utils.network.make_request")
 def test_network_get_user_from_token(mock_make):
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"id": 1}
-    mock_make.return_value = mock_response
+    # network.make_request now returns the json directly, not a response object
+    mock_make.return_value = {"id": 1}
     assert network.get_user_from_token("http://gl.com", "tok") == {"id": 1}
     assert network.validate_token("http://gl.com", "tok") is True
 
@@ -111,9 +118,7 @@ def test_network_get_user_from_token(mock_make):
 
 @patch("gitlab_utils.network.make_request")
 def test_network_get_user_groups(mock_make):
-    mock_response = MagicMock()
-    mock_response.json.return_value = []
-    mock_make.return_value = mock_response
+    mock_make.return_value = []
 
     # Base url with /api/v4
     network.get_user_groups("http://gl.com/api/v4", "tok")

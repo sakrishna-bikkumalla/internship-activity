@@ -11,11 +11,12 @@ def mock_client():
 
 
 def test_client_request_success(mock_client):
-    with patch("requests.request") as mock_req:
+    with patch("aiohttp.ClientSession.request") as mock_req:
         mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"id": 1}
-        mock_req.return_value = mock_resp
+        mock_resp.status = 200
+        from unittest.mock import AsyncMock
+        mock_resp.json = AsyncMock(return_value={"id": 1})
+        mock_req.return_value.__aenter__.return_value = mock_resp
 
         res = mock_client._get("/test")
         assert res == {"id": 1}
@@ -23,10 +24,10 @@ def test_client_request_success(mock_client):
 
 
 def test_client_request_204(mock_client):
-    with patch("requests.request") as mock_req:
+    with patch("aiohttp.ClientSession.request") as mock_req:
         mock_resp = MagicMock()
-        mock_resp.status_code = 204
-        mock_req.return_value = mock_resp
+        mock_resp.status = 204
+        mock_req.return_value.__aenter__.return_value = mock_resp
 
         res = mock_client._get("/test")
         assert res is None

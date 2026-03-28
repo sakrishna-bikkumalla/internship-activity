@@ -1,8 +1,9 @@
 # gitlab_utils/api_helpers.py
 
+import asyncio
 from urllib.parse import urlparse
 
-import requests
+import aiohttp
 
 
 def extract_path_from_url(input_str):
@@ -21,18 +22,23 @@ def get_project_branches(project):
         return []
 
 
-def get_user_from_token(base_url, token):
+async def _get_user_from_token_async(base_url, token):
     try:
         headers = {"PRIVATE-TOKEN": token}
         url = f"{base_url}/api/v4/user"
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-        return r.json()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=15, ssl=False) as r:
+                r.raise_for_status()
+                return await r.json()
     except Exception as e:
         return f"Error validating token: {e}"
 
 
-def get_user_groups_by_token(base_url, token):
+def get_user_from_token(base_url, token):
+    return asyncio.run(_get_user_from_token_async(base_url, token))
+
+
+async def _get_user_groups_by_token_async(base_url, token):
     try:
         headers = {"PRIVATE-TOKEN": token}
         api_base = base_url.rstrip("/")
@@ -42,8 +48,13 @@ def get_user_groups_by_token(base_url, token):
         else:
             url = f"{api_base}/api/v4/groups?membership=true"
 
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-        return r.json()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=15, ssl=False) as r:
+                r.raise_for_status()
+                return await r.json()
     except Exception as e:
         return f"Error fetching groups: {e}"
+
+
+def get_user_groups_by_token(base_url, token):
+    return asyncio.run(_get_user_groups_by_token_async(base_url, token))

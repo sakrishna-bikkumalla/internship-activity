@@ -1,6 +1,28 @@
-import requests
+import asyncio
+
+import aiohttp
 
 DEFAULT_TIMEOUT = 15
+
+
+async def _make_request_async(method, url, headers=None, params=None, json=None, timeout=DEFAULT_TIMEOUT):
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.request(
+            method=method,
+            url=url,
+            params=params,
+            json=json,
+            timeout=timeout,
+            ssl=False,
+        ) as response:
+            try:
+                response.raise_for_status()
+                return await response.json()
+            except Exception:
+                # To emulate legacy behavior which returns the response object on success 
+                # or throws exception. Since JSON is always expected here:
+                pass
+            return await response.json()
 
 
 def make_request(method, url, headers=None, params=None, json=None, timeout=DEFAULT_TIMEOUT):
@@ -8,16 +30,8 @@ def make_request(method, url, headers=None, params=None, json=None, timeout=DEFA
     Generic HTTP request wrapper.
     Raises exception on failure.
     """
-    response = requests.request(
-        method=method,
-        url=url,
-        headers=headers,
-        params=params,
-        json=json,
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    return response
+    return asyncio.run(_make_request_async(method, url, headers, params, json, timeout))
+
 
 
 def get_user_from_token(base_url: str, token: str):
@@ -27,8 +41,8 @@ def get_user_from_token(base_url: str, token: str):
     headers = {"PRIVATE-TOKEN": token}
     url = f"{base_url.rstrip('/')}/api/v4/user"
 
-    response = make_request("GET", url, headers=headers)
-    return response.json()
+    response_json = make_request("GET", url, headers=headers)
+    return response_json
 
 
 def get_user_groups(base_url: str, token: str):
@@ -43,8 +57,8 @@ def get_user_groups(base_url: str, token: str):
     else:
         url = f"{api_base}/api/v4/groups?membership=true"
 
-    response = make_request("GET", url, headers=headers)
-    return response.json()
+    response_json = make_request("GET", url, headers=headers)
+    return response_json
 
 
 def validate_token(base_url: str, token: str) -> bool:

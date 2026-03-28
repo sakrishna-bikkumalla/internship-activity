@@ -1,4 +1,9 @@
-import requests
+import asyncio
+
+import aiohttp
+import nest_asyncio
+
+nest_asyncio.apply()
 
 
 class GitLabClient:
@@ -7,23 +12,31 @@ class GitLabClient:
         self.api_base = f"{self.base_url}/api/v4"
         self.headers = {"PRIVATE-TOKEN": private_token}
         self.users = GitLabUsersAPI(self)
+        self._loop = self._get_or_create_loop()
+
+    def _get_or_create_loop(self):
+        try:
+            return asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop
+
+    async def _async_request(self, method, endpoint, params=None):
+        url = f"{self.api_base}{endpoint}"
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            async with session.request(method, url, params=params, timeout=30, ssl=False) as response:
+                response.raise_for_status()
+                if response.status == 204:
+                    return None
+                return await response.json()
 
     def _request(self, method, endpoint, params=None):
-        url = f"{self.api_base}{endpoint}"
-        response = requests.request(
-            method,
-            url,
-            headers=self.headers,
-            params=params,
-            timeout=30,
-        )
-        response.raise_for_status()
-        if response.status_code == 204:
-            return None
-        return response.json()
+        return self._loop.run_until_complete(self._async_request(method, endpoint, params))
 
     def _get(self, endpoint, params=None):
         return self._request("GET", endpoint, params=params)
+
 
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
         all_items = []

@@ -1,97 +1,113 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
-import requests
 
-from gitlab_utils.client import GitLabClient, safe_api_call
+from gitlab_utils.client import GitLabClient, safe_api_call_async
 
 # ---------------- SAFE API CALL TESTS ----------------
 
 
-def test_safe_api_call_success():
+@pytest.mark.asyncio
+async def test_safe_api_call_success():
     """Returns result on success."""
-    assert safe_api_call(lambda x: x * 2, 5) == 10
+
+    async def mock_func(x):
+        return x * 2
+
+    assert await safe_api_call_async(mock_func, 5) == 10
 
 
-@patch("time.sleep")
-def test_safe_api_call_429_retry(mock_sleep):
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_safe_api_call_429_retry(mock_sleep):
     """Retries on 429 with backoff."""
-    mock_func = MagicMock()
+    mock_func = AsyncMock()
 
     # 1. 429 response
-    response_429 = MagicMock()
-    response_429.status_code = 429
-    response_429.headers = {"Retry-After": "1"}
-    err_429 = requests.exceptions.HTTPError(response=response_429)
-    err_429.request = MagicMock(url="http://test")
+    err_429 = aiohttp.ClientResponseError(
+        request_info=MagicMock(url="http://test"),
+        history=(),
+        status=429,
+        headers={"Retry-After": "1"},
+    )
 
     # Fail once, then succeed
     mock_func.side_effect = [err_429, "success"]
 
-    result = safe_api_call(mock_func)
+    result = await safe_api_call_async(mock_func)
     assert result == "success"
     assert mock_sleep.call_count == 1
     # First retry backoff: 5 * (0 + 1) = 5
     mock_sleep.assert_called_with(5)
 
 
-@patch("time.sleep")
-def test_safe_api_call_429_max_retries(mock_sleep):
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_safe_api_call_429_max_retries(mock_sleep):
     """Raises exception after max retries for 429."""
-    response_429 = MagicMock()
-    response_429.status_code = 429
-    err_429 = requests.exceptions.HTTPError(response=response_429)
-    err_429.request = MagicMock(url="http://test")
+    err_429 = aiohttp.ClientResponseError(
+        request_info=MagicMock(url="http://test"),
+        history=(),
+        status=429,
+        headers={},  # Must be a dict to avoid .get() failure
+    )
 
-    mock_func = MagicMock(side_effect=err_429)
+    mock_func = AsyncMock(side_effect=err_429)
 
     with pytest.raises(Exception, match="Max retries reached"):
-        safe_api_call(mock_func)
+        await safe_api_call_async(mock_func)
 
 
-@patch("time.sleep")
-def test_safe_api_call_429_large_retry_after(mock_sleep):
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_safe_api_call_429_large_retry_after(mock_sleep):
     """Raises immediate exception if Retry-After > 60."""
-    response_429 = MagicMock()
-    response_429.status_code = 429
-    response_429.headers = {"Retry-After": "120"}  # Too long
-    err_429 = requests.exceptions.HTTPError(response=response_429)
-    err_429.request = MagicMock(url="http://test")
+    err_429 = aiohttp.ClientResponseError(
+        request_info=MagicMock(url="http://test"),
+        history=(),
+        status=429,
+        headers={"Retry-After": "120"},  # Too long
+    )
 
-    mock_func = MagicMock(side_effect=err_429)
+    mock_func = AsyncMock(side_effect=err_429)
 
     with pytest.raises(Exception, match="Please try again after 120 seconds"):
-        safe_api_call(mock_func)
+        await safe_api_call_async(mock_func)
 
 
-@patch("time.sleep")
-def test_safe_api_call_429_invalid_retry_after(mock_sleep):
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_safe_api_call_429_invalid_retry_after(mock_sleep):
     """Gracefully handles non-integer Retry-After."""
-    response_429 = MagicMock()
-    response_429.status_code = 429
-    response_429.headers = {"Retry-After": "soon"}
-    err_429 = requests.exceptions.HTTPError(response=response_429)
-    err_429.request = MagicMock(url="http://test")
+    err_429 = aiohttp.ClientResponseError(
+        request_info=MagicMock(url="http://test"),
+        history=(),
+        status=429,
+        headers={"Retry-After": "soon"},
+    )
 
     # Fail once then success
-    mock_func = MagicMock(side_effect=[err_429, "ok"])
-    assert safe_api_call(mock_func) == "ok"
+    mock_func = AsyncMock(side_effect=[err_429, "ok"])
+    assert await safe_api_call_async(mock_func) == "ok"
 
 
-@patch("time.sleep")
-def test_safe_api_call_connection_error(mock_sleep):
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_safe_api_call_connection_error(mock_sleep):
     """Retries on ConnectionError."""
-    mock_func = MagicMock(side_effect=[requests.exceptions.ConnectionError("reset"), "ok"])
-    assert safe_api_call(mock_func) == "ok"
+    mock_func = AsyncMock(side_effect=[aiohttp.ClientConnectorError(MagicMock(), MagicMock()), "ok"])
+    assert await safe_api_call_async(mock_func) == "ok"
     # Connection backoff: 5 * (0 + 1) = 5
     mock_sleep.assert_called_with(5)
 
 
-@patch("time.sleep")
-def test_safe_api_call_generic_exception(mock_sleep):
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_safe_api_call_generic_exception(mock_sleep):
     """Retries on generic Exception and returns [] at last."""
-    mock_func = MagicMock(side_effect=Exception("random"))
-    assert safe_api_call(mock_func) == []
+    mock_func = AsyncMock(side_effect=Exception("random"))
+    assert await safe_api_call_async(mock_func) == []
     assert mock_sleep.call_count == 4  # max_retries - 1
 
 
@@ -126,17 +142,20 @@ def test_gitlab_client_lazy_init_failure(mock_sidebar, mock_gitlab):
     assert client.error_msg == "Auth failed"
 
 
-@patch("gitlab_utils.client._SESSION")
-def test_gitlab_client_request_204(mock_session):
+@pytest.mark.asyncio
+@patch("gitlab_utils.client.GitLabClient._get_session")
+async def test_gitlab_client_request_204(mock_get_session):
     """204 No Content should return None."""
-    mock_response = MagicMock()
-    mock_response.status_code = 204
-    mock_session.request.return_value = mock_response
+    mock_session = MagicMock()
+    mock_response = AsyncMock()
+    mock_response.status = 204
+    mock_response.raise_for_status = MagicMock()
+    # session.request() returns an async context manager
+    mock_session.request.return_value.__aenter__.return_value = mock_response
+    mock_get_session.return_value = mock_session
 
     client = GitLabClient("http://test", "token")
-    # Mock safe_api_call to just run the function to avoid complicated mocking of retry logic here
-    with patch("gitlab_utils.client.safe_api_call", side_effect=lambda f, *a, **k: f()):
-        res = client._request("GET", "/test")
+    res = client._request("GET", "/test")
     assert res is None
 
 
@@ -155,30 +174,41 @@ def test_gitlab_client_get_paginated(mock_get):
     assert mock_get.call_count == 2  # Stopped because page 2 had < 2 items
 
 
-@patch("time.sleep")
-def test_safe_api_call_500_retry_and_fallback(mock_sleep):
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+@patch("gitlab_utils.client.GitLabClient._get_session")
+async def test_gitlab_client_request_500_retry_and_fallback(mock_get_session, mock_sleep):
     """Retries on 500 and eventually returns []."""
-    mock_response = MagicMock()
-    mock_response.status_code = 500
-    err_500 = requests.exceptions.HTTPError(response=mock_response)
-
-    # Always fail
-    mock_func = MagicMock(side_effect=err_500)
-    assert safe_api_call(mock_func) == []
-    assert mock_sleep.call_count == 4  # max_retries - 1
-
-
-@patch("gitlab_utils.client._SESSION")
-def test_gitlab_client_request_json(mock_session):
-    """Normal response should return JSON."""
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"key": "val"}
-    mock_session.request.return_value = mock_response
+    mock_session = MagicMock()
+    mock_response = AsyncMock()
+    mock_response.status = 500
+    mock_response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+        request_info=MagicMock(url="http://test"), history=(), status=500
+    )
+    mock_session.request.return_value.__aenter__.return_value = mock_response
+    mock_get_session.return_value = mock_session
 
     client = GitLabClient("http://test", "token")
-    with patch("gitlab_utils.client.safe_api_call", side_effect=lambda f, *a, **k: f()):
-        res = client._get("/test")
+    res = client._request("GET", "/test")
+    # safe_api_call_async returns [] on generic Exception or ClientResponseError after retries
+    assert res == []
+    assert mock_sleep.call_count == 4
+
+
+@pytest.mark.asyncio
+@patch("gitlab_utils.client.GitLabClient._get_session")
+async def test_gitlab_client_request_json(mock_get_session):
+    """Normal response should return JSON."""
+    mock_session = MagicMock()
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"key": "val"}
+    mock_session.request.return_value.__aenter__.return_value = mock_response
+    mock_get_session.return_value = mock_session
+
+    client = GitLabClient("http://test", "token")
+    res = client._get("/test")
     assert res == {"key": "val"}
 
 

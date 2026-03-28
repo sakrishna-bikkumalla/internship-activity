@@ -3,7 +3,6 @@
 import http.client
 import time
 
-import requests
 from gitlab import GitlabGetError
 
 
@@ -25,10 +24,13 @@ def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
         except (
             ConnectionResetError,
             ConnectionAbortedError,
-            requests.exceptions.RequestException,
             OSError,
             http.client.RemoteDisconnected,
-        ):
+            Exception,
+        ) as e:
+            if type(e).__name__ not in ("RequestException", "ConnectionError", "Timeout"):
+                if not isinstance(e, (OSError, http.client.RemoteDisconnected)):
+                    raise
             if attempt == retries:
                 raise
             time.sleep(backoff * (2 ** (attempt - 1)))

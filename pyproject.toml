@@ -9,7 +9,6 @@ readme = "README.md"
 license = { text = "GNU Affero General Public License v3.0" }
 requires-python = ">=3.11"
 dependencies = [
-  "requests>=2.31.0",
   "streamlit>=1.33.0",
   "xlsxwriter",
   "aiohttp",
@@ -23,7 +22,7 @@ dev = [
   "ruff",
   "pytest",
   "pytest-asyncio",
-  "requests-mock",
+  "aioresponses",
   "pre-commit",
   "openpyxl"
 ]
@@ -63,3 +62,9 @@ asyncio_mode = "auto"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "openpyxl>=3.1.5",
+    "pytest-asyncio>=1.3.0",
+]

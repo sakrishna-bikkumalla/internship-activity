@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
 from gitlab import GitlabGetError
 
 from batch_mode import file_reader, retry_helper
@@ -114,10 +113,14 @@ def test_get_project_with_retries_transient_then_success():
 
 def test_get_project_with_retries_all_fail():
     gl_client = MagicMock()
-    gl_client.projects.get.side_effect = requests.exceptions.RequestException("timeout")
+    
+    class RequestException(Exception):
+        pass
+        
+    gl_client.projects.get.side_effect = RequestException("timeout")
 
     with patch("time.sleep"):
-        with pytest.raises(requests.exceptions.RequestException):
+        with pytest.raises(RequestException):
             retry_helper.get_project_with_retries(gl_client, "123", retries=2)
 
 
