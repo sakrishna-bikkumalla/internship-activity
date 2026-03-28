@@ -59,6 +59,11 @@ BATCH_USERNAMES: list[str] = [
     "klaxmi1908",
     "Kaveri_Mamidi",
     "Pavani_Pothuganti",
+    "prashanth0812",
+    "dasarajulavaishnavi04",
+    "ashrithakunjeti",
+    "srilathabandari",
+    "vemurispriya",
 ]
 
 _ZERO_ROW = {

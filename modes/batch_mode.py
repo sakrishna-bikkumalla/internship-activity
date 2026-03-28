@@ -26,7 +26,12 @@ koushik_18
 kumari123
 Habeebunissa
 Bhaskar_Battula
-Pranav_rs"""
+Pranav_rs
+prashanth0812
+dasarajulavaishnavi04
+ashrithakunjeti
+srilathabandari
+vemurispriya"""
 
 DEFAULT_RCTS_USERS = """vai5h
 Saiharshavardhan
