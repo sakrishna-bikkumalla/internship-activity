@@ -1137,7 +1137,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             ]
             
             def render_row(chunk, cols):
-                for col, (col_key, title) in zip(cols, chunk):
+                for col, (col_key, title) in zip(cols, chunk, strict=True):
                     with col:
                         if df_pie[col_key].sum() > 0:
                             fig = px.pie(
