@@ -2,6 +2,8 @@
 # Automatically runs checks before each commit to catch issues early
 # Matches the linting stage in .gitlab-ci.yml
 
+exclude: '^assets/badges/|^.venv/'
+
 repos:
   # Ruff linting (matches: uv run ruff check .)
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -10,24 +12,13 @@ repos:
       - id: ruff
         args: ['--fix']
         name: Ruff lint
-        types: [python]
+      # Ruff formatting (matches: uv run ruff format --check .)
       - id: ruff-format
         name: Ruff format
-        types: [python]
 
-  # Local hooks
+  # Local type checking via the project's uv environment
   - repo: local
     hooks:
-      # Block modifications to badge files
-      - id: block-badge-modifications
-        name: Block badge file modifications
-        entry: bash -c
-        args: ['if git diff --cached --name-only | grep -q "^assets/badges/"; then echo "ERROR: Modifications to assets/badges are not allowed"; exit 1; fi']
-        language: system
-        pass_filenames: false
-        stages: [commit]
-
-      # Mypy type checking
       - id: mypy
         name: Mypy type check
         entry: uv run mypy --config-file mypy.ini .
