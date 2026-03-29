@@ -1124,10 +1124,12 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             st.markdown("### 📊 Group Contributions")
             df_pie = pd.DataFrame(pie_data)
             
-            charts = [
+            row1_charts = [
                 ("Commits", "Commits"),
                 ("Assigned MRs", "Assigned MRs"),
                 ("Assigned Issues", "Assigned Issues"),
+            ]
+            row2_charts = [
                 ("Merged MRs", "Merged MRs"),
                 ("Closed Issues", "Closed Issues"),
                 ("Open Issues", "Open Issues"),
@@ -1159,12 +1161,12 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                             st.markdown(f"<div style='text-align:center; padding:15px; border:1px dashed #555; border-radius:10px; margin-top:5px;'><h6 style='color:#ccc;margin:0;font-size:12px;'>{title}</h6><span style='color:#888;font-size:11px;'>No Data</span></div>", unsafe_allow_html=True)
 
             # Row 1: 3 charts
-            render_row(charts[:3], st.columns(3))
+            render_row(row1_charts, st.columns(3))
             
             st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
             
             # Row 2: 4 charts
-            render_row(charts[3:], st.columns(4))
+            render_row(row2_charts, st.columns(4))
 
             st.divider()
 
