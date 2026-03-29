@@ -10,14 +10,14 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 # Create PDF
 pdf_file = "GitLab_Compliance_Checker_Report.pdf"
 doc = SimpleDocTemplate(pdf_file, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
 
 # Container for PDF elements
-elements = []
+elements: list[Flowable] = []
 
 # Define styles
 styles = getSampleStyleSheet()

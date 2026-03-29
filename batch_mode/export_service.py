@@ -34,6 +34,7 @@ def reports_to_csv(rows):
         "readme_notes",
     ]
     writer.writerow(headers)
+
     for r in rows:
         writer.writerow(
             [
@@ -48,10 +49,27 @@ def reports_to_csv(rows):
                 r.get("license_status"),
                 r.get("license_valid"),
                 r.get("readme_status"),
-                r.get("readme_notes"),
+                ";".join(
+                    r.get("readme_notes", [])
+                    if isinstance(r.get("readme_notes"), list)
+                    else ([r.get("readme_notes")] if r.get("readme_notes") else [])
+                ),
             ]
         )
+
     return output.getvalue()
+
+
+def prepare_export_data(results):
+    """Prepare export data from batch results.
+
+    Args:
+        results: List of project compliance results
+
+    Returns:
+        List of rows suitable for export
+    """
+    return results
 
 
 def reports_to_excel(rows):

@@ -7,7 +7,7 @@ def classify_files(gl, project_id: int) -> dict:
         project = gl.projects.get(project_id)
         files = project.repository_tree(path="", recursive=True)
 
-        counts = {}
+        counts: dict[str, int] = {}
 
         for f in files:
             name = f["name"]

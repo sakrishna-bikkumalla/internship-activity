@@ -487,7 +487,7 @@ def _render_json_upload() -> None:
                     for m in t["members"]
                 ],
             }
-            for t in teams_to_add
+            for t in teams_to_add or []
         ]
 
         st.session_state["teams"].extend(clean_teams)
@@ -710,17 +710,17 @@ def _render_edit_form(edit_idx: int) -> None:
             draft["project_name"] = new_project_name
 
             # Validation
-            if not new_team_name.strip():
+            if not (new_team_name or "").strip():
                 st.error("Team Name cannot be empty.")
             elif not draft.get("members"):
                 st.error("Team must have at least one member.")
-            elif _team_name_exists(new_team_name, exclude_index=edit_idx):
+            elif _team_name_exists(new_team_name or "", exclude_index=edit_idx):
                 st.error(f'Another team named **"{new_team_name}"** already exists.')
             else:
                 # Commit draft → actual team list
                 clean = {
-                    "team_name": new_team_name.strip(),
-                    "project_name": new_project_name.strip(),
+                    "team_name": (new_team_name or "").strip(),
+                    "project_name": (new_project_name or "").strip(),
                     "members": [
                         {k: v for k, v in m.items() if k != "_source_index"}
                         for m in draft["members"]
@@ -847,7 +847,7 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
 
 def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
     """Aggregates all contributions into a date-based activity map {YYYY-MM-DD: count}."""
-    activity_map = {}
+    activity_map: dict[str, int] = {}
 
     def add_to_map(date_str):
         if not date_str:
@@ -1653,12 +1653,12 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
     for row in individual_rows:
         badges = row.get("Badges", [])
         badge_parts: list[str] = []
-        for badge_name in badges:
+        for badge_name in badges or []:
             svg = _load_individual_badge_svg(badge_name)
             if svg:
                 label = _badge_display_names.get(badge_name, badge_name.replace("_", " ").title())
                 badge_parts.append(
-                    f'<div class="lb-badge">{svg}<span class="lb-badge-label">{escape(label)}</span></div>'
+                    f'<div class="lb-badge">{svg}<span class="lb-badge-label">{escape(label or "")}</span></div>'
                 )
         badge_html = f'<div class="lb-badges-row">{"".join(badge_parts)}</div>' if badge_parts else ""
 
