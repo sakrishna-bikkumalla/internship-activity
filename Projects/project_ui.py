@@ -3,7 +3,7 @@ import streamlit as st
 from .file_classifier import classify_files
 from .license_checker import check_license
 from .readme_checker import check_readme
-from .template_checker import check_templates
+from .templates_checker import check_templates
 
 
 def get_project_compliance(gl, project_id: int) -> dict:

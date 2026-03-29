@@ -1,18 +1,10 @@
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-# Set local timezone (IST)
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
 
-# ---------------- DATETIME HELPERS ----------------
-
-
 def parse_gitlab_datetime(timestamp: str):
-    """
-    Convert GitLab UTC timestamp to local timezone (IST).
-    Returns timezone-aware datetime or None.
-    """
     if not timestamp:
         return None
 
@@ -27,6 +19,21 @@ def parse_gitlab_datetime(timestamp: str):
 
     except Exception:
         return None
+
+
+def split_projects(projects: list, user_info: dict) -> tuple[list, list]:
+    """Split projects into personal and contributed."""
+    user_id = user_info.get("id", 0)
+    personal = []
+    contributed = []
+
+    for p in projects or []:
+        if p.get("owner", {}).get("id") == user_id:
+            personal.append(p)
+        else:
+            contributed.append(p)
+
+    return personal, contributed
 
 
 def classify_time_slot(timestamp: str):

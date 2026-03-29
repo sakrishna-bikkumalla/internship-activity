@@ -2,6 +2,7 @@ import asyncio
 import re
 import threading
 from datetime import datetime, timezone
+from typing import Any
 
 import aiohttp
 import gitlab
@@ -104,7 +105,7 @@ BATCH_USERNAMES: list[str] = [
     "vemurispriya",
 ]
 
-_ZERO_ROW = {
+_ZERO_ROW: dict[str, Any] = {
     "Username": "",
     "Closed MRs": 0,
     "No Desc": 0,
@@ -297,7 +298,9 @@ class GitLabClient:
                     datetime.strptime(merged_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
                     if merged_s
                     else (
-                        datetime.strptime(mr.get("closed_at")[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                        datetime.strptime(mr.get("closed_at", "")[:19], "%Y-%m-%dT%H:%M:%S").replace(
+                            tzinfo=timezone.utc
+                        )
                         if mr.get("state") == "closed" and mr.get("closed_at")
                         else datetime.now(timezone.utc)
                     )
