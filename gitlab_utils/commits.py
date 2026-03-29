@@ -104,6 +104,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                             "created_at": c.get("created_at"),
                             "author_name": c_author_name,
                             "short_id": c.get("short_id"),
+                            "web_url": c.get("web_url"),
                         }
                     )
 
@@ -167,6 +168,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                         "slot": slot,
                         "author_name": c["author_name"],
                         "short_id": c["short_id"],
+                        "web_url": c["web_url"],
                     }
                 )
 

@@ -56,6 +56,8 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
                             "web_url": item.get("web_url"),
                             "state": state,
                             "created_at": item.get("created_at"),
+                            "merged_at": item.get("merged_at"),
+                            "closed_at": item.get("closed_at"),
                             "role": role_label,
                             "desc_score": desc_quality["description_score"],
                             "quality": desc_quality["quality_label"],

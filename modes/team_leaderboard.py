@@ -276,6 +276,9 @@ def _extract_member_row(result: dict) -> dict:
             "Groups": 0,
             "Score": 0,
             "Error": result.get("error", "Unknown error"),
+            "mrs_list": [],
+            "issues_list": [],
+            "commits_list": [],
         }
 
     data = result.get("data", {})
@@ -302,6 +305,9 @@ def _extract_member_row(result: dict) -> dict:
         "Issues Closed": issues_closed,
         "Groups": len(data.get("groups", [])),
         "Score": _calculate_score(total_commits, merged_mrs, total_mrs, issues_closed),
+        "mrs_list": data.get("mrs", []),
+        "issues_list": data.get("issues", []),
+        "commits_list": data.get("commits", []),
     }
 
 
@@ -832,7 +838,192 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
         with st.expander("👥 Group Breakdown"):
             st.dataframe(pd.DataFrame(group_rows), use_container_width=True, hide_index=True)
 
+    _render_detailed_contributions(member_rows)
+
     st.divider()
+
+
+def _render_detailed_contributions(member_rows: list[dict]) -> None:
+    """Styled expander for detailed contributions (MR titles, Issue titles, Commit messages)."""
+    with st.expander("🔍 Detailed Contributions"):
+        valid_members = [r for r in member_rows if r.get("Status") == "Success"]
+        if not valid_members:
+            st.info("No successful member data to show contributions for.")
+            return
+
+        DEFAULT_LIMIT = 15
+        INCREMENT = 20
+
+        # Inject custom CSS for buttons to match the premium theme
+        st.markdown("""
+        <style>
+            .stButton > button {
+                border-radius: 8px !important;
+                border: 1px solid rgba(120, 129, 149, 0.3) !important;
+                background-color: rgba(28, 33, 46, 0.6) !important;
+                color: #d9e1ee !important;
+                font-size: 0.9em !important;
+                font-weight: 500 !important;
+                transition: all 0.2s ease !important;
+            }
+            .stButton > button:hover {
+                border-color: #3498db !important;
+                background-color: rgba(52, 152, 219, 0.1) !important;
+                box-shadow: 0 0 10px rgba(52, 152, 219, 0.2) !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        for row in valid_members:
+            username = row.get("Username", "unknown")
+            mrs = row.get("mrs_list", [])
+            issues = row.get("issues_list", [])
+            commits = row.get("commits_list", [])
+
+            st.markdown(f"### 👤 {username}")
+
+            # Define keys for session state tracking
+            mr_limit_key = f"_lb_limit_{username}_mrs"
+            issue_limit_key = f"_lb_limit_{username}_issues"
+            commit_limit_key = f"_lb_limit_{username}_commits"
+
+            # Helper to generate list HTML
+            def get_list_html(items, type_, limit):
+                html_lines = []
+                for item in items[:limit]:
+                    url = item.get("web_url", "#")
+                    if type_ == "mr":
+                        title = escape(item.get("title", "No Title"))
+                        state = item.get("state", "unknown")
+                        if state == "merged":
+                            color = "#2ecc71"
+                        elif state == "opened":
+                            color = "#3498db"
+                        else:
+                            color = "#e74c3c"
+                        html_lines.append(
+                            f"<li><a href='{url}' target='_blank' class='li-link'>{title} <span style='color:{color}; font-size:0.85em;'>( {state} )</span></a></li>"
+                        )
+                    elif type_ == "issue":
+                        title = escape(item.get("title", "No Title"))
+                        state = item.get("state", "unknown")
+                        color = "#2ecc71" if state == "opened" else "#95a5a6"
+                        html_lines.append(
+                            f"<li><a href='{url}' target='_blank' class='li-link'>{title} <span style='color:{color}; font-size:0.85em;'>( {state} )</span></a></li>"
+                        )
+                    elif type_ == "commit":
+                        msg = escape(item.get("message", "No Message")).split("\n")[0]
+                        sha = item.get("short_id", "---")
+                        html_lines.append(
+                            f"<li><a href='{url}' target='_blank' class='li-link'><span style='color:#3498db; font-family:monospace;'>{sha}</span> {msg}</a></li>"
+                        )
+
+                if not html_lines:
+                    return "<p style='color:#888; font-style:italic;'>No items found.</p>"
+
+                count_suffix = ""
+                if len(items) > limit:
+                    count_suffix = f"<li style='color:#888; list-style:none; margin-top:5px; font-size:0.9em;'>... and {len(items)-limit} more</li>"
+
+                return f"""
+                <style>
+                    .li-link {{
+                        color: inherit !important;
+                        text-decoration: none !important;
+                        transition: all 0.2s ease;
+                    }}
+                    .li-link:hover {{
+                        text-decoration: underline !important;
+                        opacity: 0.8;
+                    }}
+                </style>
+                <ul style='list-style-type: disc; padding-left: 18px; color: #d9e1ee; font-size: 0.92em; line-height:1.5;'>
+                    {''.join(html_lines)}
+                    {count_suffix}
+                </ul>
+                """
+
+            c1, c2, c3 = st.columns(3)
+
+            # MRs Column
+            with c1:
+                limit = st.session_state.get(mr_limit_key, DEFAULT_LIMIT)
+                st.markdown(
+                    f"""
+                <div style="background: rgba(255,165,0,0.06); border: 1px solid rgba(255,165,0,0.25); border-radius: 12px; padding: 15px; height: 100%; min-height: 200px;">
+                    <h4 style="margin-top:0; color:#ffa500; display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,165,0,0.2); padding-bottom: 8px; margin-bottom: 12px;">
+                        <span>📙</span> MRs ({len(mrs)})
+                    </h4>
+                    {get_list_html(mrs, "mr", limit)}
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+                
+                # Load More / See Less buttons (placed closely below the card)
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                if len(mrs) > limit:
+                    if st.button("➕ Load more MRs", key=f"btn_more_mr_{username}", use_container_width=True):
+                        st.session_state[mr_limit_key] = limit + INCREMENT
+                        st.rerun()
+                if limit > DEFAULT_LIMIT:
+                    if st.button("➖ See less MRs", key=f"btn_less_mr_{username}", use_container_width=True):
+                        st.session_state[mr_limit_key] = DEFAULT_LIMIT
+                        st.rerun()
+
+            # Issues Column
+            with c2:
+                limit = st.session_state.get(issue_limit_key, DEFAULT_LIMIT)
+                st.markdown(
+                    f"""
+                <div style="background: rgba(255,215,0,0.06); border: 1px solid rgba(255,215,0,0.25); border-radius: 12px; padding: 15px; height: 100%; min-height: 200px;">
+                    <h4 style="margin-top:0; color:#ffd700; display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,215,0,0.2); padding-bottom: 8px; margin-bottom: 12px;">
+                        <span>🎫</span> Issues ({len(issues)})
+                    </h4>
+                    {get_list_html(issues, "issue", limit)}
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+                
+                # Load More / See Less buttons
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                if len(issues) > limit:
+                    if st.button("➕ Load more Issues", key=f"btn_more_iss_{username}", use_container_width=True):
+                        st.session_state[issue_limit_key] = limit + INCREMENT
+                        st.rerun()
+                if limit > DEFAULT_LIMIT:
+                    if st.button("➖ See less Issues", key=f"btn_less_iss_{username}", use_container_width=True):
+                        st.session_state[issue_limit_key] = DEFAULT_LIMIT
+                        st.rerun()
+
+            # Commits Column
+            with c3:
+                limit = st.session_state.get(commit_limit_key, DEFAULT_LIMIT)
+                st.markdown(
+                    f"""
+                <div style="background: rgba(52,152,219,0.06); border: 1px solid rgba(52,152,219,0.25); border-radius: 12px; padding: 15px; height: 100%; min-height: 200px;">
+                    <h4 style="margin-top:0; color:#3498db; display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(52,152,219,0.2); padding-bottom: 8px; margin-bottom: 12px;">
+                        <span>💻</span> Commits ({len(commits)})
+                    </h4>
+                    {get_list_html(commits, "commit", limit)}
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+                
+                # Load More / See Less buttons
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                if len(commits) > limit:
+                    if st.button("➕ Load more Commits", key=f"btn_more_com_{username}", use_container_width=True):
+                        st.session_state[commit_limit_key] = limit + INCREMENT
+                        st.rerun()
+                if limit > DEFAULT_LIMIT:
+                    if st.button("➖ See less Commits", key=f"btn_less_com_{username}", use_container_width=True):
+                        st.session_state[commit_limit_key] = DEFAULT_LIMIT
+                        st.rerun()
+
+            st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------

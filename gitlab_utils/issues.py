@@ -41,6 +41,7 @@ def get_user_issues(client, user_id, since=None, until=None, project_ids=None):
                     "web_url": item.get("web_url"),
                     "state": state,
                     "created_at": item.get("created_at"),
+                    "closed_at": item.get("closed_at"),
                 }
             )
 
