@@ -180,6 +180,7 @@ def _init_state() -> None:
         "_lb_cached_results": None,
         "_lb_last_filters": None,
         "_lb_selected_view_team": "All Teams",
+        "_lb_show_specific_team_panel": False,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -2086,25 +2087,30 @@ def render_team_leaderboard(client) -> None:
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
 
-    # Team Selector for detailed view
-    view_team = st.selectbox(
-        "Select View",
-        options=["All Teams"] + list(team_data.keys()),
-        index=0,
-        key="_lb_selected_view_team_dropdown",
-        help="Switch between overview and specific team details.",
-    )
-    st.divider()
+    # Toggle button for specific team view
+    if st.button("🔍 View Specific Team"):
+        st.session_state["_lb_show_specific_team_panel"] = not st.session_state.get(
+            "_lb_show_specific_team_panel", False
+        )
 
-    if view_team == "All Teams":
-        for team_name, (meta, member_rows, totals, *_) in team_data.items():
-            _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
-        _render_overall_leaderboard(team_data)
-    else:
-        # Render specific team analytics
-        meta, member_rows, totals, *extra = team_data[view_team]
-        raw_results = extra[0] if extra else []
-        _render_specific_team_analytics(view_team, meta.get("project_name", ""), member_rows, totals, raw_results)
+    if st.session_state.get("_lb_show_specific_team_panel", False):
+        st.markdown("---")
+        view_team = st.selectbox(
+            "Select Team to View",
+            options=list(team_data.keys()),
+            index=0,
+            key="_lb_selected_view_team_dropdown",
+        )
+        if view_team in team_data:
+            meta, member_rows, totals, *extra = team_data[view_team]
+            raw_results = extra[0] if extra else []
+            _render_specific_team_analytics(view_team, meta.get("project_name", ""), member_rows, totals, raw_results)
+        st.markdown("---")
+
+    # Render ALL teams normally below
+    for team_name, (meta, member_rows, totals, *_) in team_data.items():
+        _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
+    _render_overall_leaderboard(team_data)
 
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
