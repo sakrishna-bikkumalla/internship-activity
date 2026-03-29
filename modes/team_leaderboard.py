@@ -23,6 +23,7 @@ import statistics
 from html import escape
 from pathlib import Path
 
+import dateutil.parser
 import pandas as pd
 import streamlit as st
 
@@ -889,33 +890,70 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
 
             # Helper to generate list HTML
             def get_list_html(items, type_, limit):
+                def format_gitlab_date(iso_str):
+                    if not iso_str:
+                        return None
+                    try:
+                        dt = dateutil.parser.isoparse(iso_str)
+                        return dt.strftime("%b %d, %I:%M %p")
+                    except Exception:
+                        return None
+
                 html_lines = []
                 for item in items[:limit]:
                     url = item.get("web_url", "#")
+                    created = format_gitlab_date(item.get("created_at"))
+
                     if type_ == "mr":
                         title = escape(item.get("title", "No Title"))
                         state = item.get("state", "unknown")
+                        merged = format_gitlab_date(item.get("merged_at"))
+                        closed = format_gitlab_date(item.get("closed_at"))
+
                         if state == "merged":
                             color = "#2ecc71"
+                            status_info = f"Merged: {merged}" if merged else ""
                         elif state == "opened":
                             color = "#3498db"
+                            status_info = ""
                         else:
                             color = "#e74c3c"
+                            status_info = f"Closed: {closed}" if closed else ""
+
+                        time_meta = f"Created: {created}" if created else ""
+                        if status_info:
+                            time_meta += f" | {status_info}" if time_meta else status_info
+
                         html_lines.append(
-                            f"<li><a href='{url}' target='_blank' class='li-link'>{title} <span style='color:{color}; font-size:0.85em;'>( {state} )</span></a></li>"
+                            f"<li><a href='{url}' target='_blank' class='li-link'>{title} <span style='color:{color}; font-size:0.85em;'>( {state} )</span></a>"
+                            f"<br><span style='color:#888; font-size:0.8em;'>{time_meta}</span></li>"
                         )
                     elif type_ == "issue":
                         title = escape(item.get("title", "No Title"))
                         state = item.get("state", "unknown")
+                        closed = format_gitlab_date(item.get("closed_at"))
+
                         color = "#2ecc71" if state == "opened" else "#95a5a6"
+                        status_info = f"Closed: {closed}" if (state == "closed" and closed) else ""
+
+                        time_meta = f"Created: {created}" if created else ""
+                        if status_info:
+                            time_meta += f" | {status_info}" if time_meta else status_info
+
                         html_lines.append(
-                            f"<li><a href='{url}' target='_blank' class='li-link'>{title} <span style='color:{color}; font-size:0.85em;'>( {state} )</span></a></li>"
+                            f"<li><a href='{url}' target='_blank' class='li-link'>{title} <span style='color:{color}; font-size:0.85em;'>( {state} )</span></a>"
+                            f"<br><span style='color:#888; font-size:0.8em;'>{time_meta}</span></li>"
                         )
                     elif type_ == "commit":
                         msg = escape(item.get("message", "No Message")).split("\n")[0]
                         sha = item.get("short_id", "---")
+                        date_str = item.get("date", "")
+                        time_str = item.get("time", "")
+                        time_meta = f"{date_str} {time_str}".strip()
+
                         html_lines.append(
-                            f"<li><a href='{url}' target='_blank' class='li-link'><span style='color:#3498db; font-family:monospace;'>{sha}</span> {msg}</a></li>"
+                            f"<li><a href='{url}' target='_blank' class='li-link'><span style='color:#3498db; font-family:monospace;'>{sha}</span> {msg}</a>"
+                            f"<br><span style='color:#888; font-size:0.8em;'>{time_meta}</span></li>"
                         )
 
                 if not html_lines:
