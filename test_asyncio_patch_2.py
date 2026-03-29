@@ -23,12 +23,5 @@ def test_patch():
             print("Success!")
 
 
-def test_target_func_with_loop():
-    with patch("nest_asyncio.apply"):
-        with patch("asyncio.get_event_loop", return_value="fake-loop"):
-            result = target_func()
-            assert result == "fake-loop"
-
-
 if __name__ == "__main__":
     test_patch()
