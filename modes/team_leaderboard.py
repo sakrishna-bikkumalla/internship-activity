@@ -511,8 +511,8 @@ def _render_json_upload() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_create_team_form() -> None:
-    """Expandable form for creating a brand-new team."""
+def _render_create_team_form(scope: str = "all") -> None:
+    """Expandable form for creating a brand-new team. scope='all' for All Teams context, 'specific' for No Team context."""
     # Don't show either form while an edit is active
     if st.session_state.get("edit_team_index") is not None:
         return
@@ -610,6 +610,7 @@ def _render_create_team_form() -> None:
                     "team_name": team_name.strip(),
                     "project_name": project_name.strip(),
                     "members": list(st.session_state["_lb_draft_members"]),
+                    "scope": scope,  # 'all' or 'specific'
                 }
             )
             st.session_state["_lb_draft_members"] = []
@@ -758,10 +759,16 @@ def _render_edit_form(edit_idx: int) -> None:
 
 def _render_teams_overview(filter_team_name: str | None = None) -> None:
     """Show all configured teams with Edit and Delete controls."""
-    teams: list[dict] = st.session_state["teams"]
-    if filter_team_name and filter_team_name != "All Teams":
-        teams = [t for t in teams if t["team_name"] == filter_team_name]
+    all_teams: list[dict] = st.session_state["teams"]
 
+    if filter_team_name == "All Teams" or filter_team_name is None:
+        # In "All Teams" context: only show teams with scope 'all' (or no scope set = legacy)
+        teams = [t for t in all_teams if t.get("scope", "all") == "all"]
+    elif filter_team_name == "No Team":
+        teams = []
+    else:
+        # Specific team selected
+        teams = [t for t in all_teams if t["team_name"] == filter_team_name]
     active_edit = st.session_state.get("edit_team_index")
 
     if not teams:
@@ -1989,8 +1996,11 @@ def render_team_leaderboard(client) -> None:
         return
 
     # Load teams to build the dropdown options
-    teams: list[dict] = st.session_state["teams"]
-    team_names = [t["team_name"] for t in teams]
+    all_teams: list[dict] = st.session_state["teams"]
+    # Dropdown shows All Teams + specific teams only (scope != 'no_team')
+    global_teams = [t for t in all_teams if t.get("scope", "all") == "all"]
+    specific_teams = [t for t in all_teams if t.get("scope", "all") == "specific"]
+    team_names = [t["team_name"] for t in all_teams]
 
     # If a new team was just created, apply the queued auto-selection before the widget is instantiated
     if "_lb_pending_team_select" in st.session_state:
@@ -2008,7 +2018,7 @@ def render_team_leaderboard(client) -> None:
     st.divider()
 
     # ── Section 1: Create Team ────────────────────────────────────────────
-    _render_create_team_form()
+    _render_create_team_form(scope="specific" if selected_team == "No Team" else "all")
     st.divider()
 
     if selected_team == "No Team":
@@ -2020,6 +2030,12 @@ def render_team_leaderboard(client) -> None:
     st.divider()
 
     # ── Section 3: Analysis ───────────────────────────────────────────────
+    # Only use teams corresponding to the current scope
+    if selected_team == "All Teams":
+        teams = global_teams
+    else:
+        teams = [t for t in all_teams if t["team_name"] == selected_team]
+
     if not teams:
         st.info("Add at least one team above to enable analysis.")
         return
@@ -2122,7 +2138,7 @@ def render_team_leaderboard(client) -> None:
             st.error("No team data could be fetched. Check your GitLab connection.")
             return
 
-        # Only update cache if we processed something new. 
+        # Only update cache if we processed something new.
         # Don't erase the rest of the cache if we only fetched a sub-team.
         for k, v in team_data.items():
             cached_results[k] = v
