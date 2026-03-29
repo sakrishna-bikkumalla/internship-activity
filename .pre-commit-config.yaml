@@ -2,7 +2,7 @@
 # Automatically runs checks before each commit to catch issues early
 # Matches the linting stage in .gitlab-ci.yml
 
-exclude: '^assets/badges/'
+exclude: '^assets/badges/|^.venv/'
 
 repos:
   # Ruff linting (matches: uv run ruff check .)
@@ -46,9 +46,13 @@ repos:
 
   # Vulture dead code detection
   - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.11  # Using a stable, widely compatible version
+    rev: v2.11
     hooks:
       - id: vulture
+        name: Vulture
+        entry: uv run vulture gitlab_utils/ modes/ user_profile/ batch_mode/ issues/ Projects/ app.py
+        language: system
+        pass_filenames: false
 
 ci:
   autofix_commit_msg: '[pre-commit.ci] auto fixes from pre-commit hooks'
