@@ -1994,7 +1994,7 @@ def render_team_leaderboard(client) -> None:
     st.markdown("### 🎯 Team Filter")
     selected_team = st.selectbox(
         "Select Team to Analyze",
-        options=["All Teams"] + team_names,
+        options=["No Team", "All Teams"] + team_names,
         index=0,
         key="_lb_selected_team_dropdown",
         help="Choose a specific team to view detailed metrics, or 'All Teams' for an overall comparison.",
@@ -2004,6 +2004,9 @@ def render_team_leaderboard(client) -> None:
     # ── Section 1: Create Team ────────────────────────────────────────────
     _render_create_team_form()
     st.divider()
+
+    if selected_team == "No Team":
+        return
 
     # ── Section 2: Teams Overview (with inline edit) ──────────────────────
     st.markdown("### 📋 Configured Teams")
