@@ -103,10 +103,11 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
         result["data"]["issues"] = user_issues
         result["data"]["issue_stats"] = issue_stats
 
-        # Refine Contributed projects display - only those with verified commits
-        result["data"]["projects"]["contributed"] = [
-            p for p in projs["contributed"] if p["id"] in commit_counts and commit_counts[p["id"]] > 0
-        ]
+
+        # Note: contributed projects are now fetched directly from the
+        # /users/{user_id}/contributed_projects API in projects.py.
+        # No further filtering needed here.
+
 
     except Exception as e:
         result["status"] = "Error"
