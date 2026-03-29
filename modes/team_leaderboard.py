@@ -756,9 +756,12 @@ def _render_edit_form(edit_idx: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_teams_overview() -> None:
+def _render_teams_overview(filter_team_name: str | None = None) -> None:
     """Show all configured teams with Edit and Delete controls."""
     teams: list[dict] = st.session_state["teams"]
+    if filter_team_name and filter_team_name != "All Teams":
+        teams = [t for t in teams if t["team_name"] == filter_team_name]
+    
     active_edit = st.session_state.get("edit_team_index")
 
     if not teams:
@@ -2006,7 +2009,7 @@ def render_team_leaderboard(client) -> None:
 
     # ── Section 2: Teams Overview (with inline edit) ──────────────────────
     st.markdown("### 📋 Configured Teams")
-    _render_teams_overview()
+    _render_teams_overview(selected_team)
     st.divider()
 
     # ── Section 3: Analysis ───────────────────────────────────────────────
