@@ -844,6 +844,178 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
     st.divider()
 
 
+def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
+    """Aggregates all contributions into a date-based activity map {YYYY-MM-DD: count}."""
+    activity_map = {}
+
+    def add_to_map(date_str):
+        if not date_str:
+            return
+        # Normalize to YYYY-MM-DD
+        try:
+            day = date_str.split("T")[0] if "T" in date_str else date_str
+            activity_map[day] = activity_map.get(day, 0) + 1
+        except Exception:
+            pass
+
+    for m in mrs:
+        add_to_map(m.get("created_at"))
+    for i in issues:
+        add_to_map(i.get("created_at"))
+    for c in commits:
+        add_to_map(c.get("date"))  # Commits already have a "date" field in YYYY-MM-DD
+
+    return activity_map
+
+
+def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
+    """Renders a GitLab-style activity heatmap (364 days)."""
+    today = datetime.date.today()
+    # Align start to a Monday 52 weeks ago
+    start_date = today - datetime.timedelta(days=363)
+    while start_date.weekday() != 0:  # 0 is Monday
+        start_date -= datetime.timedelta(days=1)
+
+    # Intensity levels (GitLab Blue palette)
+    def get_intensity_style(count):
+        if count == 0:
+            return "rgba(255, 255, 255, 0.05)"
+        if count <= 2:
+            return "#1e3a5f"
+        if count <= 5:
+            return "#2b5a91"
+        if count <= 10:
+            return "#3b7bc4"
+        if count <= 20:
+            return "#4b9cf7"
+        return "#70b1ff"
+
+    weeks_html = []
+    current_date = start_date
+    months_labels = []
+    last_month = None
+
+    # HTML/CSS for the heatmap
+    heatmap_styles = """
+    <style>
+        .heatmap-container {
+            background: rgba(17, 19, 24, 0.6);
+            border: 1px solid rgba(120, 129, 149, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            overflow-x: auto;
+            position: relative;
+        }
+        .heatmap-grid {
+            display: flex;
+            gap: 4px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .heatmap-week {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .heatmap-day {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+        }
+        .heatmap-day:hover {
+            transform: scale(1.3);
+            z-index: 10;
+            box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
+            border: 1px solid rgba(255,255,255,0.4);
+        }
+        .heatmap-today {
+            border: 1px solid #70b1ff !important;
+        }
+        .heatmap-labels-y {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding-right: 10px;
+            font-size: 10px;
+            color: #888;
+            height: 108px; /* 7 * 12 + 6 * 4 */
+            padding-top: 2px;
+        }
+        .heatmap-labels-x {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 5px;
+            margin-left: 35px;
+            font-size: 10px;
+            color: #888;
+            height: 15px;
+        }
+        .month-label { width: 44px; flex-shrink: 0; }
+        .heatmap-legend {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            margin-top: 15px;
+            gap: 6px;
+            font-size: 11px;
+            color: #888;
+        }
+    </style>
+    """
+
+    # Generate weeks
+    for w in range(53):
+        days_in_week = []
+        for d in range(7):
+            date_str = current_date.isoformat()
+            count = activity_map.get(date_str, 0)
+
+            # Month label logic (only show if it's the start of the month)
+            if current_date.day <= 7 and current_date.month != last_month:
+                months_labels.append(f'<div class="month-label">{current_date.strftime("%b")}</div>')
+                last_month = current_date.month
+            elif w == 0 and d == 0:
+                months_labels.append(f'<div class="month-label">{current_date.strftime("%b")}</div>')
+
+            is_today = "heatmap-today" if current_date == today else ""
+            title = f"{current_date.strftime('%b %d, %Y')}: {count} contributions"
+            days_in_week.append(
+                f'<div class="heatmap-day {is_today}" style="background: {get_intensity_style(count)};" title="{title}"></div>'
+            )
+            current_date += datetime.timedelta(days=1)
+
+        weeks_html.append(f'<div class="heatmap-week">{"".join(days_in_week)}</div>')
+
+    legend_html = f"""
+    <div class="heatmap-legend">
+        <span>Less</span>
+        <div class="heatmap-day" style="background: {get_intensity_style(0)}"></div>
+        <div class="heatmap-day" style="background: {get_intensity_style(2)}"></div>
+        <div class="heatmap-day" style="background: {get_intensity_style(5)}"></div>
+        <div class="heatmap-day" style="background: {get_intensity_style(10)}"></div>
+        <div class="heatmap-day" style="background: {get_intensity_style(21)}"></div>
+        <span>More</span>
+    </div>
+    """
+
+    full_heatmap_html = f"""
+    {heatmap_styles}
+    <div class="heatmap-container">
+        <div class="heatmap-labels-x">{"".join(months_labels)}</div>
+        <div class="heatmap-grid">
+            <div class="heatmap-labels-y">
+                <div>Mon</div><div>Wed</div><div>Fri</div>
+            </div>
+            {"".join(weeks_html)}
+        </div>
+        {legend_html}
+    </div>
+    """
+    st.markdown(full_heatmap_html, unsafe_allow_html=True)
+
+
 def _render_detailed_contributions(member_rows: list[dict]) -> None:
     """Styled expander for detailed contributions (MR titles, Issue titles, Commit messages)."""
     with st.expander("🔍 Detailed Contributions"):
@@ -856,7 +1028,8 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
         INCREMENT = 20
 
         # Inject custom CSS for buttons to match the premium theme
-        st.markdown("""
+        st.markdown(
+            """
         <style>
             .stButton > button {
                 border-radius: 8px !important;
@@ -873,7 +1046,9 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 box-shadow: 0 0 10px rgba(52, 152, 219, 0.2) !important;
             }
         </style>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         for row in valid_members:
             username = row.get("Username", "unknown")
@@ -882,6 +1057,10 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             commits = row.get("commits_list", [])
 
             st.markdown(f"### 👤 {username}")
+
+            # Render Activity Heatmap
+            activity_map = _get_daily_activity_counts(mrs, issues, commits)
+            _render_activity_heatmap(activity_map)
 
             # Define keys for session state tracking
             mr_limit_key = f"_lb_limit_{username}_mrs"
@@ -961,7 +1140,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
 
                 count_suffix = ""
                 if len(items) > limit:
-                    count_suffix = f"<li style='color:#888; list-style:none; margin-top:5px; font-size:0.9em;'>... and {len(items)-limit} more</li>"
+                    count_suffix = f"<li style='color:#888; list-style:none; margin-top:5px; font-size:0.9em;'>... and {len(items) - limit} more</li>"
 
                 return f"""
                 <style>
@@ -976,7 +1155,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                     }}
                 </style>
                 <ul style='list-style-type: disc; padding-left: 18px; color: #d9e1ee; font-size: 0.92em; line-height:1.5;'>
-                    {''.join(html_lines)}
+                    {"".join(html_lines)}
                     {count_suffix}
                 </ul>
                 """
@@ -997,7 +1176,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 """,
                     unsafe_allow_html=True,
                 )
-                
+
                 # Load More / See Less buttons (placed closely below the card)
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 if len(mrs) > limit:
@@ -1023,7 +1202,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 """,
                     unsafe_allow_html=True,
                 )
-                
+
                 # Load More / See Less buttons
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 if len(issues) > limit:
@@ -1049,7 +1228,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 """,
                     unsafe_allow_html=True,
                 )
-                
+
                 # Load More / See Less buttons
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 if len(commits) > limit:
