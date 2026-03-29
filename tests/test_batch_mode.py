@@ -2,8 +2,6 @@ import importlib
 import sys
 import types
 
-import pytest
-
 
 def _setup_batch_depends(monkeypatch):
     """Ensure batch_mode submodules exist for import-time dependency resolution."""
@@ -20,11 +18,6 @@ def _setup_batch_depends(monkeypatch):
 
 
 def _run_test_for_module(module):
-    fake_results = [
-        {"project": "a", "status": "PASS"},
-        {"project": "b", "status": "FAIL"},
-    ]
-
     def fake_process_single_project(gl_client, project_id, include_details=True):
         if project_id == "error":
             raise Exception("boom")
