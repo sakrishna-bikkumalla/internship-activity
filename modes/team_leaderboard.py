@@ -179,6 +179,7 @@ def _init_state() -> None:
         "_lb_last_ranking_rows": [],
         "_lb_cached_results": None,
         "_lb_last_filters": None,
+        "_lb_selected_view_team": "All Teams",
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -356,14 +357,14 @@ def _build_excel_export(team_data: dict) -> bytes:
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         lb_rows = [
             {"Team": tn, "Project": meta.get("project_name", ""), **totals}
-            for tn, (meta, _, totals) in team_data.items()
+            for tn, (meta, _, totals, *_) in team_data.items()
         ]
         (
             pd.DataFrame(lb_rows)
             .sort_values("Team Score", ascending=False)
             .to_excel(writer, index=False, sheet_name="Leaderboard")
         )
-        for team_name, (_, member_rows, _) in team_data.items():
+        for team_name, (_, member_rows, _, *_) in team_data.items():
             pd.DataFrame(member_rows).to_excel(writer, index=False, sheet_name=team_name[:31])
     return output.getvalue()
 
@@ -1393,6 +1394,99 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
 
+def _render_specific_team_analytics(
+    team_name: str, project_name: str, member_rows: list[dict], totals: dict, raw_results: list[dict]
+) -> None:
+    """Detailed analytics view for a specific team."""
+    st.subheader(f"🎯 Detailed View: {team_name}")
+    if project_name:
+        st.caption(f"Project: {project_name}")
+
+    # 1. Team Metrics Dashboard
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Commits", totals.get("Total Commits", 0))
+    m2.metric("MR Merged", totals.get("MR Merged", 0))
+    m3.metric("MR Open", totals.get("MR Open", 0))
+    m4.metric("MR Closed", totals.get("MR Closed", 0))
+    m5.metric("Issues Raised", totals.get("Issues Raised", 0))
+    m6.metric("Issues Closed", totals.get("Issues Closed", 0))
+
+    # 2. Individual User Performance
+    st.markdown("#### 👤 Individual User Performance")
+    user_perf_cols = [
+        "Username",
+        "Total Commits",
+        "Issues Raised",
+        "Issues Closed",
+        "MR Created",
+        "MR Merged",
+        "MR Open",
+        "MR Closed",
+        "Score",
+    ]
+    if member_rows:
+        df_users = pd.DataFrame(member_rows)
+        # Ensure all columns exist
+        for col in user_perf_cols:
+            if col not in df_users.columns:
+                df_users[col] = 0
+        st.dataframe(df_users[user_perf_cols], use_container_width=True, hide_index=True)
+    else:
+        st.info("No member data available.")
+
+    # 3. Activity Feed (MRs & Issues)
+    st.markdown("#### 📑 Activity Feed")
+    activity_data = []
+
+    for user_res in raw_results:
+        if not user_res or not isinstance(user_res, dict):
+            continue
+        if user_res.get("status") != "Success":
+            continue
+
+        data = user_res.get("data", {})
+        username = user_res.get("username", "unknown")
+
+        # MRs
+        for mr in data.get("mrs", []):
+            activity_data.append(
+                {
+                    "Date": mr.get("created_at")[:10] if mr.get("created_at") else "—",
+                    "Type": "Merge Request",
+                    "User": username,
+                    "Title": mr.get("title", "—"),
+                    "Status": str(mr.get("state", "—")).capitalize(),
+                    "Link": mr.get("web_url", "#"),
+                }
+            )
+
+        # Issues
+        for issue in data.get("issues", []):
+            activity_data.append(
+                {
+                    "Date": issue.get("created_at")[:10] if issue.get("created_at") else "—",
+                    "Type": "Issue",
+                    "User": username,
+                    "Title": issue.get("title", "—"),
+                    "Status": str(issue.get("state", "—")).capitalize(),
+                    "Link": issue.get("web_url", "#"),
+                }
+            )
+
+    if activity_data:
+        df_activity = pd.DataFrame(activity_data).sort_values("Date", ascending=False)
+        st.dataframe(
+            df_activity,
+            column_config={
+                "Link": st.column_config.LinkColumn("GitLab Link"),
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No recent MRs or Issues found for this team.")
+
+
 # ---------------------------------------------------------------------------
 # UI: Overall Leaderboard
 # ---------------------------------------------------------------------------
@@ -1415,7 +1509,7 @@ def _render_overall_leaderboard(team_data: dict) -> None:
             "Issues Raised": totals["Issues Raised"],
             "Issues Assigned": totals.get("Issues Assigned", 0),
         }
-        for tn, (meta, _, totals) in team_data.items()
+        for tn, (meta, _, totals, *_) in team_data.items()
     ]
     df_lb = pd.DataFrame(lb_rows).sort_values("Team Score", ascending=False).reset_index(drop=True)
     df_lb.insert(0, "Rank", range(1, len(df_lb) + 1))
@@ -1426,7 +1520,7 @@ def _render_overall_leaderboard(team_data: dict) -> None:
 def _build_ranking_rows(team_data: dict) -> list[dict]:
     """Create sorted ranking rows from already aggregated team totals."""
     rows = []
-    for team_name, (_, _, totals) in team_data.items():
+    for team_name, (_, _, totals, *_) in team_data.items():
         rows.append(
             {
                 "Team Name": team_name,
@@ -1453,7 +1547,7 @@ def _build_ranking_rows(team_data: dict) -> list[dict]:
 def _build_individual_rows(team_data: dict) -> list[dict]:
     """Flatten all members across teams into a ranked list with achievement badges."""
     all_members: list[dict] = []
-    for team_name, (_, member_rows, _) in team_data.items():
+    for team_name, (_, member_rows, _, *_) in team_data.items():
         for row in member_rows:
             if row.get("Status") != "Success":
                 continue
@@ -1970,7 +2064,7 @@ def render_team_leaderboard(client) -> None:
 
             member_rows = [_extract_member_row(r) for r in results if r]
             totals = _aggregate_team_totals(member_rows)
-            team_data[team_name] = (team, member_rows, totals)
+            team_data[team_name] = (team, member_rows, totals, results)
             progress.progress((idx + 1) / len(teams), text=f"Done: {team_name}")
 
         progress.empty()
@@ -1989,10 +2083,26 @@ def render_team_leaderboard(client) -> None:
 
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
-    for team_name, (meta, member_rows, totals) in team_data.items():
-        _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
 
-    _render_overall_leaderboard(team_data)
+    # Team Selector for detailed view
+    view_team = st.selectbox(
+        "Select View",
+        options=["All Teams"] + list(team_data.keys()),
+        index=0,
+        key="_lb_selected_view_team_dropdown",
+        help="Switch between overview and specific team details.",
+    )
+    st.divider()
+
+    if view_team == "All Teams":
+        for team_name, (meta, member_rows, totals, *_) in team_data.items():
+            _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
+        _render_overall_leaderboard(team_data)
+    else:
+        # Render specific team analytics
+        meta, member_rows, totals, *extra = team_data[view_team]
+        raw_results = extra[0] if extra else []
+        _render_specific_team_analytics(view_team, meta.get("project_name", ""), member_rows, totals, raw_results)
 
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
