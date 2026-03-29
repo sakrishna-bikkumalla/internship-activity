@@ -2,6 +2,8 @@
 # Automatically runs checks before each commit to catch issues early
 # Matches the linting stage in .gitlab-ci.yml
 
+exclude: '^assets/badges/|^.venv/'
+
 repos:
   # Ruff linting (matches: uv run ruff check .)
   - repo: https://github.com/astral-sh/ruff-pre-commit
