@@ -1,11 +1,7 @@
 import sys
 import types
-
-import pytest
-
 from conftest import make_fake_st
-
-
+import pytest
 class FakeClient:
     def __init__(self, url, token):
         self.url = url
