@@ -20,6 +20,18 @@ import streamlit as st
 from gitlab_utils.client import BATCH_USERNAMES
 
 
+@st.cache_data(ttl=3600)
+def cached_batch_evaluate_mrs(_client, usernames_tuple):
+    """Cache the batch MR evaluation results for 1 hour."""
+    return _client.batch_evaluate_mrs(list(usernames_tuple))
+
+
+@st.cache_data(ttl=3600)
+def cached_single_user_mrs(_client, username):
+    """Cache single user MR evaluation results for 1 hour."""
+    return _client.batch_evaluate_mrs([username])
+
+
 def render_bad_mrs_batch_ui(client) -> None:
     st.subheader("🚨 BAD MRs – Batch Analysis")
 
@@ -35,7 +47,7 @@ def render_bad_mrs_batch_ui(client) -> None:
             f"⏳ Performing High-Accuracy Analysis for {len(BATCH_USERNAMES)} users... This may take 1-3 minutes to stay within GitLab's rate limits."
         ):
             try:
-                rows = client.batch_evaluate_mrs(BATCH_USERNAMES)
+                rows = cached_batch_evaluate_mrs(client, tuple(BATCH_USERNAMES))
             except Exception as exc:
                 st.error(f"Error during batch fetch: {exc}")
                 return
@@ -121,7 +133,7 @@ def render_bad_mrs_batch_ui(client) -> None:
         with st.spinner(f"⏳ Analyzing MRs for '{single_user}'..."):
             try:
                 # fetch_all_bad_mrs takes a list of usernames
-                results = client.batch_evaluate_mrs([single_user])
+                results = cached_single_user_mrs(client, single_user)
                 if results:
                     res = results[0]
                     st.success(f"Analysis complete for {single_user}!")
