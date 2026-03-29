@@ -2043,7 +2043,8 @@ def render_team_leaderboard(client) -> None:
         st.warning(f"The selected team '{selected_team}' could not be found.")
         return
 
-    # ── Cache key: fingerprint of current teams + date filters ────────────
+    # ── Cache key: fingerprint of current ALL teams configuration + date filters ────────────
+    # We use ALL teams for the configuration key, so that changing the dropdown alone does not invalidate it.
     current_filters = {
         "teams": [
             {
@@ -2051,22 +2052,33 @@ def render_team_leaderboard(client) -> None:
                 "project_name": t.get("project_name", ""),
                 "members": sorted([m["username"] for m in t.get("members", []) if m.get("username")]),
             }
-            for t in teams_to_process
+            for t in teams
         ],
         "since": since_iso,
         "until": until_iso,
-        "selected_team": selected_team,
     }
 
-    cached_results = st.session_state.get("_lb_cached_results")
-    last_filters = st.session_state.get("_lb_last_filters")
+    cached_results = st.session_state.get("_lb_cached_results", {}) or {}
+    last_filters = st.session_state.get("_lb_last_filters", {})
 
-    # If cache is valid and filters haven't changed, reuse cached data
-    if cached_results is not None and last_filters == current_filters and not run_button_clicked:
+    needs_fetch = run_button_clicked
+    if not cached_results:
+        needs_fetch = True
+    elif last_filters != current_filters:
+        needs_fetch = True
+    else:
+        # Check if we already have the requested data
+        for t in teams_to_process:
+            if t["team_name"] not in cached_results:
+                needs_fetch = True
+                break
+
+    if not needs_fetch:
         team_data = cached_results
     else:
         # ── Fetch ─────────────────────────────────────────────────────────
-        team_data = {}
+        # Retain existing cached results if we are just adding to it
+        team_data = cached_results if not run_button_clicked and last_filters == current_filters else {}
         progress = st.progress(0, text="Fetching team data…")
 
         for idx, team in enumerate(teams_to_process):
@@ -2101,20 +2113,27 @@ def render_team_leaderboard(client) -> None:
             st.error("No team data could be fetched. Check your GitLab connection.")
             return
 
-        # Store results and filters in cache
-        st.session_state["_lb_cached_results"] = team_data
+        # Only update cache if we processed something new. 
+        # Don't erase the rest of the cache if we only fetched a sub-team.
+        for k, v in team_data.items():
+            cached_results[k] = v
+
+        st.session_state["_lb_cached_results"] = cached_results
         st.session_state["_lb_last_filters"] = current_filters
 
         # Cache ranking rows for the Ranking page
-        st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(team_data)
-        st.session_state["_lb_last_individual_rows"] = _build_individual_rows(team_data)
+        st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(st.session_state["_lb_cached_results"])
+        st.session_state["_lb_last_individual_rows"] = _build_individual_rows(st.session_state["_lb_cached_results"])
 
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
-    for team_name, (meta, member_rows, totals) in team_data.items():
-        _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
+    for team_name in [t["team_name"] for t in teams_to_process]:
+        if team_name in team_data:
+            meta, member_rows, totals = team_data[team_name]
+            _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
 
-    _render_overall_leaderboard(team_data)
+    if selected_team == "All Teams":
+        _render_overall_leaderboard(team_data)
 
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
