@@ -44,11 +44,36 @@ Thank you for your interest in contributing to **gitlab-compliance-checker**! We
 - Respond to review feedback promptly.
 - Ensure all continuous integration checks pass.
 
+## Local Development Setup
+
+### Setting Up Pre-commit Hooks
+
+We use `pre-commit` to automatically run code quality checks before each commit:
+
+1. **Install pre-commit** (included in dev dependencies):
+   ```bash
+   uv sync --all-extras
+   ```
+
+2. **Install the git hooks**:
+   ```bash
+   pre-commit install
+   ```
+
+3. **Run hooks manually** (optional):
+   ```bash
+   pre-commit run --all-files  # Run on all files
+   pre-commit run              # Run on staged files
+   ```
+
 ## Code Style and Testing
 
-- This project uses `flake8` for linting and `black` for code formatting.
+- This project uses `ruff` for linting and code formatting.
 - Tests are run with `pytest`.
-- Run tests locally before creating a merge request.
+- Run tests locally before creating a merge request:
+  ```bash
+  uv run pytest tests/
+  ```
 
 ## Code of Conduct
 
