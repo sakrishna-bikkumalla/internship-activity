@@ -79,20 +79,15 @@ def get_user_commits(client, user, projects, since=None, until=None):
                     c_author_name = c.get("author_name", "") or ""
                     c_author_email = c.get("author_email", "") or ""
 
-                    # Trust the GitLab API's author filter primarily, but validate
-                    # to avoid false positives when the API does partial matching.
-                    c_author_name_l = c_author_name.lower()
-                    c_author_email_l = c_author_email.lower()
-
                     is_match = False
-                    if author_name and c_author_name_l == author_name.lower():
+                    if author_name and c_author_name.lower() == author_name.lower():
                         is_match = True
-                    elif author_email and c_author_email_l == author_email.lower():
+                    elif author_email and c_author_email.lower() == author_email.lower():
                         is_match = True
-                    elif username and (username.lower() in c_author_name_l or username.lower() in c_author_email_l):
+                    elif username and (
+                        username.lower() in c_author_name.lower() or username.lower() in c_author_email.lower()
+                    ):
                         is_match = True
-                    elif not (author_name or author_email or username):
-                        is_match = True  # No filter criteria — accept all
 
                     if not is_match:
                         continue

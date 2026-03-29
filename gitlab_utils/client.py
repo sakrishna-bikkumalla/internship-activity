@@ -17,12 +17,10 @@ async def safe_api_call_async(func, *args, **kwargs):
     Async safe wrapper for GitLab API calls with aggressive retry logic and 429 handling.
     """
     max_retries = 5
-    last_exception = None
     for attempt in range(max_retries):
         try:
             return await func(*args, **kwargs)
         except aiohttp.ClientResponseError as e:
-            last_exception = e
             if e.status == 429:
                 retry_after = e.headers.get("Retry-After")
                 if retry_after:
@@ -43,34 +41,23 @@ async def safe_api_call_async(func, *args, **kwargs):
                 else:
                     raise Exception("GitLab API Rate Limit Exceeded (429 Too Many Requests). Max retries reached.")
 
-            if e.status in (401, 403, 404):
-                # Critical errors that won't resolve with retry
-                print(f"CRITICAL API ERROR: {e.status} on {e.request_info.url}")
-                raise
-
             if attempt < max_retries - 1:
                 await asyncio.sleep(2)
                 continue
-            break
+            return []
         except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
-            last_exception = e
             wait_time = 5 * (attempt + 1)
             print(f"Connection Error: {e}. Waiting {wait_time}s...")
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait_time)
                 continue
-            break
+            return []
         except Exception as e:
-            last_exception = e
             if attempt < max_retries - 1:
                 await asyncio.sleep(1)
                 continue
             print(f"FAILED API CALL: {e}")
-            break
-
-    # If we reached here, something failed. Rethrow or return empty list?
-    # To facilitate debugging "fake data", let's log the failure and return empty
-    print(f"API CALL PERMANENTLY FAILED: {last_exception}")
+            return []
     return []
 
 
@@ -171,9 +158,6 @@ class GitLabClient:
 
     async def _get_session(self):
         if self._session is None or self._session.closed:
-            # Enforce that session creation happens in the loop thread
-            if self._session and self._session.closed:
-                print("Session closed, recreating...")
             connector = aiohttp.TCPConnector(ssl=False)
             self._session = aiohttp.ClientSession(connector=connector, headers=self.headers)
         return self._session

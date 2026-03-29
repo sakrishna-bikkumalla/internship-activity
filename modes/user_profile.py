@@ -34,10 +34,6 @@ def render_user_profile(client, simple_user_info):
     if not user_data or user_data.get("status") != "Success":
         error_msg = user_data.get("error", "Unknown error") if user_data else "Unknown error"
         st.error(f"Error fetching data: {error_msg}")
-        if "401" in str(error_msg) or "403" in str(error_msg):
-            st.info("💡 Check if your GitLab Token has api, read_user, read_repository permissions.")
-        elif "404" in str(error_msg):
-            st.info("💡 Verify that the user exists and you have access to their profile.")
         return
 
     # Extract data from the resulting dict
