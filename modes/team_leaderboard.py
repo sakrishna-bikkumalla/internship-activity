@@ -1985,6 +1985,21 @@ def render_team_leaderboard(client) -> None:
         _render_ranking_page()
         return
 
+    # Load teams to build the dropdown options
+    teams: list[dict] = st.session_state["teams"]
+    team_names = [t["team_name"] for t in teams]
+
+    # --- Team Filter Dropdown ---
+    st.markdown("### 🎯 Team Filter")
+    selected_team = st.selectbox(
+        "Select Team to Analyze",
+        options=["All Teams"] + team_names,
+        index=0,
+        key="_lb_selected_team_dropdown",
+        help="Choose a specific team to view detailed metrics, or 'All Teams' for an overall comparison.",
+    )
+    st.divider()
+
     # ── Section 1: Create Team ────────────────────────────────────────────
     _render_create_team_form()
     st.divider()
@@ -1995,9 +2010,18 @@ def render_team_leaderboard(client) -> None:
     st.divider()
 
     # ── Section 3: Analysis ───────────────────────────────────────────────
-    teams: list[dict] = st.session_state["teams"]
     if not teams:
         st.info("Add at least one team above to enable analysis.")
+        return
+
+    # Filter teams based on the dropdown selection
+    if selected_team != "All Teams":
+        teams_to_process = [t for t in teams if t["team_name"] == selected_team]
+    else:
+        teams_to_process = teams
+
+    if not teams_to_process:
+        st.warning(f"The selected team '{selected_team}' could not be found.")
         return
 
     # Disable Run while an edit is active
@@ -2019,7 +2043,7 @@ def render_team_leaderboard(client) -> None:
         st.info("Click **▶️ Run Leaderboard Analysis** to fetch data for all teams.")
         return
 
-    # ── Cache key: fingerprint of current teams + date filters ────────────
+    # ── Cache key: fingerprint of current teams + date filters + selected team ────────────
     current_filters = {
         "teams": [
             {
@@ -2027,10 +2051,11 @@ def render_team_leaderboard(client) -> None:
                 "project_name": t.get("project_name", ""),
                 "members": sorted([m["username"] for m in t.get("members", []) if m.get("username")]),
             }
-            for t in teams
+            for t in teams_to_process
         ],
         "since": since_iso,
         "until": until_iso,
+        "selected_team": selected_team,
     }
 
     cached_results = st.session_state.get("_lb_cached_results")
@@ -2041,16 +2066,16 @@ def render_team_leaderboard(client) -> None:
         team_data = cached_results
     else:
         # ── Fetch ─────────────────────────────────────────────────────────
-        team_data = {}
-        progress = st.progress(0, text="Fetching team data…")
+        team_data: dict[str, tuple[dict, list[dict], dict, list[dict]]] = {}
 
-        for idx, team in enumerate(teams):
+        progress = st.progress(0, text="Starting API requests...")
+        for idx, team in enumerate(teams_to_process):
             team_name = team["team_name"]
             usernames = [m["username"] for m in team.get("members", []) if m.get("username")]
 
             if not usernames:
                 team_data[team_name] = (team, [], _aggregate_team_totals([]))
-                progress.progress((idx + 1) / len(teams), text=f"Skipped: {team_name}")
+                progress.progress((idx + 1) / len(teams_to_process), text=f"Skipped: {team_name}")
                 continue
 
             with st.spinner(f"Fetching **{team_name}** ({len(usernames)} member(s))…"):
@@ -2068,7 +2093,7 @@ def render_team_leaderboard(client) -> None:
             member_rows = [_extract_member_row(r) for r in results if r]
             totals = _aggregate_team_totals(member_rows)
             team_data[team_name] = (team, member_rows, totals, results)
-            progress.progress((idx + 1) / len(teams), text=f"Done: {team_name}")
+            progress.progress((idx + 1) / len(teams_to_process), text=f"Done: {team_name}")
 
         progress.empty()
 
@@ -2100,30 +2125,23 @@ def render_team_leaderboard(client) -> None:
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
 
-    # Toggle button for specific team view
-    if st.button("🔍 View Specific Team"):
-        st.session_state["_lb_show_specific_team_panel"] = not st.session_state.get(
-            "_lb_show_specific_team_panel", False
-        )
+    last_selected_team = current_filters.get("selected_team", "All Teams")
 
-    if st.session_state.get("_lb_show_specific_team_panel", False):
-        st.markdown("---")
-        view_team = st.selectbox(
-            "Select Team to View",
-            options=list(team_data.keys()),
-            index=0,
-            key="_lb_selected_view_team_dropdown",
-        )
-        if view_team in team_data:
-            meta, member_rows, totals, *extra = team_data[view_team]
+    if last_selected_team == "All Teams":
+        # Render ALL teams normally
+        for team_name, (meta, member_rows, totals, *_) in team_data.items():
+            _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
+        _render_overall_leaderboard(team_data)
+    else:
+        # Render specific team analytics
+        if last_selected_team in team_data:
+            meta, member_rows, totals, *extra = team_data[last_selected_team]
             raw_results = extra[0] if extra else []
-            _render_specific_team_analytics(view_team, meta.get("project_name", ""), member_rows, totals, raw_results)
-        st.markdown("---")
-
-    # Render ALL teams normally below
-    for team_name, (meta, member_rows, totals, *_) in team_data.items():
-        _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
-    _render_overall_leaderboard(team_data)
+            _render_specific_team_analytics(
+                last_selected_team, meta.get("project_name", ""), member_rows, totals, raw_results
+            )
+        else:
+            st.warning(f"No results found for {last_selected_team}.")
 
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
