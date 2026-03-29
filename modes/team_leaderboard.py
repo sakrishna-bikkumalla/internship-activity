@@ -2076,6 +2076,19 @@ def render_team_leaderboard(client) -> None:
             st.error("No team data could be fetched. Check your GitLab connection.")
             return
 
+        # Check if all users failed to fetch
+        all_not_found = all(
+            row.get("Status") == "Not Found"
+            for t_data in team_data.values()
+            for row in t_data[1]  # member_rows
+        )
+        if all_not_found:
+            st.warning(
+                "⚠️ **All users returned 'Not Found'.** This usually indicates an invalid GitLab Token, "
+                "an unreachable GitLab URL, or rate-limiting by the server. Please check your credentials "
+                "in the sidebar and try running the analysis again."
+            )
+
         # Store results and filters in cache
         st.session_state["_lb_cached_results"] = team_data
         st.session_state["_lb_last_filters"] = current_filters

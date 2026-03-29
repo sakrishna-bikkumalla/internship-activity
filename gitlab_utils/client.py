@@ -45,6 +45,10 @@ async def safe_api_call_async(func, *args, **kwargs):
             if attempt < max_retries - 1:
                 await asyncio.sleep(2)
                 continue
+            error_msg = f"HTTP ERROR {e.status} on {getattr(func, '__name__', 'unknown')}: {e.message}\n"
+            print(error_msg)
+            with open("/tmp/gitlab_api_errors.log", "a") as f:
+                f.write(error_msg)
             return []
         except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
             wait_time = 5 * (attempt + 1)
@@ -57,7 +61,10 @@ async def safe_api_call_async(func, *args, **kwargs):
             if attempt < max_retries - 1:
                 await asyncio.sleep(1)
                 continue
-            print(f"FAILED API CALL: {e}")
+            error_msg = f"FAILED API CALL on {getattr(func, '__name__', 'unknown')}: {type(e).__name__} - {e}\n"
+            print(error_msg)
+            with open("/tmp/gitlab_api_errors.log", "a") as f:
+                f.write(error_msg)
             return []
     return []
 
