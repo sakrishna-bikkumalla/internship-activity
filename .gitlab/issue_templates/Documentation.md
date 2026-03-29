@@ -44,5 +44,3 @@ Note any required expertise (if any) or if it’s suitable for first-time contri
 <!--
 List any related issues, merge requests, or external references if available.
 -->
-
-
