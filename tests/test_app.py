@@ -236,9 +236,8 @@ def test_app_import_error_branch(monkeypatch):
         del sys.modules["app"]
 
     with pytest.raises(SystemExit):
-        import app as imported_app
+        import app  # noqa: F401
 
-    assert imported_app
     assert fake_st.messages["error"]
     assert "Import Error" in fake_st.messages["error"][0]
 
