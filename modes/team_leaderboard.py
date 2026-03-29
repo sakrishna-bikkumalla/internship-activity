@@ -1415,6 +1415,8 @@ def _render_specific_team_analytics(
     st.markdown("#### 👤 Individual User Performance")
     user_perf_cols = [
         "Username",
+        "Status",
+        "Error",
         "Total Commits",
         "Issues Raised",
         "Issues Closed",
