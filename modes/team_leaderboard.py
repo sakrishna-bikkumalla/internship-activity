@@ -28,6 +28,7 @@ import pandas as pd
 import streamlit as st
 
 from gitlab_utils.batch import process_batch_users
+from modes.batch_mode import DEFAULT_ICFAI_USERS, DEFAULT_RCTS_USERS
 
 # ---------------------------------------------------------------------------
 # Default Teams (pre-configured)
@@ -93,7 +94,7 @@ BACKEND_TEAMS: list[dict] = [
         "members": [
             {"name": "Abhilash", "username": "Abhilash653", "user_id": None},
             {"name": "kanda swarna rathna madhuri", "username": "swarna_4539", "user_id": None},
-            {"name": "Laxman Reddy", "username": "laxmanredddypatlolla", "user_id": None},
+            {"name": "Laxman Reddy", "username": "laxmanreddypatlolla", "user_id": None},
         ],
     },
     {
@@ -868,6 +869,53 @@ def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
     return activity_map
 
 
+ICFAI_START_DATE = datetime.date(2026, 1, 5)
+RCTS_START_DATE = datetime.date(2026, 1, 27)
+ICFAI_USERNAMES = {u.strip().lower() for u in DEFAULT_ICFAI_USERS.splitlines() if u.strip()}
+RCTS_USERNAMES = {u.strip().lower() for u in DEFAULT_RCTS_USERS.splitlines() if u.strip()}
+
+
+def _get_group_start_date(username: str | None) -> datetime.date | None:
+    """Return cohort start date for known usernames; otherwise None."""
+    uname = (username or "").strip().lower()
+    if uname in ICFAI_USERNAMES:
+        return ICFAI_START_DATE
+    if uname in RCTS_USERNAMES:
+        return RCTS_START_DATE
+    return None
+
+
+def _get_contribution_index(activity_map: dict[str, int], username: str | None = None) -> tuple[int, int, float]:
+    """
+    Returns (active_days, total_days, consistency_pct) for the current leaderboard context.
+    If date filter is set, total_days follows that inclusive range.
+    Otherwise, total_days is derived from the user's first and last active day.
+    """
+    active_days = sum(1 for count in activity_map.values() if count > 0)
+
+    total_days = 0
+    from_date = st.session_state.get("_lb_from_date")
+    to_date = st.session_state.get("_lb_to_date")
+
+    cohort_start = _get_group_start_date(username)
+    if cohort_start:
+        today = datetime.date.today()
+        total_days = max((today - cohort_start).days + 1, 0)
+    elif from_date and to_date:
+        total_days = (to_date - from_date).days + 1
+    elif activity_map:
+        try:
+            days = sorted(activity_map.keys())
+            start = datetime.date.fromisoformat(days[0])
+            end = datetime.date.fromisoformat(days[-1])
+            total_days = (end - start).days + 1
+        except Exception:
+            total_days = active_days
+
+    consistency_pct = (active_days / total_days * 100.0) if total_days > 0 else 0.0
+    return active_days, total_days, consistency_pct
+
+
 def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
     """Renders a GitLab-style activity heatmap (364 days)."""
     today = datetime.date.today()
@@ -1061,6 +1109,14 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             # Render Activity Heatmap
             activity_map = _get_daily_activity_counts(mrs, issues, commits)
             _render_activity_heatmap(activity_map)
+
+            # Contribution Index (as requested: Active Days, Total Days, Consistency %)
+            active_days, total_days, consistency_pct = _get_contribution_index(activity_map, username)
+            st.markdown("#### 📈 Contribution Index")
+            idx_c1, idx_c2, idx_c3 = st.columns(3)
+            idx_c1.metric("Active Days", active_days)
+            idx_c2.metric("Total Days", total_days)
+            idx_c3.metric("Consistency %", f"{consistency_pct:.1f}%")
 
             # Define keys for session state tracking
             mr_limit_key = f"_lb_limit_{username}_mrs"

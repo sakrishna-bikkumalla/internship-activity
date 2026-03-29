@@ -190,3 +190,21 @@ def test_render_edit_form_update():
                     with patch("streamlit.rerun"):
                         team_leaderboard._render_edit_form(0)
                         assert state["teams"][0]["team_name"] == "T1-New"
+
+
+def test_get_contribution_index_uses_icfai_group_window():
+    with patch("streamlit.session_state", {}):
+        active_days, total_days, consistency = team_leaderboard._get_contribution_index({}, "prav2702")
+    expected_total = (team_leaderboard.datetime.date.today() - team_leaderboard.ICFAI_START_DATE).days + 1
+    assert active_days == 0
+    assert total_days == expected_total
+    assert consistency == 0.0
+
+
+def test_get_contribution_index_uses_rcts_group_window():
+    with patch("streamlit.session_state", {}):
+        active_days, total_days, consistency = team_leaderboard._get_contribution_index({}, "vai5h")
+    expected_total = (team_leaderboard.datetime.date.today() - team_leaderboard.RCTS_START_DATE).days + 1
+    assert active_days == 0
+    assert total_days == expected_total
+    assert consistency == 0.0
