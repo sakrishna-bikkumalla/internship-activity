@@ -33,9 +33,21 @@ def test_get_user_groups():
     # First call: contributed_projects, Second call: owned projects
     mock_client._get_paginated.side_effect = [
         [
-            {"id": 1, "namespace": {"id": 101, "name": "Group 1", "full_path": "g1", "kind": "group"}, "visibility": "public"},
-            {"id": 2, "namespace": {"id": 101, "name": "Group 1", "full_path": "g1", "kind": "group"}, "visibility": "public"},  # same group, deduped
-            {"id": 3, "namespace": {"id": 102, "name": "Group 2", "full_path": "g2", "kind": "group"}, "visibility": "private"},
+            {
+                "id": 1,
+                "namespace": {"id": 101, "name": "Group 1", "full_path": "g1", "kind": "group"},
+                "visibility": "public",
+            },
+            {
+                "id": 2,
+                "namespace": {"id": 101, "name": "Group 1", "full_path": "g1", "kind": "group"},
+                "visibility": "public",
+            },  # same group, deduped
+            {
+                "id": 3,
+                "namespace": {"id": 102, "name": "Group 2", "full_path": "g2", "kind": "group"},
+                "visibility": "private",
+            },
         ],
         [],  # owned projects
     ]

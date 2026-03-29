@@ -103,11 +103,9 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
         result["data"]["issues"] = user_issues
         result["data"]["issue_stats"] = issue_stats
 
-
         # Note: contributed projects are now fetched directly from the
         # /users/{user_id}/contributed_projects API in projects.py.
         # No further filtering needed here.
-
 
     except Exception as e:
         result["status"] = "Error"
