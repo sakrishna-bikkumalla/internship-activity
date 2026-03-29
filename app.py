@@ -18,6 +18,7 @@ try:
     from gitlab_utils import users
     from gitlab_utils.client import GitLabClient
     from modes.bad_mrs_batch import render_bad_mrs_batch_ui
+    from modes.bad_issue import render_bad_issue_batch_ui
     from modes.batch_mode import render_batch_mode_ui
 
     # New UI Modules
@@ -52,6 +53,7 @@ def main():
             "Batch 2026 ICFAI",
             "Batch 2026 RCTS",
             "BAD MRs (Batch)",
+            "BAD Issues (Batch)",
         ],
     )
 
@@ -110,6 +112,9 @@ def main():
 
     elif mode == "BAD MRs (Batch)":
         render_bad_mrs_batch_ui(client)
+
+    elif mode == "BAD Issues (Batch)":
+        render_bad_issue_batch_ui(client)
 
     else:
         st.error(f"Routing Error: Unknown mode '{mode}' selected.")

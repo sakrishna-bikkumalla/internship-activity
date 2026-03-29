@@ -120,6 +120,18 @@ _ZERO_ROW: dict[str, Any] = {
     "Merge > 2 Days": 0,
 }
 
+_ZERO_ISSUE_ROW: dict[str, Any] = {
+    "Username": "",
+    "Closed Issues": 0,
+    "No Desc": 0,
+    "Improper Desc": 0,
+    "No Labels": 0,
+    "No Milestone": 0,
+    "No Time Spent": 0,
+    "Long Open Time": 0,
+    "No Semantic Title": 0,
+}
+
 
 class GitLabClient:
     def __init__(self, base_url, private_token):
@@ -365,6 +377,123 @@ class GitLabClient:
 
     def batch_evaluate_mrs(self, usernames, project_id=None, group_id=None):
         return self._run_sync(self._batch_evaluate_mrs_async(usernames, project_id, group_id))
+
+    async def _evaluate_single_issue(self, issue: dict) -> tuple[str, dict]:
+        """Evaluate a single issue for quality metrics."""
+        uname = issue.get("_username", "unknown")
+        flags = {
+            "is_closed": issue.get("state") == "closed",
+            "no_desc": False,
+            "improper_desc": False,
+            "no_labels": False,
+            "no_milestone": False,
+            "no_time": False,
+            "long_open_time": False,
+            "no_semantic_title": False,
+        }
+
+        try:
+            # 1. Description Check
+            desc = issue.get("description") or ""
+            if not str(desc).strip():
+                flags["no_desc"] = True
+            else:
+                try:
+                    if analyze_description(desc)["quality_label"] != "High":
+                        flags["improper_desc"] = True
+                except Exception:
+                    flags["improper_desc"] = True
+
+            # 2. Labels Check
+            labels = issue.get("labels") or []
+            if not labels or len(labels) == 0:
+                flags["no_labels"] = True
+
+            # 3. Milestone Check
+            milestone = issue.get("milestone")
+            if not milestone:
+                flags["no_milestone"] = True
+
+            # 4. Time Spent Check
+            ts = issue.get("time_stats", {})
+            if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
+                flags["no_time"] = True
+
+            # 5. Semantic Title Check (follows conventional commits)
+            title_lower = str(issue.get("title") or "").lower()
+            semantic_prefixes = ("feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "bug")
+            if not any(title_lower.startswith(p) for p in semantic_prefixes):
+                flags["no_semantic_title"] = True
+
+            # 6. Long Open Time Check (issues open for more than 3 days)
+            created_s = issue.get("created_at")
+            closed_s = issue.get("closed_at")
+            if created_s:
+                created_dt = datetime.strptime(created_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                end_dt = (
+                    datetime.strptime(closed_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                    if closed_s
+                    else datetime.now(timezone.utc)
+                )
+                diff = (end_dt - created_dt).total_seconds() / 86400
+                if diff > 3:
+                    flags["long_open_time"] = True
+
+        except Exception:
+            pass
+
+        return uname, flags
+
+    async def _fetch_user_issues(self, uname: str, project_id=None, group_id=None) -> list[dict]:
+        """Fetch all issues authored by a specific user."""
+        u_data = await self._async_request("GET", "/users", params={"username": uname})
+        target_user = next(
+            (u for u in (u_data or []) if str(u.get("username", "")).lower() == str(uname).lower()), None
+        )
+        if not target_user:
+            return []
+        params = {"author_id": str(target_user["id"]), "scope": "all", "per_page": "100"}
+        if project_id:
+            params["project_id"] = project_id
+        if group_id:
+            params["group_id"] = group_id
+        issues = await self._async_request("GET", "/issues", params=params)
+        for issue in issues or []:
+            issue["_username"] = uname
+        return issues or []
+
+    async def _batch_evaluate_issues_async(self, usernames: list[str], project_id=None, group_id=None) -> list[dict]:
+        """Batch evaluate issues for multiple users."""
+        result_map = {u: {**_ZERO_ISSUE_ROW, "Username": u} for u in usernames}
+        user_tasks = [self._fetch_user_issues(u, project_id, group_id) for u in usernames]
+        all_users_issues = await asyncio.gather(*user_tasks)
+        all_issues = [issue for sublist in all_users_issues for issue in sublist]
+        eval_results = await asyncio.gather(*[self._evaluate_single_issue(issue) for issue in all_issues])
+
+        for uname, f in eval_results:
+            if uname in result_map and f.get("is_closed"):
+                row = result_map[uname]
+                row["Closed Issues"] += 1
+                if f.get("no_desc"):
+                    row["No Desc"] += 1
+                if f.get("improper_desc"):
+                    row["Improper Desc"] += 1
+                if f.get("no_labels"):
+                    row["No Labels"] += 1
+                if f.get("no_milestone"):
+                    row["No Milestone"] += 1
+                if f.get("no_time"):
+                    row["No Time Spent"] += 1
+                if f.get("long_open_time"):
+                    row["Long Open Time"] += 1
+                if f.get("no_semantic_title"):
+                    row["No Semantic Title"] += 1
+
+        return sorted(result_map.values(), key=lambda r: r["Username"])
+
+    def batch_evaluate_issues(self, usernames, project_id=None, group_id=None):
+        """Public method to batch evaluate issues for multiple users."""
+        return self._run_sync(self._batch_evaluate_issues_async(usernames, project_id, group_id))
 
     def _request(self, method, endpoint, params=None):
         return self._run_sync(self._async_request(method, endpoint, params))
