@@ -10,8 +10,11 @@ class FakeStreamlitModule(types.ModuleType):
         super().__init__("streamlit")
 
         self.session_state = {}
+        self.messages = {"warning": [], "error": [], "info": []}
 
         self.sidebar = types.SimpleNamespace(
+            _text_inputs=[],
+            _mode="",
             text_input=lambda *a, **k: "",
             radio=lambda *a, **k: "",
             header=lambda *a, **k: None,
@@ -27,9 +30,7 @@ class FakeStreamlitModule(types.ModuleType):
         self.radio = lambda *a, **k: ""
         self.markdown = lambda *a, **k: None
         self.caption = lambda *a, **k: None
-        self.info = lambda *a, **k: None
-        self.warning = lambda *a, **k: None
-        self.error = lambda *a, **k: None
+
         self.spinner = lambda *a, **k: _DummyContextManager()
         self.progress = lambda *a, **k: _DummyContextManager()
         self.button = lambda *a, **k: False
@@ -47,10 +48,25 @@ class FakeStreamlitModule(types.ModuleType):
         self.metric = lambda *a, **k: None
         self.code = lambda *a, **k: None
         self.success = lambda *a, **k: None
-        self.error = lambda *a, **k: None
-        self.info = lambda *a, **k: None
-        self.warning = lambda *a, **k: None
+
+        # as functions that record messages and stop behavior
+        self.warning = self._record_warning
+        self.error = self._record_error
+        self.info = self._record_info
+        self.stop = self._stop
         self.caption = lambda *a, **k: None
+
+    def _record_warning(self, message):
+        self.messages["warning"].append(message)
+
+    def _record_error(self, message):
+        self.messages["error"].append(message)
+
+    def _record_info(self, message):
+        self.messages["info"].append(message)
+
+    def _stop(self, *a, **k):
+        raise SystemExit("stop")
 
     def cache_data(self, ttl=None):
         def deco(func):
@@ -76,6 +92,50 @@ class _DummyContextManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
+
+
+def make_fake_st(text_inputs=None, mode=None):
+    fake_st = FakeStreamlitModule()
+
+    class Sidebar:
+        def __init__(self, text_inputs, mode):
+            self._text_inputs = list(text_inputs or [])
+            self._mode = mode
+
+        def text_input(self, label, value=None, type=None, placeholder=None):
+            if self._text_inputs:
+                return self._text_inputs.pop(0)
+            return ""
+
+        def radio(self, label, options):
+            return self._mode
+
+        def header(self, text):
+            return None
+
+        def markdown(self, text):
+            return None
+
+        def info(self, text):
+            return None
+
+    fake_st.sidebar = Sidebar(text_inputs, mode)
+
+    # mirror real usage for st.text_input and st.cache_data
+    def st_text_input(label, placeholder=None, value=None, type=None):
+        # use sidebar text inputs for stepwise navigation
+        return fake_st.sidebar.text_input(label, value=value, type=type, placeholder=placeholder)
+
+    def st_cache_data(ttl=None):
+        def deco(func):
+            return func
+
+        return deco
+
+    fake_st.text_input = st_text_input
+    fake_st.cache_data = st_cache_data
+
+    return fake_st
 
 
 # Pre-insert the fake streamlit module during test collection, so all imports use this stub.
