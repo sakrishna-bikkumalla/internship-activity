@@ -179,8 +179,6 @@ def _init_state() -> None:
         "_lb_last_ranking_rows": [],
         "_lb_cached_results": None,
         "_lb_last_filters": None,
-        "_lb_selected_view_team": "All Teams",
-        "_lb_show_specific_team_panel": False,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -358,14 +356,14 @@ def _build_excel_export(team_data: dict) -> bytes:
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         lb_rows = [
             {"Team": tn, "Project": meta.get("project_name", ""), **totals}
-            for tn, (meta, _, totals, *_) in team_data.items()
+            for tn, (meta, _, totals) in team_data.items()
         ]
         (
             pd.DataFrame(lb_rows)
             .sort_values("Team Score", ascending=False)
             .to_excel(writer, index=False, sheet_name="Leaderboard")
         )
-        for team_name, (_, member_rows, _, *_) in team_data.items():
+        for team_name, (_, member_rows, _) in team_data.items():
             pd.DataFrame(member_rows).to_excel(writer, index=False, sheet_name=team_name[:31])
     return output.getvalue()
 
@@ -761,7 +759,7 @@ def _render_teams_overview(filter_team_name: str | None = None) -> None:
     teams: list[dict] = st.session_state["teams"]
     if filter_team_name and filter_team_name != "All Teams":
         teams = [t for t in teams if t["team_name"] == filter_team_name]
-    
+
     active_edit = st.session_state.get("edit_team_index")
 
     if not teams:
@@ -1515,7 +1513,7 @@ def _render_overall_leaderboard(team_data: dict) -> None:
             "Issues Raised": totals["Issues Raised"],
             "Issues Assigned": totals.get("Issues Assigned", 0),
         }
-        for tn, (meta, _, totals, *_) in team_data.items()
+        for tn, (meta, _, totals) in team_data.items()
     ]
     df_lb = pd.DataFrame(lb_rows).sort_values("Team Score", ascending=False).reset_index(drop=True)
     df_lb.insert(0, "Rank", range(1, len(df_lb) + 1))
@@ -1526,7 +1524,7 @@ def _render_overall_leaderboard(team_data: dict) -> None:
 def _build_ranking_rows(team_data: dict) -> list[dict]:
     """Create sorted ranking rows from already aggregated team totals."""
     rows = []
-    for team_name, (_, _, totals, *_) in team_data.items():
+    for team_name, (_, _, totals) in team_data.items():
         rows.append(
             {
                 "Team Name": team_name,
@@ -1553,7 +1551,7 @@ def _build_ranking_rows(team_data: dict) -> list[dict]:
 def _build_individual_rows(team_data: dict) -> list[dict]:
     """Flatten all members across teams into a ranked list with achievement badges."""
     all_members: list[dict] = []
-    for team_name, (_, member_rows, _, *_) in team_data.items():
+    for team_name, (_, member_rows, _) in team_data.items():
         for row in member_rows:
             if row.get("Status") != "Success":
                 continue
@@ -2017,16 +2015,6 @@ def render_team_leaderboard(client) -> None:
         st.info("Add at least one team above to enable analysis.")
         return
 
-    # Filter teams based on the dropdown selection
-    if selected_team != "All Teams":
-        teams_to_process = [t for t in teams if t["team_name"] == selected_team]
-    else:
-        teams_to_process = teams
-
-    if not teams_to_process:
-        st.warning(f"The selected team '{selected_team}' could not be found.")
-        return
-
     # Disable Run while an edit is active
     if st.session_state.get("edit_team_index") is not None:
         st.info("💡 Finish editing the team above before running analysis.")
@@ -2046,7 +2034,16 @@ def render_team_leaderboard(client) -> None:
         st.info("Click **▶️ Run Leaderboard Analysis** to fetch data for all teams.")
         return
 
-    # ── Cache key: fingerprint of current teams + date filters + selected team ────────────
+    if selected_team != "All Teams":
+        teams_to_process = [t for t in teams if t["team_name"] == selected_team]
+    else:
+        teams_to_process = teams
+
+    if not teams_to_process:
+        st.warning(f"The selected team '{selected_team}' could not be found.")
+        return
+
+    # ── Cache key: fingerprint of current teams + date filters ────────────
     current_filters = {
         "teams": [
             {
@@ -2069,9 +2066,9 @@ def render_team_leaderboard(client) -> None:
         team_data = cached_results
     else:
         # ── Fetch ─────────────────────────────────────────────────────────
-        team_data: dict[str, tuple[dict, list[dict], dict, list[dict]]] = {}
+        team_data = {}
+        progress = st.progress(0, text="Fetching team data…")
 
-        progress = st.progress(0, text="Starting API requests...")
         for idx, team in enumerate(teams_to_process):
             team_name = team["team_name"]
             usernames = [m["username"] for m in team.get("members", []) if m.get("username")]
@@ -2095,7 +2092,7 @@ def render_team_leaderboard(client) -> None:
 
             member_rows = [_extract_member_row(r) for r in results if r]
             totals = _aggregate_team_totals(member_rows)
-            team_data[team_name] = (team, member_rows, totals, results)
+            team_data[team_name] = (team, member_rows, totals)
             progress.progress((idx + 1) / len(teams_to_process), text=f"Done: {team_name}")
 
         progress.empty()
@@ -2103,19 +2100,6 @@ def render_team_leaderboard(client) -> None:
         if not team_data:
             st.error("No team data could be fetched. Check your GitLab connection.")
             return
-
-        # Check if all users failed to fetch
-        all_not_found = all(
-            row.get("Status") == "Not Found"
-            for t_data in team_data.values()
-            for row in t_data[1]  # member_rows
-        )
-        if all_not_found:
-            st.warning(
-                "⚠️ **All users returned 'Not Found'.** This usually indicates an invalid GitLab Token, "
-                "an unreachable GitLab URL, or rate-limiting by the server. Please check your credentials "
-                "in the sidebar and try running the analysis again."
-            )
 
         # Store results and filters in cache
         st.session_state["_lb_cached_results"] = team_data
@@ -2127,24 +2111,10 @@ def render_team_leaderboard(client) -> None:
 
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
+    for team_name, (meta, member_rows, totals) in team_data.items():
+        _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
 
-    last_selected_team = current_filters.get("selected_team", "All Teams")
-
-    if last_selected_team == "All Teams":
-        # Render ALL teams normally
-        for team_name, (meta, member_rows, totals, *_) in team_data.items():
-            _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
-        _render_overall_leaderboard(team_data)
-    else:
-        # Render specific team analytics
-        if last_selected_team in team_data:
-            meta, member_rows, totals, *extra = team_data[last_selected_team]
-            raw_results = extra[0] if extra else []
-            _render_specific_team_analytics(
-                last_selected_team, meta.get("project_name", ""), member_rows, totals, raw_results
-            )
-        else:
-            st.warning(f"No results found for {last_selected_team}.")
+    _render_overall_leaderboard(team_data)
 
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
