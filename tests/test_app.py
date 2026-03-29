@@ -1,8 +1,11 @@
+# Standard library
 import sys
 import types
 
+# Third-party
 import pytest
 
+# Local imports
 from conftest import make_fake_st
 
 class FakeClient:
