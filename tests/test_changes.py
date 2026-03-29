@@ -54,9 +54,9 @@ def test_suggestions_for_all_projects():
         ]
 
         for filter_pattern in project_filters:
-            assert not re.search(filter_pattern, suggestion_code, re.IGNORECASE), (
-                f"Found project-specific filter in suggestions: {filter_pattern}"
-            )
+            assert not re.search(
+                filter_pattern, suggestion_code, re.IGNORECASE
+            ), f"Found project-specific filter in suggestions: {filter_pattern}"
 
 
 def test_readme_scores_for_all_projects():
@@ -67,16 +67,16 @@ def test_readme_scores_for_all_projects():
     # Check that readme_status is always set in the compliance check (checking whole file)
     readme_status_assignments = re.findall(r'report\[["\']readme_status["\']\]\s*=\s*["\']([^"\']+)["\']', content)
 
-    assert len(readme_status_assignments) >= 2, (
-        f"Not enough readme_status assignments found: {readme_status_assignments}"
-    )
+    assert (
+        len(readme_status_assignments) >= 2
+    ), f"Not enough readme_status assignments found: {readme_status_assignments}"
 
     expected_statuses = {"present", "empty", "missing"}
     actual_statuses = set(readme_status_assignments)
 
-    assert expected_statuses.issubset(actual_statuses), (
-        f"Missing expected readme_status values. Expected: {expected_statuses}, Found: {actual_statuses}"
-    )
+    assert expected_statuses.issubset(
+        actual_statuses
+    ), f"Missing expected readme_status values. Expected: {expected_statuses}, Found: {actual_statuses}"
 
 
 def test_suggestions_called_for_all_projects():
@@ -87,9 +87,9 @@ def test_suggestions_called_for_all_projects():
     # Check that get_suggestions_for_missing_items is called in the main compliance flow
     suggestion_calls = re.findall(r"get_suggestions_for_missing_items\(report\)", content)
 
-    assert len(suggestion_calls) >= 2, (
-        f"Not enough calls to get_suggestions_for_missing_items found: {len(suggestion_calls)}"
-    )
+    assert (
+        len(suggestion_calls) >= 2
+    ), f"Not enough calls to get_suggestions_for_missing_items found: {len(suggestion_calls)}"
 
 
 def main():
