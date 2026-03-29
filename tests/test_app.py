@@ -189,12 +189,15 @@ def test_main_mode_user_profile_exception(monkeypatch, reimport_app):
     assert "Error: nope" in fake_st.messages["error"][0]
 
 
-@pytest.mark.parametrize("mode, expected_called", [
-    ("Batch 2026 ICFAI", "batch"),
-    ("Batch 2026 RCTS", "batch"),
-    ("Team Leaderboard", "team"),
-    ("BAD MRs (Batch)", "bad"),
-])
+@pytest.mark.parametrize(
+    "mode, expected_called",
+    [
+        ("Batch 2026 ICFAI", "batch"),
+        ("Batch 2026 RCTS", "batch"),
+        ("Team Leaderboard", "team"),
+        ("BAD MRs (Batch)", "bad"),
+    ],
+)
 def test_main_other_modes(monkeypatch, reimport_app, mode, expected_called):
     app = reimport_app
     fake_st = make_fake_st(["https://gitlab.com", "token"], mode)
@@ -265,16 +268,27 @@ def test_app_run_as_script_calls_main(monkeypatch):
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
     monkeypatch.setitem(sys.modules, "dotenv", type("Dotenv", (), {"load_dotenv": lambda: None}))
 
-    monkeypatch.setitem(sys.modules, "gitlab_utils.users", types.SimpleNamespace(get_user_by_username=lambda c, u: None))
-    monkeypatch.setitem(sys.modules, "gitlab_utils.client", types.SimpleNamespace(GitLabClient=FakeClient, BATCH_USERNAMES=[]))
-    monkeypatch.setitem(sys.modules, "modes.bad_mrs_batch", types.SimpleNamespace(render_bad_mrs_batch_ui=lambda c: None))
+    monkeypatch.setitem(
+        sys.modules, "gitlab_utils.users", types.SimpleNamespace(get_user_by_username=lambda c, u: None)
+    )
+    monkeypatch.setitem(
+        sys.modules, "gitlab_utils.client", types.SimpleNamespace(GitLabClient=FakeClient, BATCH_USERNAMES=[])
+    )
+    monkeypatch.setitem(
+        sys.modules, "modes.bad_mrs_batch", types.SimpleNamespace(render_bad_mrs_batch_ui=lambda c: None)
+    )
     monkeypatch.setitem(sys.modules, "modes.batch_mode", types.SimpleNamespace(render_batch_mode_ui=lambda c, x: None))
-    monkeypatch.setitem(sys.modules, "modes.compliance_mode", types.SimpleNamespace(render_compliance_mode=lambda c: None))
-    monkeypatch.setitem(sys.modules, "modes.team_leaderboard", types.SimpleNamespace(render_team_leaderboard=lambda c: None))
+    monkeypatch.setitem(
+        sys.modules, "modes.compliance_mode", types.SimpleNamespace(render_compliance_mode=lambda c: None)
+    )
+    monkeypatch.setitem(
+        sys.modules, "modes.team_leaderboard", types.SimpleNamespace(render_team_leaderboard=lambda c: None)
+    )
     monkeypatch.setitem(sys.modules, "modes.user_profile", types.SimpleNamespace(render_user_profile=lambda c, u: None))
 
     if "app" in sys.modules:
         del sys.modules["app"]
 
     import runpy
+
     runpy.run_path("app.py", run_name="__main__")
