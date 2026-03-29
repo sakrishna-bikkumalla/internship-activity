@@ -16,6 +16,16 @@ repos:
       - id: ruff-format
         name: Ruff format
 
+  # Local type checking via the project's uv environment
+  - repo: local
+    hooks:
+      - id: mypy
+        name: Mypy type check
+        entry: uv run mypy --config-file mypy.ini .
+        language: system
+        pass_filenames: false
+        types: [python]
+
   # General file quality checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
