@@ -3,6 +3,15 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
+from gitlab_utils import users
+from gitlab_utils.client import GitLabClient
+from modes.bad_issue import render_bad_issue_batch_ui
+from modes.bad_mrs_batch import render_bad_mrs_batch_ui
+from modes.batch_mode import render_batch_mode_ui
+from modes.compliance_mode import render_compliance_mode
+from modes.team_leaderboard import render_team_leaderboard
+from modes.user_profile import render_user_profile
+
 # --- Page Config ---
 st.set_page_config(
     page_title="GitLab Compliance Checker",
@@ -12,23 +21,6 @@ st.set_page_config(
 
 # Load environment variables
 load_dotenv()
-
-# Import local modules
-try:
-    from gitlab_utils import users
-    from gitlab_utils.client import GitLabClient
-    from modes.bad_mrs_batch import render_bad_mrs_batch_ui
-    from modes.bad_issue import render_bad_issue_batch_ui
-    from modes.batch_mode import render_batch_mode_ui
-
-    # New UI Modules
-    from modes.compliance_mode import render_compliance_mode
-    from modes.team_leaderboard import render_team_leaderboard
-    from modes.user_profile import render_user_profile
-
-except ImportError as e:
-    st.error(f"Import Error: {e}")
-    st.stop()
 
 
 def main():
