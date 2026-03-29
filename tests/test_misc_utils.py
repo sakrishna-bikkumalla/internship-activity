@@ -29,31 +29,14 @@ def test_get_user_by_username():
 
 def test_get_user_groups():
     mock_client = MagicMock()
-    # groups.py now derives groups from contributed_projects namespaces
-    # First call: contributed_projects, Second call: owned projects
-    mock_client._get_paginated.side_effect = [
-        [
-            {
-                "id": 1,
-                "namespace": {"id": 101, "name": "Group 1", "full_path": "g1", "kind": "group"},
-                "visibility": "public",
-            },
-            {
-                "id": 2,
-                "namespace": {"id": 101, "name": "Group 1", "full_path": "g1", "kind": "group"},
-                "visibility": "public",
-            },  # same group, deduped
-            {
-                "id": 3,
-                "namespace": {"id": 102, "name": "Group 2", "full_path": "g2", "kind": "group"},
-                "visibility": "private",
-            },
-        ],
-        [],  # owned projects
+    mock_client._get_paginated.return_value = [
+        {"id": 101, "name": "Group 1", "full_path": "g1", "visibility": "public"},
+        {"id": 101, "name": "Group 1 Duplicate", "full_path": "g1", "visibility": "public"},
+        {"id": 102, "name": "Group 2", "full_path": "g2", "visibility": "private"},
     ]
 
     res = get_user_groups(mock_client, 1)
-    assert len(res) == 2  # Deduplicated by group id
+    assert len(res) == 2  # Deduplicated
     assert res[0]["name"] == "Group 1"
     assert res[1]["visibility"] == "private"
 
@@ -106,11 +89,14 @@ def test_get_user_issues_exception():
 def test_get_user_projects_success():
     mock_client = MagicMock()
 
-    # projects.py now uses: 1st call = owned projects, 2nd call = contributed_projects
+    # projects_data
     mock_client._get_paginated.side_effect = [
-        [{"id": 1, "name": "Project 1", "namespace": {"path": "user1", "kind": "user"}}],  # owned
-        [{"id": 2, "name": "Project 2", "namespace": {"path": "group1", "kind": "group"}}],  # contributed
+        [{"id": 1, "name": "Project 1", "namespace": {"path": "user1", "kind": "user"}}],  # projects
+        [{"project_id": 2}],  # events
     ]
+
+    # extra details for project 2
+    mock_client._get.return_value = {"id": 2, "name": "Project 2", "namespace": {"path": "group1", "kind": "group"}}
 
     res = get_user_projects(mock_client, 1, "user1")
     assert len(res["all"]) == 2

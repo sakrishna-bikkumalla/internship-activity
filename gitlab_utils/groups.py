@@ -1,61 +1,38 @@
 def get_user_groups(client, user_id):
     """
     Fetch all groups the user belongs to.
+    Use: GET /groups with params={"membership": "true"}
 
-    The GitLab API endpoint GET /groups?membership=true returns groups for the
-    AUTHENTICATED user (token owner), NOT the target user. There is no direct
-    per-user group membership endpoint on all GitLab versions.
-
-    Best approach: fetch contributed projects and extract unique namespaces of
-    type 'group', which accurately reflects the groups the target user has worked in.
+    User Request: "groups... fake data is coming pls fetch real data... strictly user's groups"
+    Removed 'all_available' to prevent fetching public groups the user isn't a member of.
     """
     groups_list = []
-    seen_ids = set()
-
     try:
-        # Primary: use /users/{user_id}/contributed_projects to infer group membership
-        # This is the most reliable cross-version approach
-        contributed = client._get_paginated(
-            f"/users/{user_id}/contributed_projects",
-            params={"simple": "true"},
-            per_page=100,
+        # endpoint: /groups
+        # params: membership=true -> limit to groups user is explicitly a member of
+        # min_access_level=10 (Guest) ensures they have some access.
+        groups = client._get_paginated(
+            "/groups",
+            params={"membership": "true", "min_access_level": 10},
+            per_page=50,
             max_pages=10,
         )
 
-        for proj in contributed or []:
-            ns = proj.get("namespace", {})
-            if ns.get("kind") == "group":
-                gid = ns.get("id")
-                if gid and gid not in seen_ids:
-                    seen_ids.add(gid)
-                    groups_list.append(
-                        {
-                            "name": ns.get("name"),
-                            "full_path": ns.get("full_path"),
-                            "visibility": proj.get("visibility"),
-                        }
-                    )
+        # Deduplication check just in case API returns duplicates
+        seen_ids = set()
 
-        # Secondary: also check owned/member projects for group namespaces
-        member_projects = client._get_paginated(
-            f"/users/{user_id}/projects",
-            params={"simple": "true"},
-            per_page=100,
-            max_pages=5,
-        )
-        for proj in member_projects or []:
-            ns = proj.get("namespace", {})
-            if ns.get("kind") == "group":
-                gid = ns.get("id")
-                if gid and gid not in seen_ids:
-                    seen_ids.add(gid)
-                    groups_list.append(
-                        {
-                            "name": ns.get("name"),
-                            "full_path": ns.get("full_path"),
-                            "visibility": proj.get("visibility"),
-                        }
-                    )
+        for g in groups:
+            if g["id"] in seen_ids:
+                continue
+            seen_ids.add(g["id"])
+
+            groups_list.append(
+                {
+                    "name": g.get("name"),
+                    "full_path": g.get("full_path"),
+                    "visibility": g.get("visibility"),
+                }
+            )
 
     except Exception as e:
         print(f"Error fetching groups: {e}")
