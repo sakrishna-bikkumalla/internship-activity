@@ -2,19 +2,40 @@
 # Automatically runs checks before each commit to catch issues early
 # Matches the linting stage in .gitlab-ci.yml
 
-exclude: '^assets/badges/'
+exclude: '^assets/badges/|^.venv/'
 
 repos:
   # Ruff linting (matches: uv run ruff check .)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.5
+    rev: v0.9.6
     hooks:
       - id: ruff
         args: ['--fix']
         name: Ruff lint
-      # Ruff formatting (matches: uv run ruff format --check .)
+        types: [python]
       - id: ruff-format
         name: Ruff format
+        types: [python]
+
+  # Local hooks
+  - repo: local
+    hooks:
+      # Block modifications to badge files
+      - id: block-badge-modifications
+        name: Block badge file modifications
+        entry: bash -c
+        args: ['if git diff --cached --name-only | grep -q "^assets/badges/"; then echo "ERROR: Modifications to assets/badges are not allowed"; exit 1; fi']
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+      # Mypy type checking
+      - id: mypy
+        name: Mypy type check
+        entry: uv run mypy --config-file mypy.ini .
+        language: system
+        pass_filenames: false
+        types: [python]
 
   # General file quality checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -36,9 +57,13 @@ repos:
 
   # Vulture dead code detection
   - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.11  # Using a stable, widely compatible version
+    rev: v2.11
     hooks:
       - id: vulture
+        name: Vulture
+        entry: uv run vulture gitlab_utils/ modes/ user_profile/ batch_mode/ issues/ Projects/ app.py
+        language: system
+        pass_filenames: false
 
 ci:
   autofix_commit_msg: '[pre-commit.ci] auto fixes from pre-commit hooks'

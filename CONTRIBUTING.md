@@ -68,7 +68,7 @@ We use `pre-commit` to automatically run code quality checks before each commit:
 
 ## Code Style and Testing
 
-- This project uses `ruff` for linting and code formatting.
+- This project uses `ruff` for linting and code formatting, and `mypy` for type checking.
 - Tests are run with `pytest`.
 - Run tests locally before creating a merge request:
   ```bash

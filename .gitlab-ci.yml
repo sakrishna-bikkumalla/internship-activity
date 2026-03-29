@@ -35,7 +35,15 @@ test_job:
   stage: test
   script:
     - uv run pytest tests/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "feature-final"
 
+mypy:
+  stage: test
+  script:
+    - uv run mypy --config-file mypy.ini gitlab_utils/ modes/ user_profile/ batch_mode/ issues/ Projects/ app.py
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
