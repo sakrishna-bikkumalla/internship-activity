@@ -617,8 +617,8 @@ def _render_create_team_form() -> None:
             st.session_state["_lb_triggered"] = False
             st.session_state["_lb_cached_results"] = None  # invalidate cache
             st.session_state["_lb_last_filters"] = None
-            # Auto-select the newly created team so it appears only there
-            st.session_state["_lb_selected_team_dropdown"] = team_name.strip()
+            # Queue new team for auto-selection on the next rerun
+            st.session_state["_lb_pending_team_select"] = team_name.strip()
             st.success(f'✅ Team **"{team_name}"** saved!')
             st.rerun()
 
@@ -1991,6 +1991,10 @@ def render_team_leaderboard(client) -> None:
     # Load teams to build the dropdown options
     teams: list[dict] = st.session_state["teams"]
     team_names = [t["team_name"] for t in teams]
+
+    # If a new team was just created, apply the queued auto-selection before the widget is instantiated
+    if "_lb_pending_team_select" in st.session_state:
+        st.session_state["_lb_selected_team_dropdown"] = st.session_state.pop("_lb_pending_team_select")
 
     # --- Team Filter Dropdown ---
     st.markdown("### 🎯 Team Filter")
