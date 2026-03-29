@@ -32,6 +32,12 @@ repos:
       - id: detect-private-key
         name: Detect private keys
 
+  # Vulture dead code detection
+  - repo: https://github.com/jendrikseipp/vulture
+    rev: v2.11  # Using a stable, widely compatible version
+    hooks:
+      - id: vulture
+
 ci:
   autofix_commit_msg: '[pre-commit.ci] auto fixes from pre-commit hooks'
   autofix_prs: true
