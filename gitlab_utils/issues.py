@@ -57,7 +57,7 @@ def get_user_issues(client, user_id, since=None, until=None, project_ids=None):
                         stats["opened"] += 1
                     elif state == "closed":
                         stats["closed"] += 1
-                
+
                 if is_assigned:
                     stats["assigned"] += 1
 

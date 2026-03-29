@@ -46,7 +46,7 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
                 # Apply project filter if specified
                 if pid_set is not None and item.get("project_id") not in pid_set:
                     continue
-                
+
                 if role_label == "Assigned":
                     stats["assigned"] += 1
 
