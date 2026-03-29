@@ -1151,8 +1151,8 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                             )
                             fig.update_layout(
                                 showlegend=False,
-                                margin=dict(t=30, b=10, l=10, r=10),
-                                title_font=dict(size=13),
+                                margin={"t": 30, "b": 10, "l": 10, "r": 10},
+                                title_font={"size": 13},
                                 title_x=0.5
                             )
                             fig.update_traces(textposition='inside', textinfo='percent+label')

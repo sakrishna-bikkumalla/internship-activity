@@ -14,7 +14,8 @@ dependencies = [
   "aiohttp",
   "nest_asyncio",
   "python-gitlab",
-  "python-dotenv"
+  "python-dotenv",
+  "plotly"
 ]
 
 [project.optional-dependencies]
