@@ -89,9 +89,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                         is_match = True
                     elif author_email and c_author_email_l == author_email.lower():
                         is_match = True
-                    elif username and (
-                        username.lower() in c_author_name_l or username.lower() in c_author_email_l
-                    ):
+                    elif username and (username.lower() in c_author_name_l or username.lower() in c_author_email_l):
                         is_match = True
                     elif not (author_name or author_email or username):
                         is_match = True  # No filter criteria — accept all
