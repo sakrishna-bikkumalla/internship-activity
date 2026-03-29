@@ -1112,11 +1112,17 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
 
             # Contribution Index (as requested: Active Days, Total Days, Consistency %)
             active_days, total_days, consistency_pct = _get_contribution_index(activity_map, username)
+            total_contributions = len(mrs) + len(issues) + len(commits)
+            collaboration_events = len(mrs) + len(issues)
+            collaboration_pct = (
+                (collaboration_events / total_contributions) * 100 if total_contributions > 0 else 0.0
+            )
             st.markdown("#### 📈 Contribution Index")
-            idx_c1, idx_c2, idx_c3 = st.columns(3)
+            idx_c1, idx_c2, idx_c3, idx_c4 = st.columns(4)
             idx_c1.metric("Active Days", active_days)
             idx_c2.metric("Total Days", total_days)
             idx_c3.metric("Consistency %", f"{consistency_pct:.1f}%")
+            idx_c4.metric("Collaboration %", f"{collaboration_pct:.1f}%")
 
             # Define keys for session state tracking
             mr_limit_key = f"_lb_limit_{username}_mrs"
