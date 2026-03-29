@@ -617,6 +617,8 @@ def _render_create_team_form() -> None:
             st.session_state["_lb_triggered"] = False
             st.session_state["_lb_cached_results"] = None  # invalidate cache
             st.session_state["_lb_last_filters"] = None
+            # Auto-select the newly created team so it appears only there
+            st.session_state["_lb_selected_team_dropdown"] = team_name.strip()
             st.success(f'✅ Team **"{team_name}"** saved!')
             st.rerun()
 
