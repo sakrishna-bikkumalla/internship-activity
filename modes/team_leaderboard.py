@@ -1098,6 +1098,88 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             unsafe_allow_html=True,
         )
 
+        import plotly.express as px
+
+        color_palette = (
+            px.colors.qualitative.Pastel
+            + px.colors.qualitative.Pastel1
+            + px.colors.qualitative.Pastel2
+            + px.colors.qualitative.Set3
+        )
+        color_map = {}
+        for i, r in enumerate(sorted(valid_members, key=lambda x: x.get("Username", ""))):
+            color_map[r.get("Username", "unknown")] = color_palette[i % len(color_palette)]
+
+        pie_data = []
+        for r in valid_members:
+            # Issues Open can be approximated as Raised - Closed
+            issues_open = max(0, r.get("Issues Raised", 0) - r.get("Issues Closed", 0))
+            pie_data.append(
+                {
+                    "Username": r.get("Username", "unknown"),
+                    "Commits": r.get("Total Commits", 0),
+                    "Assigned MRs": r.get("MR Created", 0),
+                    "Assigned Issues": r.get("Issues Raised", 0),
+                    "Merged MRs": r.get("MR Merged", 0),
+                    "Closed Issues": r.get("Issues Closed", 0),
+                    "Open Issues": issues_open,
+                    "Open MRs": r.get("MR Open", 0),
+                }
+            )
+
+        if pie_data:
+            st.markdown("### 📊 Group Contributions")
+            df_pie = pd.DataFrame(pie_data)
+
+            row1_charts = [
+                ("Commits", "Commits"),
+                ("Assigned MRs", "Assigned MRs"),
+                ("Assigned Issues", "Assigned Issues"),
+            ]
+            row2_charts = [
+                ("Merged MRs", "Merged MRs"),
+                ("Closed Issues", "Closed Issues"),
+                ("Open Issues", "Open Issues"),
+                ("Open MRs", "Open MRs"),
+            ]
+
+            def render_row(chunk, cols):
+                for col, (col_key, title) in zip(cols, chunk, strict=True):
+                    with col:
+                        if df_pie[col_key].sum() > 0:
+                            fig = px.pie(
+                                df_pie,
+                                values=col_key,
+                                names="Username",
+                                title=title,
+                                color="Username",
+                                color_discrete_map=color_map,
+                                height=220,
+                            )
+                            fig.update_layout(
+                                showlegend=False,
+                                margin={"t": 30, "b": 10, "l": 10, "r": 10},
+                                title_font={"size": 13},
+                                title_x=0.5,
+                            )
+                            fig.update_traces(textposition="inside", textinfo="percent+label")
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.markdown(
+                                f"<div style='text-align:center; padding:15px; border:1px dashed #555; border-radius:10px; margin-top:5px;'><h6 style='color:#ccc;margin:0;font-size:12px;'>{title}</h6><span style='color:#888;font-size:11px;'>No Data</span></div>",
+                                unsafe_allow_html=True,
+                            )
+
+            # Row 1: 3 charts
+            render_row(row1_charts, st.columns(3))
+
+            st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+
+            # Row 2: 4 charts
+            render_row(row2_charts, st.columns(4))
+
+            st.divider()
+
         for row in valid_members:
             username = row.get("Username", "unknown")
             mrs = row.get("mrs_list", [])
