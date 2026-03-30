@@ -1,5 +1,3 @@
-import pytest
-
 from batch_mode.batch_service import process_single_project
 
 

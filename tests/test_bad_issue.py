@@ -122,7 +122,7 @@ class TestCachedFunctions:
         mock_client = MagicMock()
         mock_client.batch_evaluate_issues.return_value = [{"username": "test", "Closed Issues": 3}]
 
-        result = cached_single_user_issues(mock_client, "testuser")
+        cached_single_user_issues(mock_client, "testuser")
 
         mock_client.batch_evaluate_issues.assert_called_once_with(["testuser"])
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -211,7 +211,7 @@ class TestFetchUserRelatedIssuesByState:
 
     def test_with_state_filter(self, mock_gl):
         mock_gl.issues.list.return_value = []
-        issues = _fetch_user_related_issues_by_state(mock_gl, 42, state="opened")
+        _fetch_user_related_issues_by_state(mock_gl, 42, state="opened")
         mock_gl.issues.list.assert_called()
 
     def test_limit(self, mock_gl):
@@ -347,7 +347,6 @@ class TestGetUserIssuesDetails:
 
     def test_issue_counts(self, mock_gl):
         opened = MockIssue(1, 1, "Opened", "opened", 1, "2024-01-01T00:00:00Z", "http://url")
-        closed = MockIssue(2, 2, "Closed", "closed", 1, "2024-01-01T00:00:00Z", "http://url")
         mock_gl.issues.list.side_effect = [[opened], []]
 
         result = get_user_issues_details(mock_gl, 42)

@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -68,7 +68,7 @@ class TestAsyncFetchPatterns:
         mock_cm = AsyncMock()
         mock_cm.__aexit__ = AsyncMock(return_value=None)
 
-        async with mock_cm as result:
+        async with mock_cm:
             pass
 
         mock_cm.__aenter__.assert_called_once()

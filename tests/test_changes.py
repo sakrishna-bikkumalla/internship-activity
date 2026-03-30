@@ -8,7 +8,6 @@ Test script to verify the changes made to app.py:
 import os
 import re
 import sys
-from unittest.mock import patch
 
 
 def test_file_categories_removed():

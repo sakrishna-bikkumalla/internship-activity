@@ -1,8 +1,6 @@
 import asyncio
-import threading
 from unittest.mock import MagicMock, patch
 
-import aiohttp
 import pytest
 
 
