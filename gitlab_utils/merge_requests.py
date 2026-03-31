@@ -16,7 +16,7 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
 
     Returns:
       - mrs_list: List of MR dicts
-      - stats: Dict {total, merged, closed, opened, pending}
+      - stats: Dict {total, merged, closed, opened, pending, assigned}
     """
     mrs_list = []
     seen_ids = set()
@@ -28,6 +28,7 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
         "closed": 0,
         "opened": 0,
         "pending": 0,
+        "assigned": 0,
     }
 
     # Build optional date filter fragment added to every request
@@ -45,6 +46,10 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
                 # Apply project filter if specified
                 if pid_set is not None and item.get("project_id") not in pid_set:
                     continue
+
+                if role_label == "Assigned":
+                    stats["assigned"] += 1
+
                 if item["id"] not in seen_ids:
                     state = item.get("state")
 

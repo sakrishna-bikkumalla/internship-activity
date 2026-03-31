@@ -273,8 +273,10 @@ def _extract_member_row(result: dict) -> dict:
             "MR Merged": 0,
             "MR Open": 0,
             "MR Closed": 0,
+            "MR Assigned": 0,
             "Issues Raised": 0,
             "Issues Closed": 0,
+            "Issues Assigned": 0,
             "Groups": 0,
             "Score": 0,
             "Error": result.get("error", "Unknown error"),
@@ -303,8 +305,10 @@ def _extract_member_row(result: dict) -> dict:
         "MR Merged": merged_mrs,
         "MR Open": m.get("opened", 0),
         "MR Closed": m.get("closed", 0),
+        "MR Assigned": m.get("assigned", 0),
         "Issues Raised": i.get("total", 0),
         "Issues Closed": issues_closed,
+        "Issues Assigned": i.get("assigned", 0),
         "Groups": len(data.get("groups", [])),
         "Score": _calculate_score(total_commits, merged_mrs, total_mrs, issues_closed),
         "mrs_list": data.get("mrs", []),
@@ -323,8 +327,10 @@ def _aggregate_team_totals(member_rows: list[dict]) -> dict:
         "MR Merged": 0,
         "MR Open": 0,
         "MR Closed": 0,
+        "MR Assigned": 0,
         "Issues Raised": 0,
         "Issues Closed": 0,
+        "Issues Assigned": 0,
         "Team Score": 0,
     }
     for row in member_rows:
@@ -824,8 +830,10 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
         "MR Merged",
         "MR Open",
         "MR Closed",
+        "MR Assigned",
         "Issues Raised",
         "Issues Closed",
+        "Issues Assigned",
         "Groups",
         "Score",
     ]
@@ -1402,8 +1410,10 @@ def _render_overall_leaderboard(team_data: dict) -> None:
             "Total Commits": totals["Total Commits"],
             "MR Merged": totals["MR Merged"],
             "MR Created": totals["MR Created"],
+            "MR Assigned": totals.get("MR Assigned", 0),
             "Issues Closed": totals["Issues Closed"],
             "Issues Raised": totals["Issues Raised"],
+            "Issues Assigned": totals.get("Issues Assigned", 0),
         }
         for tn, (meta, _, totals) in team_data.items()
     ]
