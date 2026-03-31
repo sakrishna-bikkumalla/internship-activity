@@ -2,8 +2,8 @@
 # Automatically runs checks before each commit to catch issues early
 # Matches the linting stage in .gitlab-ci.yml
 
-# 4. General Exclusions: strictly ignore .venv, caches, and internal git files
-exclude: '^(.venv/|__pycache__/|\.git/|assets/badges/)'
+# 4. General Exclusions: strictly ignore environment, caches, generated files, and excluded directories
+exclude: '^(.venv/|__pycache__/|\.git/|assets/|\.gitlab/|\.vscode/|reports/|tests/|views/|repro_.*\.py|test_.*\.py)'
 
 default_language_version:
   python: python3.12
@@ -69,7 +69,7 @@ repos:
         name: Vulture dead code detection
         entry: |
           bash -c '
-          uv run vulture gitlab_utils/ modes/ Projects/ app.py --min-confidence 100
+          uv run vulture gitlab_utils issues modes Projects scripts batch_mode user_profile app.py --min-confidence 100
           '
         language: system
         pass_filenames: false
