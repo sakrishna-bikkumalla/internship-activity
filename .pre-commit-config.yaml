@@ -97,7 +97,8 @@ repos:
         name: Extract and validate i18n messages
         entry: |
           bash -c '
-          uv run pybabel extract . -o messages.pot --no-creation-date
+          uv run pybabel extract . -o messages.pot
+          sed -i "/^\"POT-Creation-Date:/d" messages.pot
           git add messages.pot
           '
         language: system
