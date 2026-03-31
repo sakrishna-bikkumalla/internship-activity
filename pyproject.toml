@@ -27,7 +27,10 @@ dev = [
   "pytest-asyncio",
   "aioresponses",
   "pre-commit",
-  "openpyxl"
+  "openpyxl",
+  "vulture",
+  "pip-audit",
+  "Babel"
 ]
 
 [tool.hatch.build]

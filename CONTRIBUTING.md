@@ -50,20 +50,21 @@ Thank you for your interest in contributing to **gitlab-compliance-checker**! We
 
 We use `pre-commit` to automatically run code quality checks before each commit:
 
-1. **Install pre-commit** (included in dev dependencies):
+1. **Install dependencies (including pre-commit)**:
    ```bash
    uv sync --all-extras
    ```
 
-2. **Install the git hooks**:
+2. **Install the git hooks** (including conventional commit linting):
    ```bash
-   pre-commit install
+   uv run pre-commit install
+   uv run pre-commit install --hook-type commit-msg
    ```
 
 3. **Run hooks manually** (optional):
    ```bash
-   pre-commit run --all-files  # Run on all files
-   pre-commit run              # Run on staged files
+   uv run pre-commit run --all-files  # Run on all files
+   uv run pre-commit run              # Run on staged files
    ```
 
 ## Code Style and Testing
