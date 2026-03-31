@@ -5,6 +5,7 @@ from user_profile.profile_utils import (
     parse_gitlab_datetime,
     process_commits,
     process_groups,
+    split_projects,
 )
 
 # ---------------- DATETIME HELPERS ----------------
@@ -185,3 +186,56 @@ def test_process_groups_edge_cases():
     groups = [{"path": "short-path"}]
     processed = process_groups(groups)
     assert processed[0]["path"] == "short-path"
+
+
+# ---------------- SPLIT PROJECTS ----------------
+
+
+def test_split_projects_personal():
+    """Projects owned by user should be classified as personal."""
+    user_info = {"id": 42, "username": "testuser"}
+    projects = [
+        {"name": "my-project", "owner": {"id": 42}},
+        {"name": "other-project", "owner": {"id": 99}},
+    ]
+    personal, contributed = split_projects(projects, user_info)
+    assert len(personal) == 1
+    assert personal[0]["name"] == "my-project"
+    assert len(contributed) == 1
+    assert contributed[0]["name"] == "other-project"
+
+
+def test_split_projects_empty():
+    """Empty or None project list."""
+    user_info = {"id": 1}
+    personal, contributed = split_projects([], user_info)
+    assert personal == []
+    assert contributed == []
+
+    personal, contributed = split_projects(None, user_info)
+    assert personal == []
+    assert contributed == []
+
+
+def test_split_projects_no_owner():
+    """Projects without owner field should be treated as contributed."""
+    user_info = {"id": 1}
+    projects = [
+        {"name": "no-owner-project"},
+        {"owner": {}},
+    ]
+    personal, contributed = split_projects(projects, user_info)
+    assert personal == []
+    assert len(contributed) == 2
+
+
+def test_split_projects_missing_user_id():
+    """Missing user_id should use default 0."""
+    projects = [
+        {"name": "p1", "owner": {"id": 1}},
+        {"name": "p2", "owner": {"id": 0}},
+    ]
+    personal, contributed = split_projects(projects, {"username": "test"})
+    assert len(personal) == 1
+    assert personal[0]["name"] == "p2"
+    assert contributed[0]["name"] == "p1"
