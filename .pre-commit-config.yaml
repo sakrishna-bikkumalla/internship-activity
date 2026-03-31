@@ -64,14 +64,12 @@ repos:
         types: [python]
         require_serial: true
 
-      # 1. Vulture Scanning: Explicitly exclude .venv and tests from holistic scan
-      # Scans the entire project holistically for dead code (pass_filenames: false)
-      # Avoids hardcoded directories. min-confidence is configured in pyproject.toml
+      # 1. Vulture Scanning: Targeted scan of source directories only (implicitly excludes .venv and tests)
       - id: vulture
         name: Vulture dead code detection
         entry: |
           bash -c '
-          uv run vulture . --min-confidence 100 --exclude .venv,tests
+          uv run vulture gitlab_utils/ modes/ Projects/ app.py --min-confidence 100
           '
         language: system
         pass_filenames: false
@@ -95,12 +93,11 @@ repos:
         stages: [commit]
 
       # 2. Babel Extract Loop: Extract and automatically stage messages.pot to prevent commit blocking
-      # Extracts translation strings efficiently without overly slowing down the pipeline
       - id: babel-extract
         name: Extract and validate i18n messages
         entry: |
           bash -c '
-          uv run pybabel extract . -o messages.pot
+          uv run pybabel extract . -o messages.pot --no-creation-date
           git add messages.pot
           '
         language: system

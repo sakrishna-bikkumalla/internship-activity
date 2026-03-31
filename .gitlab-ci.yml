@@ -34,7 +34,7 @@ lint_job:
 babel_job:
   stage: lint
   script:
-    - bash -c 'uv run pybabel extract . -o messages.pot && if [ -n "$(git status --porcelain messages.pot)" ]; then echo "ERROR: message.pot has changed. Please run `git add messages.pot` and commit again."; exit 1; fi'
+    - bash -c 'uv run pybabel extract . -o messages.pot --no-creation-date && if [ -n "$(git status --porcelain messages.pot)" ]; then echo "ERROR: message.pot has changed. Please run `git add messages.pot` and commit again."; exit 1; fi'
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -61,7 +61,7 @@ mypy:
 vulture_job:
   stage: test
   script:
-    - uv run vulture . --min-confidence 100
+    - uv run vulture gitlab_utils/ modes/ Projects/ app.py --min-confidence 100
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
