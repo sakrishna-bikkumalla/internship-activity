@@ -1999,7 +1999,6 @@ def render_team_leaderboard(client) -> None:
     all_teams: list[dict] = st.session_state["teams"]
     # Dropdown shows All Teams + specific teams only (scope != 'no_team')
     global_teams = [t for t in all_teams if t.get("scope", "all") == "all"]
-    specific_teams = [t for t in all_teams if t.get("scope", "all") == "specific"]
     team_names = [t["team_name"] for t in all_teams]
 
     # If a new team was just created, apply the queued auto-selection before the widget is instantiated
