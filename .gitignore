@@ -66,4 +66,3 @@ lerna-debug.log*
 reports/*
 !reports/.gitkeep
 repro_timeout*.py
-test_asyncio_patch*.py
