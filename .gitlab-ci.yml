@@ -35,7 +35,8 @@ babel_job:
   stage: lint
   script:
     - |
-      uv run pybabel extract . -o messages.pot --no-creation-date
+      uv run pybabel extract . -o messages.pot
+      sed -i '/^"POT-Creation-Date:/d' messages.pot
       if [ -n "$(git status --porcelain messages.pot)" ]; then
         echo "ERROR: messages.pot has changed. Please run 'git add messages.pot' and commit again."
         exit 1
