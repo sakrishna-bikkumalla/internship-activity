@@ -25,6 +25,7 @@ dev = [
   "types-python-dateutil",
   "pytest",
   "pytest-asyncio",
+  "pytest-cov",
   "aioresponses",
   "pre-commit",
   "openpyxl",
