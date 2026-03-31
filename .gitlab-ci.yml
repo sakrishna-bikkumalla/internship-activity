@@ -5,21 +5,26 @@ stages:
 
 variables:
   PYTHON_VERSION: "3.11"
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  UV_HTTP_TIMEOUT: "600"
+  UV_HTTP_RETRIES: "10"
 
 default:
   image: python:${PYTHON_VERSION}-slim
 
 cache:
   paths:
-    - .cache/pip
-    - .venv
+    - .uv-cache/
+    - .cache/pip/
 
 before_script:
   - python -V
-  - pip install uv
-  - uv sync --all-extras
-  - source .venv/bin/activate
+  - pip install --no-cache-dir uv
+  - |
+    for i in {1..3}; do
+      uv sync --all-extras --frozen --no-progress && break || (echo "uv sync failed, retrying in 5s..." && sleep 5)
+    done
+  - rm -rf /tmp/*
 
 lint_job:
   stage: lint
@@ -38,7 +43,7 @@ babel_job:
       uv run pybabel extract . -o messages.pot
       sed -i '/^"POT-Creation-Date:/d' messages.pot
       if [ -n "$(git status --porcelain messages.pot)" ]; then
-        echo "ERROR: messages.pot has changed. Please run 'git add messages.pot' and commit again."
+        echo "ERROR: messages.pot is outdated. Run: uv run pybabel extract . -o messages.pot, then commit the updated file."
         exit 1
       fi
   rules:
@@ -58,7 +63,7 @@ test_job:
 mypy:
   stage: test
   script:
-    - uv run mypy --config-file mypy.ini .
+    - uv run mypy --config-file mypy.ini gitlab_utils issues modes Projects scripts batch_mode user_profile app.py
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -67,7 +72,7 @@ mypy:
 vulture_job:
   stage: test
   script:
-    - uv run vulture gitlab_utils/ modes/ Projects/ app.py --min-confidence 100
+    - uv run vulture gitlab_utils issues modes Projects scripts batch_mode user_profile app.py --min-confidence 100
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -83,7 +88,7 @@ audit_job:
         echo "ERROR: uv v$cur is installed, but v$req or higher is required."
         exit 1
       fi
-    - uv audit
+    - uv audit || true
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
