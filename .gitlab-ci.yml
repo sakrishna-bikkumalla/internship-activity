@@ -31,6 +31,15 @@ lint_job:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_COMMIT_BRANCH == "feature-final"
 
+babel_job:
+  stage: lint
+  script:
+    - bash -c 'uv run pybabel extract . -o messages.pot && if [ -n "$(git status --porcelain messages.pot)" ]; then echo "ERROR: message.pot has changed. Please run `git add messages.pot` and commit again."; exit 1; fi'
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "feature-final"
+
 test_job:
   stage: test
   script:
@@ -43,7 +52,26 @@ test_job:
 mypy:
   stage: test
   script:
-    - uv run mypy --config-file mypy.ini gitlab_utils/ modes/ user_profile/ batch_mode/ issues/ Projects/ app.py
+    - uv run mypy --config-file mypy.ini .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "feature-final"
+
+vulture_job:
+  stage: test
+  script:
+    - uv run vulture . --min-confidence 100
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "feature-final"
+
+audit_job:
+  stage: test
+  script:
+    - 'req="0.11.2"; cur=$(uv --version | cut -d" " -f2); if [ "$(printf "%s\n%s" "$req" "$cur" | sort -V | head -n1)" != "$req" ]; then echo "ERROR: uv v$cur is installed, but v$req or higher is required."; exit 1; fi'
+    - uv audit
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
