@@ -79,6 +79,7 @@ If you want to run specific tools directly or via pre-commit without running the
 | **Vulture** | `uv run pre-commit run vulture --all-files` | `uv run vulture gitlab_utils/ modes/ Projects/ app.py --min-confidence 100` |
 | **UV Audit** | `uv run pre-commit run uv-audit --all-files` | `uv audit` |
 | **Babel** | `uv run pre-commit run babel-extract --all-files` | `uv run pybabel extract . -o messages.pot --no-creation-date` |
+| **Test Coverage** | N/A | `uv run pytest --cov --cov-report=term-missing` |
 
 ### Running Tests
 

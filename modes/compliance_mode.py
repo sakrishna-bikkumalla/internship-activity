@@ -310,7 +310,7 @@ def get_suggestions_for_missing_items(report):
         st.markdown("🟡 **README needs improvement** — Consider adding Installation/Usage/License/Contributing.")
 
 
-def render_project_compliance_ui(report, project=None, branch=None, classification=None):
+def render_project_compliance_ui(report, project=None, branch=None, _classification=None):
     if report.get("error"):
         st.error(report["error"])
         return
