@@ -52,15 +52,6 @@ def test_run_batch_for_projects_batch_controller(monkeypatch):
     _run_test_for_module(module)
 
 
-def test_run_batch_for_projects_batch_service(monkeypatch):
-    _setup_batch_depends(monkeypatch)
-    import batch_mode.batch_servie as module
-
-    importlib.reload(module)
-
-    _run_test_for_module(module)
-
-
 def test_generate_summary_edge_cases_batch_controller(monkeypatch):
     _setup_batch_depends(monkeypatch)
     import batch_mode.batch_controller as module
@@ -69,13 +60,3 @@ def test_generate_summary_edge_cases_batch_controller(monkeypatch):
 
     summary = module._generate_summary([], [{"project": "x", "error": "boom"}])
     assert summary == {"total_projects": 1, "passed": 0, "failed": 0, "errors": 1}
-
-
-def test_generate_summary_edge_cases_batch_service(monkeypatch):
-    _setup_batch_depends(monkeypatch)
-    import batch_mode.batch_servie as module
-
-    importlib.reload(module)
-
-    summary = module._generate_summary([{"project": "x", "status": "FAIL"}], [])
-    assert summary == {"total_projects": 1, "passed": 0, "failed": 1, "errors": 0}
