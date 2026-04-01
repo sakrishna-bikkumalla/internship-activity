@@ -79,24 +79,26 @@ def sample_issue_rows():
     return [
         {
             "Username": "user1",
+            "Total Assigned": 15,
+            "Opened Issues": 5,
             "Closed Issues": 10,
             "No Desc": 2,
-            "Improper Desc": 1,
             "No Labels": 3,
             "No Milestone": 4,
             "No Time Spent": 5,
-            "Long Open Time": 6,
+            "Long Open Time (>2 days)": 6,
             "No Semantic Title": 7,
         },
         {
             "Username": "user2",
+            "Total Assigned": 8,
+            "Opened Issues": 3,
             "Closed Issues": 5,
             "No Desc": 1,
-            "Improper Desc": 0,
             "No Labels": 2,
             "No Milestone": 1,
             "No Time Spent": 2,
-            "Long Open Time": 3,
+            "Long Open Time (>2 days)": 3,
             "No Semantic Title": 4,
         },
     ]
@@ -114,7 +116,7 @@ class TestCachedFunctions:
         result = cached_batch_evaluate_issues(mock_client, ("user1", "user2"))
 
         assert len(result) == 1
-        mock_client.batch_evaluate_issues.assert_called_once_with(["user1", "user2"])
+        mock_client.batch_evaluate_issues.assert_called_once_with(["user1", "user2"], issue_scope="assignee")
 
     @patch("modes.bad_issue.st.cache_data", lambda ttl=None: lambda f: f)
     def test_cached_single_user_issues(self):
@@ -124,7 +126,7 @@ class TestCachedFunctions:
 
         cached_single_user_issues(mock_client, "testuser")
 
-        mock_client.batch_evaluate_issues.assert_called_once_with(["testuser"])
+        mock_client.batch_evaluate_issues.assert_called_once_with(["testuser"], issue_scope="assignee")
 
 
 class TestRenderBadIssueBatchUI:
