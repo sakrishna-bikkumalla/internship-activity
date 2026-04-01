@@ -73,7 +73,7 @@ def render_project_compliance(gl, project_id: int):
         st.markdown("#### Security Enforcement")
         sec = report.get("tools", {}).get("security", {})
         st.write(f"{'✅' if sec.get('secret_scanning') else '❌'} **Secret Scanning** (Gitleaks/TruffleHog)")
-        st.write(f"{'✅' if sec.get('dependency_audit') else '❌'} **Dependency Audit** (uv audit/npm audit)")
+        st.write(f"{'✅' if sec.get('dependency_audit') else '❌'} **Dependency Audit** (uv audit/pip-audit/npm audit)")
         if "bandit" in sec:
             st.write(f"{'✅' if sec.get('bandit') else '❌'} **Static Analysis** (Bandit)")
 

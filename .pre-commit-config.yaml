@@ -75,7 +75,7 @@ repos:
         pass_filenames: false
 
       # Dependency vulnerability scanning
-      # Runs local pip-audit or equivalent via uv to block vulnerable packages
+      # Runs uv audit to block vulnerable packages
       - id: uv-audit
         name: Dependency vulnerability scanning
         entry: |

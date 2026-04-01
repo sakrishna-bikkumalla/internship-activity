@@ -77,7 +77,10 @@ def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any
         security["secret_scanning"] = any(
             x in ci_str or x in pc_str for x in ["gitleaks", "trufflehog", "secret_detection"]
         )
-        security["dependency_audit"] = any(x in ci_str for x in ["uv audit", "npm audit", "yarn audit", "auditjs"])
+        security["dependency_audit"] = any(
+            x in ci_str or x in pc_str
+            for x in ["uv audit", "uv-audit", "pip-audit", "npm audit", "yarn audit", "auditjs"]
+        )
         if "Python" in project_type:
             security["bandit"] = "bandit" in pc_str or "bandit" in ci_str
 
