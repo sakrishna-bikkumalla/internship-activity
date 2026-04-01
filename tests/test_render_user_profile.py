@@ -249,3 +249,17 @@ def test_render_user_profile_no_issues(mock_get_user_profile, mock_gl, mock_user
         render_user_profile(mock_gl)
 
     mock_streamlit.info.assert_called()
+
+
+@patch("user_profile.render_user_profile.get_user_profile")
+def test_render_user_profile_gitlab_get_error(mock_get_user_profile, mock_gl, mock_streamlit):
+    """Test GitlabGetError exception handling (covers lines 97-98)."""
+    from gitlab import GitlabGetError
+    
+    mock_get_user_profile.side_effect = GitlabGetError("API Error")
+    mock_streamlit.button.return_value = True
+
+    render_user_profile(mock_gl)
+
+    mock_streamlit.error.assert_called()
+    assert "GitLab API Error" in mock_streamlit.error.call_args[0][0]
