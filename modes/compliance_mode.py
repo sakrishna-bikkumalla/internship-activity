@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 import streamlit as st
 from gitlab import GitlabGetError
 
+from Projects.tools_checker import check_tools
+
 # --- Helper Functions (copied/adapted from app.py) ---
 
 
@@ -223,19 +225,23 @@ def check_project_compliance(project, branch=None):
         report[".gitignore"] = ".gitignore" in filenames
         report["pyproject.toml"] = "pyproject.toml" in filenames
         report["uv_lock_exists"] = "uv.lock" in filenames
-        report["vscode_settings"] = check_vscode_settings(project, branch)
-        vscode_content = check_vscode_settings_content(project, branch)
-        report["vscode_config_exists"] = vscode_content["exists"]
-        report["vscode_ruff_in_extensions"] = check_extensions_json_for_ruff(project, branch)
-        report["vscode_extensions_exists"] = check_vscode_file_exists(project, "extensions.json", branch)
-        report["vscode_launch_exists"] = check_vscode_file_exists(project, "launch.json", branch)
-        report["vscode_tasks_exists"] = check_vscode_file_exists(project, "tasks.json", branch)
+        report["package_json"] = "package.json" in filenames
+        report["package_lock_exists"] = "package-lock.json" in filenames
+        report["yarn_lock_exists"] = "yarn.lock" in filenames
+        report["bun_lock_exists"] = "bun.lock" in filenames or "bun.lockb" in filenames
+        report["husky_exists"] = ".husky" in filenames
+        report[".gitlab-ci.yml"] = ".gitlab-ci.yml" in filenames
+        report[".pre-commit-config.yaml"] = ".pre-commit-config.yaml" in filenames
 
         template_details = check_templates_presence(project, branch)
         report.update(template_details)
 
         report["description_present"] = bool(project.description and project.description.strip())
         report["tags_present"] = len(project.tags.list(per_page=1)) > 0
+        
+        # Tools & Language Classification
+        report["language"] = classify_project_language(filenames)
+        report["tools"] = check_tools(project.manager.gitlab, project.id)
 
     except Exception as e:
         report["error"] = f"Error during compliance check: {e}"
@@ -258,48 +264,71 @@ def get_project_branches(project):
         return []
 
 
+def classify_project_language(filenames):
+    """Simple classification based on presence of key files."""
+    is_python = any(
+        f in filenames
+        for f in ["pyproject.toml", "requirements.txt", "setup.py", "tox.ini", "pipfile", "uv.lock"]
+    ) or any(f.endswith(".py") for f in filenames)
+    
+    is_js = any(
+        f in filenames
+        for f in [
+            "package.json", 
+            "package-lock.json", 
+            "yarn.lock", 
+            "bun.lock", 
+            "bun.lockb",
+            "tsconfig.json", 
+            "next.config.js"
+        ]
+    ) or any(f.endswith((".js", ".ts", ".tsx", ".jsx")) for f in filenames) or ".husky" in filenames
+    
+    if is_python and is_js:
+        return "Python & JS"
+    if is_python:
+        return "Python"
+    if is_js:
+        return "JS/TS"
+    return "Unknown"
+
+
 def get_suggestions_for_missing_items(report):
-    # (Copied from app.py - abridged for brevity but kept functional)
-    suggestion_list = [
+    st.subheader("📌 Suggestions for Missing Items")
+    
+    # Core suggestions (Language Independent)
+    core_suggestions = [
         ("README.md", "README.md missing", "Add a `README.md` file."),
         ("CONTRIBUTING.md", "CONTRIBUTING.md missing", "Add a `CONTRIBUTING.md` file."),
         ("CHANGELOG", "CHANGELOG missing", "Maintain a `CHANGELOG.md` file."),
         ("LICENSE", "LICENSE missing", "Include an `AGPLv3 LICENSE` file."),
         ("license_valid", "LICENSE is not AGPLv3", "Ensure the license is AGPLv3."),
-        (
-            "issue_templates_folder",
-            "Issue templates folder missing",
-            "Create `.gitlab/issue_templates/`.",
-        ),
-        (
-            "merge_request_templates_folder",
-            "Merge request templates folder missing",
-            "Create `.gitlab/merge_request_templates/`.",
-        ),
         (".gitignore", ".gitignore missing", "Add a `.gitignore` file."),
-        ("pyproject.toml", "pyproject.toml missing", "Add a `pyproject.toml` file."),
-        ("vscode_settings", ".vscode/settings.json missing", "Add a `.vscode/settings.json` file."),
-        (
-            "vscode_ruff_in_extensions",
-            "Ruff not in .vscode/extensions.json",
-            "Add `charliermarsh.ruff` to recommendations.",
-        ),
-        (
-            "vscode_extensions_exists",
-            ".vscode/extensions.json missing",
-            "Add a `.vscode/extensions.json` file.",
-        ),
-        ("vscode_launch_exists", ".vscode/launch.json missing", "Add `.vscode/launch.json`."),
-        ("vscode_tasks_exists", ".vscode/tasks.json missing", "Add `.vscode/tasks.json`."),
-        ("description_present", "Project description missing", "Provide a project description."),
-        ("tags_present", "Project tags missing", "Tag your project releases."),
-        ("uv_lock_exists", "uv.lock missing", "Run `uv lock` to generate `uv.lock`."),
+        (".gitlab-ci.yml", ".gitlab-ci.yml missing", "Add a `.gitlab-ci.yml` to enable CI/CD."),
+        (".pre-commit-config.yaml", ".pre-commit-config.yaml missing", "Add `.pre-commit-config.yaml` for automated hooks."),
+        ("description_present", "Project description missing", "Provide a project description in GitLab settings."),
+        ("tags_present", "Project tags missing", "Tag your project releases/milestones."),
     ]
 
-    st.subheader("📌 Suggestions for Missing Items")
-    for key, display_name, suggestion_text in suggestion_list:
+    for key, display_name, suggestion_text in core_suggestions:
         if not report.get(key, True):
             st.markdown(f"❌ **{display_name}** — {suggestion_text}")
+
+    # Language-specific suggestions
+    lang = report.get("language", "Unknown")
+    if "Python" in lang:
+        if not report.get("pyproject.toml"):
+            st.markdown("❌ **pyproject.toml missing** — Recommended for Python projects.")
+        if not report.get("uv_lock_exists"):
+            st.markdown("🟡 **uv.lock missing** — Consider using `uv` for reproducible builds.")
+    
+    if "JS" in lang:
+        if not report.get("package_json"):
+            st.markdown("❌ **package.json missing** — Essential for JS projects.")
+        
+        has_js_lock = report.get("package_lock_exists") or report.get("yarn_lock_exists") or report.get("bun_lock_exists")
+        if not has_js_lock:
+            st.markdown("❌ **JS Lock file missing** — Add `package-lock.json`, `yarn.lock`, or `bun.lock`.")
 
     readme_status = report.get("readme_status")
     if readme_status == "missing":
@@ -316,48 +345,69 @@ def render_project_compliance_ui(report, project=None, branch=None, _classificat
         return
 
     st.markdown("### 📋 Compliance Summary by Category")
-    categories = {
-        "1. 📄 Project Metadata": {
+    
+    # Classification badge
+    lang = report.get("language", "Unknown")
+    st.info(f"Detected Project Language: **{lang}**")
+
+    # Metadata & Documentation
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**1. 📄 Metadata & Repo Setup**")
+        metadata_items = {
             "description_present": "Project Description",
             "tags_present": "Tags",
-        },
-        "2. 📚 Project Documentation": {
+            ".gitignore": ".gitignore",
+            ".gitlab-ci.yml": "GitLab CI config",
+            ".pre-commit-config.yaml": "Pre-commit config",
+        }
+        for key, label in metadata_items.items():
+            icon = "✅" if report.get(key) else "❌"
+            st.write(f"{icon} {label}")
+
+    with col2:
+        st.markdown("**2. 📚 Documentation**")
+        docs_items = {
             "README.md": "README.md",
             "CONTRIBUTING.md": "CONTRIBUTING.md",
             "CHANGELOG": "CHANGELOG",
             "LICENSE": "LICENSE",
-            "license_valid": "LICENSE should be AGPLv3",
+            "license_valid": "LICENSE is AGPLv3",
             "issue_templates_folder": "Issue Templates Folder",
             "merge_request_templates_folder": "Merge Request Templates Folder",
-            "readme_status": "README status",
-        },
-        "3. ⚙️ Project Configuration": {
-            ".gitignore": ".gitignore",
-            "pyproject.toml": "pyproject.toml",
-            "uv_lock_exists": "uv.lock",
-        },
-        "4. 🖥️ IDE Setup": {
-            "vscode_settings": ".vscode/settings.json",
-            "vscode_ruff_in_extensions": "Ruff in config",
-            "vscode_config_exists": "VSCode Config Exists",  # Added missing key in rendering
-            "vscode_extensions_exists": ".vscode/extensions.json",
-        },
-    }
-
-    for cat_name, items in categories.items():
-        st.markdown(f"**{cat_name}**")
-        for key, label in items.items():
-            status = report.get(key)
-            if key == "readme_status":
-                icon = (
-                    "✅"
-                    if status == "present" and not report.get("readme_needs_improvement")
-                    else ("✅ (Needs Impr.)" if status == "present" else "❌")
-                )
-            else:
-                icon = "✅" if status else "❌"
+        }
+        for key, label in docs_items.items():
+            icon = "✅" if report.get(key) else "❌"
             st.write(f"{icon} {label}")
 
+    # Configuration (Language Specific)
+    st.markdown("**3. ⚙️ Configuration**")
+    config_col1, config_col2 = st.columns(2)
+    with config_col1:
+        if "Python" in lang:
+            st.write("✅" if report.get("pyproject.toml") else "❌", "pyproject.toml")
+            st.write("✅" if report.get("uv_lock_exists") else "❌", "uv.lock")
+        
+        if "JS" in lang:
+            st.write("✅" if report.get("package_json") else "❌", "package.json")
+            has_js_lock = report.get("package_lock_exists") or report.get("yarn_lock_exists") or report.get("bun_lock_exists")
+            lock_label = "JS Lock File (package-lock/yarn/bun)"
+            st.write("✅" if has_js_lock else "❌", lock_label)
+            st.write("✅" if report.get("husky_exists") else "🔍", ".husky (directory)")
+        
+        if "Python" not in lang and "JS" not in lang:
+            st.write("No specific configuration checks for this language.")
+
+    # 🛠 Tools Analysis
+    st.markdown("**4. 🛠 Tools Detected (CI/Pre-commit)**")
+    tools = report.get("tools", {})
+    if "error" in tools:
+        st.error(f"Error checking tools: {tools['error']}")
+    else:
+        for category, tool_dict in tools.items():
+            active_tools = [tool for tool, present in tool_dict.items() if present]
+            if active_tools:
+                st.markdown(f"**{category.replace('_', ' ').title()}**: {', '.join(active_tools)}")
 
 def render_compliance_mode(gl_client):
     st.subheader("🔍 Project Compliance Checker")
