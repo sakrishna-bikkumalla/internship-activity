@@ -2,20 +2,21 @@
 GitLab API helpers for compliance checking and project analysis.
 No Streamlit dependencies.
 """
+
 import os
 
 
 def extract_path_from_url(input_str):
     """Extract raw project path from GitLab URL or return path as-is.
-    
+
     Args:
         input_str: Raw project path, URL, or project ID
-        
+
     Returns:
         GitLab-compatible project identifier
     """
     from urllib.parse import urlparse
-    
+
     try:
         path = urlparse(input_str).path.strip("/")
         return path[:-4] if path.endswith(".git") else path
@@ -25,10 +26,10 @@ def extract_path_from_url(input_str):
 
 def get_project_branches(project):
     """Fetch all branches from a project.
-    
+
     Args:
         project: GitLab project object
-        
+
     Returns:
         Sorted list of branch names
     """
@@ -41,11 +42,11 @@ def get_project_branches(project):
 
 def list_all_files(project, branch="main"):
     """Return list of file paths (blobs) in the repository (recursive).
-    
+
     Args:
         project: GitLab project object
         branch: Branch name to query
-        
+
     Returns:
         List of file paths
     """
@@ -61,10 +62,10 @@ def list_all_files(project, branch="main"):
 
 def classify_repository_files(file_paths):
     """Classify files into categories and detect language files.
-    
+
     Args:
         file_paths: List of file paths
-        
+
     Returns:
         Dict with classification results
     """
@@ -140,17 +141,17 @@ def classify_repository_files(file_paths):
 
     # Deduplicate lists
     for k in res:
-        res[k] = sorted(list(dict.fromkeys(res[k])))
+        res[k] = sorted(dict.fromkeys(res[k]))
     return res
 
 
 def check_vscode_settings(project, branch="main"):
     """Check if .vscode/settings.json exists in project.
-    
+
     Args:
         project: GitLab project object
         branch: Branch name to check
-        
+
     Returns:
         Boolean indicating if settings.json exists
     """
@@ -163,12 +164,12 @@ def check_vscode_settings(project, branch="main"):
 
 def check_vscode_file_exists(project, filename, branch="main"):
     """Check if a specific file exists in .vscode directory.
-    
+
     Args:
         project: GitLab project object
         filename: File to check for
         branch: Branch name to check
-        
+
     Returns:
         Boolean indicating if file exists
     """
@@ -181,42 +182,42 @@ def check_vscode_file_exists(project, filename, branch="main"):
 
 def check_extensions_json_for_ruff(project, branch="main", read_file_fn=None):
     """Check if Ruff is recommended in .vscode/extensions.json.
-    
+
     Args:
         project: GitLab project object
         branch: Branch name to check
         read_file_fn: Optional file reading function (defaults to reading from project API)
-        
+
     Returns:
         Boolean indicating if Ruff is in recommendations
     """
     if read_file_fn is None:
         # Import here to avoid circular dependencies
-        from gitlab_utils.file_reader import read_file_content_no_cache
-        read_file_fn = read_file_content_no_cache
-    
+        from gitlab_utils.files_reader import read_file_content
+
+        read_file_fn = read_file_content
+
     content = read_file_fn(project, ".vscode/extensions.json", branch)
     if not content:
         return False
     try:
         import json
+
         config = json.loads(content)
         recommendations = config.get("recommendations", [])
-        return "charliermarsh.ruff" in recommendations or any(
-            "ruff" in ext.lower() for ext in recommendations
-        )
+        return "charliermarsh.ruff" in recommendations or any("ruff" in ext.lower() for ext in recommendations)
     except Exception:
         return False
 
 
 def list_markdown_files_in_folder(project, folder_path, branch="main"):
     """List all markdown files in a folder.
-    
+
     Args:
         project: GitLab project object
         folder_path: Path to folder
         branch: Branch name to check
-        
+
     Returns:
         List of markdown file names
     """
@@ -229,11 +230,11 @@ def list_markdown_files_in_folder(project, folder_path, branch="main"):
 
 def check_templates_presence(project, branch="main"):
     """Check for GitLab issue and merge request templates.
-    
+
     Args:
         project: GitLab project object
         branch: Branch name to check
-        
+
     Returns:
         Dict with template presence information
     """
@@ -264,22 +265,21 @@ def check_templates_presence(project, branch="main"):
 
 def check_license_content(project, branch="main", read_file_fn=None):
     """Check if license is AGPLv3, other GNU, or invalid.
-    
+
     Args:
         project: GitLab project object
         branch: Branch name to check
         read_file_fn: Optional file reading function
-        
+
     Returns:
         String indicating license status: 'valid', 'gnu_other', or 'invalid'
     """
     if read_file_fn is None:
-        from gitlab_utils.file_reader import read_file_content_no_cache
-        read_file_fn = read_file_content_no_cache
-    
-    content = read_file_fn(project, "LICENSE", branch) or read_file_fn(
-        project, "LICENSE.md", branch
-    )
+        from gitlab_utils.files_reader import read_file_content
+
+        read_file_fn = read_file_content
+
+    content = read_file_fn(project, "LICENSE", branch) or read_file_fn(project, "LICENSE.md", branch)
     if not content:
         return "not_found"
 
@@ -350,19 +350,20 @@ def check_license_content(project, branch="main", read_file_fn=None):
 
 def check_project_compliance(project, branch=None, read_file_fn=None):
     """Check project compliance with various standards.
-    
+
     Args:
         project: GitLab project object
         branch: Branch name to check (defaults to default branch)
         read_file_fn: Optional file reading function
-        
+
     Returns:
         Dict with compliance report
     """
     if read_file_fn is None:
-        from gitlab_utils.file_reader import read_file_content_cached
-        read_file_fn = read_file_content_cached
-    
+        from gitlab_utils.files_reader import read_file_content
+
+        read_file_fn = read_file_content
+
     required_files = {
         "README.md": ["README.md"],
         "CONTRIBUTING.md": ["CONTRIBUTING.md"],
@@ -383,9 +384,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
         report["README.md"] = readme_present
         if readme_present:
             # Try common README filename variants
-            content = read_file_fn(project, "README.md", branch) or read_file_fn(
-                project, "README", branch
-            )
+            content = read_file_fn(project, "README.md", branch) or read_file_fn(project, "README", branch)
             if not content or not content.strip():
                 report["readme_status"] = "empty"
                 report["readme_sections"] = []
@@ -406,9 +405,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
                 found_sections = [s for s in expected_sections if s in lc]
                 report["readme_status"] = "present"
                 report["readme_sections"] = found_sections
-                report["readme_needs_improvement"] = (
-                    len(found_sections) < 3 or len(content.strip()) < 150
-                )
+                report["readme_needs_improvement"] = len(found_sections) < 3 or len(content.strip()) < 150
         else:
             report["readme_status"] = "missing"
             report["readme_sections"] = []
@@ -440,9 +437,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
         report["vscode_ruff_in_extensions"] = check_extensions_json_for_ruff(project, branch, read_file_fn)
 
         # Other VSCode files
-        report["vscode_extensions_exists"] = check_vscode_file_exists(
-            project, "extensions.json", branch
-        )
+        report["vscode_extensions_exists"] = check_vscode_file_exists(project, "extensions.json", branch)
         report["vscode_launch_exists"] = check_vscode_file_exists(project, "launch.json", branch)
         report["vscode_tasks_exists"] = check_vscode_file_exists(project, "tasks.json", branch)
 

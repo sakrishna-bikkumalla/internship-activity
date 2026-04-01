@@ -1,7 +1,6 @@
 from datetime import datetime, time
 from urllib.parse import urlparse
 
-
 # ---------------- HELPERS ----------------
 
 
@@ -211,9 +210,7 @@ def get_user_issues_list(gl, user_id, limit=100):
     for issue in issues[:limit]:
         assignees = []
         if isinstance(getattr(issue, "assignees", None), list):
-            assignees = [
-                a.get("username") for a in issue.assignees if isinstance(a, dict)
-            ]
+            assignees = [a.get("username") for a in issue.assignees if isinstance(a, dict)]
 
         rows.append(
             {

@@ -4,8 +4,6 @@ This module handles all Streamlit-based rendering for issues.
 Pure business logic should be in issue_service.py and issue_metrics.py.
 """
 
-import os
-
 import streamlit as st
 
 
@@ -215,12 +213,8 @@ def render_issue_summary_card(summary):
 
         with col1:
             st.markdown("**Templates**")
-            st.markdown(
-                f"✅ Issue Templates: {summary.get('has_issue_templates', False)}"
-            )
-            st.markdown(
-                f"✅ MR Templates: {summary.get('has_mr_templates', False)}"
-            )
+            st.markdown(f"✅ Issue Templates: {summary.get('has_issue_templates', False)}")
+            st.markdown(f"✅ MR Templates: {summary.get('has_mr_templates', False)}")
 
         with col2:
             st.markdown("**Metrics**")

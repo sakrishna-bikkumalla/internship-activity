@@ -1,6 +1,8 @@
-import streamlit as st
 import pandas as pd
-from gitlab_utils import users, projects, commits, groups, merge_requests, issues
+import streamlit as st
+
+from gitlab_utils import batch
+
 
 def render_user_profile(client, simple_user_info):
     """
@@ -25,30 +27,29 @@ def render_user_profile(client, simple_user_info):
         st.markdown(f"### {name} (@{username})")
         st.markdown(f"**ID:** {user_id} | [GitLab Profile]({web_url})")
 
-    # Fetch Data
-    with st.spinner("Fetching comprehensive user data..."):
-        # 1. Projects
-        proj_data = projects.get_user_projects(client, user_id, username)
+    # Fetch Data concurrently via the batch engine
+    with st.spinner("Fetching comprehensive user data in parallel..."):
+        user_data = batch.process_single_user(client, username)
 
-        # 2. Commits - Passing full simple_user_info
-        all_projs = proj_data["all"]
-        all_commits, commit_counts, commit_stats = commits.get_user_commits(client, simple_user_info, all_projs)
+    if not user_data or user_data.get("status") != "Success":
+        error_msg = user_data.get("error", "Unknown error") if user_data else "Unknown error"
+        st.error(f"Error fetching data: {error_msg}")
+        return
 
-        verified_contributed = []
-        for p in proj_data["contributed"]:
-             if commit_counts.get(p['id'], 0) > 0:
-                 verified_contributed.append(p)
+    # Extract data from the resulting dict
+    data = user_data["data"]
+    proj_data = data["projects"]
+    all_commits = data["commits"]
+    commit_stats = data["commit_stats"]
+    user_groups = data["groups"]
+    user_mrs = data["mrs"]
+    mr_stats = data["mr_stats"]
+    user_issues = data["issues"]
+    issue_stats = data["issue_stats"]
 
-        personal_projects = proj_data["personal"]
-
-        # 3. Groups
-        user_groups = groups.get_user_groups(client, user_id)
-
-        # 4. MRs
-        user_mrs, mr_stats = merge_requests.get_user_mrs(client, user_id)
-
-        # 5. Issues
-        user_issues, issue_stats = issues.get_user_issues(client, user_id)
+    # Projects classification
+    personal_projects = proj_data["personal"]
+    verified_contributed = proj_data["contributed"]
 
     # --- Display ---
 
@@ -65,7 +66,7 @@ def render_user_profile(client, simple_user_info):
     with p_col2:
         st.metric("Contributed Projects", len(verified_contributed))
         if verified_contributed:
-             with st.expander("View Contributed Projects"):
+            with st.expander("View Contributed Projects"):
                 for p in verified_contributed:
                     st.write(f"- [{p['name_with_namespace']}]({p['web_url']})")
 
@@ -106,7 +107,10 @@ def render_user_profile(client, simple_user_info):
     if user_mrs:
         with st.expander("View MR Details"):
             df_mrs = pd.DataFrame(user_mrs)
-            st.dataframe(df_mrs[["title", "role", "state", "created_at"]], width="stretch")
+            st.dataframe(
+                df_mrs[["title", "role", "state", "created_at"]],
+                width="stretch",
+            )
 
     # Issues
     st.markdown("---")

@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from batch_mode.batch_service import process_single_project
 from batch_mode.export_service import prepare_export_data

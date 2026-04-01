@@ -1,6 +1,6 @@
 # gitlab_utils/file_reader.py
 
-from typing import Optional, List
+from typing import List, Optional
 
 
 def read_file_content(project, file_path: str, ref: str) -> Optional[str]:
@@ -10,7 +10,10 @@ def read_file_content(project, file_path: str, ref: str) -> Optional[str]:
     """
     try:
         file_obj = project.files.get(file_path=file_path, ref=ref)
-        return file_obj.decode().decode("utf-8")
+        content = file_obj.decode()
+        if isinstance(content, bytes):
+            return content.decode("utf-8")
+        return str(content) if content else None
     except Exception:
         return None
 
@@ -32,11 +35,7 @@ def list_all_files(project, branch: str = "main") -> List[str]:
                 recursive=True,
             )
 
-        return [
-            item.get("path")
-            for item in items
-            if item.get("type") == "blob"
-        ]
+        return [item.get("path") for item in items if item.get("type") == "blob"]
 
     except Exception:
         return []

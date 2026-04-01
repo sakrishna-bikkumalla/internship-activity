@@ -49,4 +49,3 @@ Example: "Related to #78" or "Part of cleanup for #45"
 -->
 
 /assign me
-

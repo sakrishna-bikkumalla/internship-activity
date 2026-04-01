@@ -5,3 +5,6 @@ requests
 gitlab-utils
 pandas>=1.5
 xlsxwriter
+aiohttp
+openpyxl
+nest_asyncio

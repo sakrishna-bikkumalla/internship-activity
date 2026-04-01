@@ -1,28 +1,113 @@
-import streamlit as st
-import pandas as pd
-import io
 import datetime
+import io
+
+import pandas as pd
+import streamlit as st
+
 from gitlab_utils import batch
+
+DEFAULT_ICFAI_USERS = """prav2702
+saikrishna_b
+MohanaSriBhavitha
+praneethashish
+kanukuntagreeshma2004
+vandana1735
+vandana_rajuldev
+Mukthanand21
+Shanmukh16
+Sathwikareddy_Damanagari
+Sahasraa
+laxmanreddypatlolla
+Abhilash653
+LagichettyKushal
+Lakshy
+Suma2304
+koushik_18
+kumari123
+Habeebunissa
+Bhaskar_Battula
+Pranav_rs
+prashanth0812
+dasarajulavaishnavi04
+ashrithakunjeti
+srilathabandari
+vemurispriya"""
+
+DEFAULT_RCTS_USERS = """vai5h
+Saiharshavardhan
+Rushika_1105
+swarna_4539
+satish05
+aravindswamy
+pavaninagireddi
+jeevana_31
+saiteja3005
+SandhyaRani_111
+klaxmi1908
+Kaveri_Mamidi
+Pavani_Pothuganti"""
+
 
 def render_batch_mode_ui(client, report_type):
     st.subheader(f"🚀 Batch Analytics - {report_type}")
 
+    default_value = DEFAULT_ICFAI_USERS if report_type == "ICFAI" else DEFAULT_RCTS_USERS
+
     user_input = st.text_area(
         "Enter Usernames (one per line)",
-        height=150,
-        placeholder="user1\nuser2\n..."
+        height=300,
+        value=default_value,
+        placeholder="user1\nuser2\n...",
     )
 
-    if st.button("Run Batch Analysis"):
+    # ── Project Repo Filter ────────────────────────────────────────────────
+    st.markdown("#### 📂 Filter by Project Repos *(optional)*")
+    st.caption(
+        "Enter one or more GitLab project paths (e.g. `group/repo-name`) — one per line. "
+        "Leave blank to include **all projects**."
+    )
+    repo_input = st.text_area(
+        "Project Repo Paths",
+        height=120,
+        value="",
+        key=f"_batch_repo_input_{report_type}",
+        placeholder="e.g.\ntools/gitlab-compliance-checker\ngroup/another-repo",
+        label_visibility="collapsed",
+    )
+
+    repo_paths = [line.strip() for line in repo_input.splitlines() if line.strip()]
+
+    if st.button("Run Batch Analysis", key=f"_batch_run_{report_type}"):
         usernames = [line.strip() for line in user_input.splitlines() if line.strip()]
         if not usernames:
             st.warning("Please enter at least one username.")
             return
 
+        # Resolve project repo paths → IDs
+        project_ids = None
+        if repo_paths:
+            with st.spinner(f"Resolving {len(repo_paths)} project repo(s)…"):
+                resolved_ids, failed_paths = batch.resolve_project_paths(client, repo_paths)
+
+            if failed_paths:
+                st.warning(
+                    f"⚠️ Could not resolve {len(failed_paths)} repo path(s): "
+                    + ", ".join(f"`{p}`" for p in failed_paths)
+                )
+            if resolved_ids:
+                st.info(
+                    f"✅ Filtering by **{len(resolved_ids)}** project(s): "
+                    + ", ".join(f"`{p}`" for p in repo_paths if p not in failed_paths)
+                )
+                project_ids = resolved_ids
+            else:
+                st.error("None of the entered repo paths could be resolved. Check the paths and try again.")
+                return
+
         st.info(f"Processing {len(usernames)} users...")
 
         with st.spinner("Fetching data in parallel..."):
-            results = batch.process_batch_users(client, usernames)
+            results = batch.process_batch_users(client, usernames, project_ids=project_ids)
 
         st.success("Batch processing complete!")
 
@@ -38,9 +123,9 @@ def render_batch_mode_ui(client, report_type):
             projects = data.get("projects", {})
 
             # Stats Access
-            c_stats = data.get("commit_stats", {"total":0, "morning_commits":0, "afternoon_commits":0})
-            m_stats = data.get("mr_stats", {"total":0, "merged":0, "opened":0, "closed":0})
-            i_stats = data.get("issue_stats", {"total":0, "opened":0, "closed":0})
+            c_stats = data.get("commit_stats", {"total": 0, "morning_commits": 0, "afternoon_commits": 0})
+            m_stats = data.get("mr_stats", {"total": 0, "merged": 0, "opened": 0, "closed": 0})
+            i_stats = data.get("issue_stats", {"total": 0, "opened": 0, "closed": 0})
 
             p_personal = len(projects.get("personal", []))
             p_contributed = len(projects.get("contributed", []))
@@ -56,38 +141,27 @@ def render_batch_mode_ui(client, report_type):
             row["Report Time"] = now_ist.strftime("%I:%M %p")
 
             if status == "Success":
-                if report_type == "ICFAI":
-                    # ICFAI Columns
-                    row["Personal Projects"] = p_personal
-                    row["Contributed Projects"] = p_contributed
-                    row["Total Commits"] = c_stats["total"]
-                    row["Morning Count"] = c_stats["morning_commits"]
-                    row["Afternoon Count"] = c_stats["afternoon_commits"]
-                    row["MR Open"] = m_stats["opened"]
-                    row["MR Closed"] = m_stats["closed"]
-                    row["MR Merged"] = m_stats["merged"]
-                    row["Issues Open"] = i_stats["opened"]
-                    row["Issues Closed"] = i_stats["closed"]
-                    row["Groups Count"] = g_count
-
-                elif report_type == "RCTS":
-                    # RCTS Columns
-                    row["Total Projects"] = p_personal + p_contributed
-                    row["Total Commits"] = c_stats["total"]
-                    row["MR Total"] = m_stats["total"]
-                    row["MR Merged"] = m_stats["merged"]
-                    row["MR Pending"] = m_stats["opened"]
-                    row["Issues Total"] = i_stats["total"]
-                    row["Groups"] = g_count
-                    row["Morning Active"] = "Yes" if c_stats["morning_commits"] > 0 else "No"
-                    row["Afternoon Active"] = "Yes" if c_stats["afternoon_commits"] > 0 else "No"
+                # Use the same detailed columns for both ICFAI and RCTS
+                row["Personal Projects"] = p_personal
+                row["Contributed Projects"] = p_contributed
+                row["Total Commits"] = c_stats["total"]
+                row["Morning Count"] = c_stats["morning_commits"]
+                row["Afternoon Count"] = c_stats["afternoon_commits"]
+                row["MR Open"] = m_stats["opened"]
+                row["MR Closed"] = m_stats["closed"]
+                row["MR Merged"] = m_stats["merged"]
+                row["Issues Open"] = i_stats["opened"]
+                row["Issues Closed"] = i_stats["closed"]
+                row["Groups Count"] = g_count
             else:
-                 row["Error"] = err
+                row["Error"] = err
 
             report_data.append(row)
 
         # Display Summary
         st.write(f"### 📊 Batch Summary ({report_type})")
+        if repo_paths and project_ids:
+            st.caption(f"📂 Scoped to: {', '.join(f'`{p}`' for p in repo_paths)}")
         df_report = pd.DataFrame(report_data)
         st.dataframe(df_report, width="stretch")
 
@@ -98,20 +172,20 @@ def render_batch_mode_ui(client, report_type):
             today = now_ist.strftime("%Y-%m-%d")
             filename = f"{report_type}_Report_{today}.xlsx"
 
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
                 # Sheet 1: Report
-                df_report.to_excel(writer, index=False, sheet_name='Report')
+                df_report.to_excel(writer, index=False, sheet_name="Report")
 
                 # Sheet 2: Raw Errors (if any)
                 errors = [r for r in report_data if r.get("Status") == "Error"]
                 if errors:
-                    pd.DataFrame(errors).to_excel(writer, index=False, sheet_name='Errors')
+                    pd.DataFrame(errors).to_excel(writer, index=False, sheet_name="Errors")
 
             st.download_button(
                 label=f"Download {report_type} Report",
                 data=output.getvalue(),
                 file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
         except Exception as e:

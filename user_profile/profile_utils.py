@@ -1,18 +1,10 @@
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-# Set local timezone (IST)
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
 
-# ---------------- DATETIME HELPERS ----------------
-
-
 def parse_gitlab_datetime(timestamp: str):
-    """
-    Convert GitLab UTC timestamp to local timezone (IST).
-    Returns timezone-aware datetime or None.
-    """
     if not timestamp:
         return None
 
@@ -29,33 +21,32 @@ def parse_gitlab_datetime(timestamp: str):
         return None
 
 
+def split_projects(projects: list, user_info: dict) -> tuple[list, list]:
+    """Split projects into personal and contributed."""
+    user_id = user_info.get("id", 0)
+    personal = []
+    contributed = []
+
+    for p in projects or []:
+        if p.get("owner", {}).get("id") == user_id:
+            personal.append(p)
+        else:
+            contributed.append(p)
+
+    return personal, contributed
+
+
 def classify_time_slot(timestamp: str):
     """
-<<<<<<< HEAD
-    Classify time into:
-    Morning   : 00:00 – 11:59
-    Afternoon : 12:00 – 16:59
-    Evening   : 17:00 – 23:59
-=======
     Morning:   09:00 – 12:30
     Afternoon: 14:00 – 17:00
     Other:     All other times
->>>>>>> origin/feature-final
     """
     dt = parse_gitlab_datetime(timestamp)
     if not dt:
         return None
 
     hour = dt.hour
-<<<<<<< HEAD
-
-    if 0 <= hour < 12:
-        return "Morning"
-    elif 12 <= hour < 17:
-        return "Afternoon"
-    else:
-        return "Evening"
-=======
     minute = dt.minute
 
     # Morning: 9:00 AM to 12:30 PM
@@ -72,7 +63,6 @@ def classify_time_slot(timestamp: str):
         return "Afternoon"
 
     return "Other"
->>>>>>> origin/feature-final
 
 
 def format_date_time(timestamp: str):

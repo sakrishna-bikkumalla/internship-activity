@@ -21,7 +21,6 @@ def render_user_profile(gl):
     )
 
     if st.button("Fetch User Info & Check README"):
-
         if not username:
             st.warning("Please enter a username.")
             return
