@@ -1,6 +1,43 @@
+from typing import Any, Dict
+
 import streamlit as st
 
 from .compliance_service import get_dx_suggestions, run_project_compliance_checks
+
+
+def render_dx_ci_pipeline_ui(dx_report: Dict[str, Any]):
+    st.markdown("#### 🧠 CI Pipeline Deep-Dive")
+
+    if "error" in dx_report:
+        st.error(f"Error parsing CI configuration: {dx_report['error']}")
+        return
+
+    from gitlab_utils.pipeline_checker import EXPECTED_STAGES
+
+    # Stage Status Overview
+    st.markdown("---")
+    cols = st.columns(len(EXPECTED_STAGES))
+    for i, stage in enumerate(EXPECTED_STAGES):
+        details = dx_report.get("jobs", {}).get(stage, {})
+        with cols[i]:
+            if not details.get("stage_present"):
+                st.markdown(f"❌ **{stage}**")
+            else:
+                job_icon = "✅" if details.get("job_present") else "❌"
+                tool_icon = "✅" if details.get("tool_detected") else "❌"
+                st.markdown(f"**{stage}**")
+                st.write(f"Job: {job_icon}")
+                st.write(f"Tool: {tool_icon}")
+                if details.get("detected_tools"):
+                    st.caption(f"Tools: {', '.join(details['detected_tools'])}")
+
+    # Display Issues with severity icons
+    issues = dx_report.get("issues", [])
+    if issues:
+        st.markdown("##### 🚩 Pipeline Quality Issues:")
+        for issue in issues:
+            icon = "🔴" if issue.get("severity") == "error" else "🟡"
+            st.markdown(f"{icon} {issue.get('message')}")
 
 
 def render_project_compliance(gl, project_id: int):
@@ -53,6 +90,10 @@ def render_project_compliance(gl, project_id: int):
         st.write(f"{'✅' if auto.get('gitlab_ci') else '❌'} **GitLab CI Pipeline**")
         st.write(f"{'✅' if auto.get('pre_commit') else '❌'} **Pre-commit Hooks**")
         st.write(f"{'✅' if auto.get('git_cliff') else '❌'} **Automated Changelog** (Git-Cliff)")
+
+        if report.get("dx_ci"):
+            st.markdown("---")
+            render_dx_ci_pipeline_ui(report["dx_ci"])
 
     with tabs[4]:
         st.markdown("#### Project Metadata & Tags")

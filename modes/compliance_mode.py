@@ -66,6 +66,11 @@ def render_compliance_mode(gl_client):
                             st.json(report["tools"]["testing"])
                         with d_tabs[3]:
                             st.json(report["tools"]["automation"])
+                            if report.get("dx_ci"):
+                                st.markdown("---")
+                                from Projects.project_ui import render_dx_ci_pipeline_ui
+
+                                render_dx_ci_pipeline_ui(report["dx_ci"])
                         with d_tabs[4]:
                             sugs = get_dx_suggestions(report)
                             for s in sugs:

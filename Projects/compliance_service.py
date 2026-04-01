@@ -1,4 +1,7 @@
+import base64
 from typing import Any, Dict, List
+
+from gitlab_utils.pipeline_checker import check_ci_pipeline
 
 from .file_classifier import classify_files
 from .license_checker import check_license
@@ -12,15 +15,29 @@ def run_project_compliance_checks(gl, project_id: int) -> Dict[str, Any]:
     """
     Ultimate entry point: Runs all production-grade compliance checks for a project.
     """
+    try:
+        project = gl.projects.get(project_id)
+        branch = getattr(project, "default_branch", "main")
+    except Exception:
+        branch = "main"
 
-    results = {
+    results: Dict[str, Any] = {
         "readme": check_readme(gl, project_id),
         "license": check_license(gl, project_id),
         "templates": check_templates(gl, project_id),
         "metadata": check_metadata(gl, project_id),
         "file_types": classify_files(gl, project_id),
         "tools": check_tools(gl, project_id),
+        "dx_ci": None,
     }
+
+    # --- GitLab CI Deep Dive ---
+    try:
+        f = project.files.get(file_path=".gitlab-ci.yml", ref=branch)
+        ci_content = base64.b64decode(f.content).decode("utf-8")
+        results["dx_ci"] = check_ci_pipeline(ci_content)
+    except Exception:
+        pass
 
     # Calculate global DX score from tools_checker
     results["dx_score"] = results["tools"].get("dx_score", 0)
@@ -110,5 +127,11 @@ def get_dx_suggestions(report: Dict[str, Any]) -> List[Dict[str, str]]:
                 "action": "Add Installation, Usage, and Contributing sections.",
             }
         )
+
+    # --- CI Pipeline Suggestions ---
+    dx_ci = report.get("dx_ci")
+    if dx_ci and "recommendations" in dx_ci:
+        for rec in dx_ci["recommendations"]:
+            suggestions.append({"item": "CI Pipeline", "reason": rec["message"], "action": rec["command"]})
 
     return suggestions

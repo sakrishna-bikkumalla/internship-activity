@@ -680,7 +680,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-dotenv" },
     { name = "python-gitlab" },
-    { name = "pyyaml" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "streamlit", specifier = ">=1.33.0" },
     { name = "types-python-dateutil", marker = "extra == 'dev'" },
