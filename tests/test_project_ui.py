@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from Projects.project_ui import get_project_compliance, render_project_compliance, render_project_section
+from Projects.project_ui import render_project_compliance, render_project_section
 
 
 @pytest.fixture
@@ -13,6 +13,9 @@ def mock_gl():
 class DummyColumn:
     def __init__(self):
         self.metric = MagicMock()
+        self.write = MagicMock()
+        self.markdown = MagicMock()
+        self.caption = MagicMock()
         self.__enter__ = MagicMock(return_value=self)
         self.__exit__ = MagicMock(return_value=False)
 
@@ -34,65 +37,42 @@ def mock_streamlit():
         mock_st.button = MagicMock(return_value=False)
         mock_st.warning = MagicMock()
         mock_st.error = MagicMock()
-        mock_st.columns = MagicMock(return_value=(DummyColumn(), DummyColumn()))
+        mock_st.write = MagicMock()
+        mock_st.tabs = MagicMock(return_value=[DummyColumn()] * 5)
+        mock_st.columns = MagicMock(return_value=[DummyColumn()] * 4)
+        mock_st.spinner = MagicMock()
+        mock_st.spinner.return_value.__enter__ = MagicMock()
+        mock_st.spinner.return_value.__exit__ = MagicMock()
+        mock_st.expander = MagicMock()
+        mock_st.expander.return_value.__enter__ = MagicMock()
+        mock_st.expander.return_value.__exit__ = MagicMock()
+        mock_st.success = MagicMock()
         yield mock_st
-
-
-class TestGetProjectCompliance:
-    """Tests for get_project_compliance function."""
-
-    @patch("Projects.project_ui.check_templates")
-    @patch("Projects.project_ui.check_license")
-    @patch("Projects.project_ui.check_readme")
-    @patch("Projects.project_ui.classify_files")
-    def test_returns_all_checks(self, mock_classify, mock_readme, mock_license, mock_templates, mock_gl):
-        """Test that all compliance checks are returned."""
-        mock_classify.return_value = {"py": 5}
-        mock_readme.return_value = {"exists": True, "status": "README present"}
-        mock_license.return_value = {"exists": True, "status": "LICENSE present"}
-        mock_templates.return_value = {"exists": True, "status": "Templates present"}
-
-        result = get_project_compliance(mock_gl, 123)
-
-        assert "readme" in result
-        assert "license" in result
-        assert "templates" in result
-        assert "file_types" in result
-
-    @patch("Projects.project_ui.check_templates")
-    @patch("Projects.project_ui.check_license")
-    @patch("Projects.project_ui.check_readme")
-    @patch("Projects.project_ui.classify_files")
-    def test_missing_readme(self, mock_classify, mock_readme, mock_license, mock_templates, mock_gl):
-        """Test handling of missing README."""
-        mock_classify.return_value = {}
-        mock_readme.return_value = {"exists": False, "status": "Missing README"}
-        mock_license.return_value = {"exists": True}
-        mock_templates.return_value = {"exists": True}
-
-        result = get_project_compliance(mock_gl, 123)
-
-        assert result["readme"]["exists"] is False
 
 
 class TestRenderProjectCompliance:
     """Tests for render_project_compliance function."""
 
-    @patch("Projects.project_ui.get_project_compliance")
-    def test_renders_metrics(self, mock_get_compliance, mock_gl, mock_streamlit):
+    @patch("Projects.project_ui.run_project_compliance_checks")
+    @patch("Projects.project_ui.get_dx_suggestions")
+    def test_renders_metrics(self, mock_suggestions, mock_run_checks, mock_gl, mock_streamlit):
         """Test that metrics are rendered."""
-        mock_get_compliance.return_value = {
-            "readme": {"status": "README present"},
-            "license": {"status": "LICENSE present"},
-            "templates": {"status": "Templates present"},
-            "file_types": {"py": 5},
+        mock_run_checks.return_value = {
+            "dx_score": 85,
+            "tools": {"project_type": "Python", "quality_tools": {}, "security": {}, "testing": {}, "automation": {}},
+            "license": {"valid": True},
+            "readme": {"needs_improvement": False},
+            "metadata": {},
+            "dx_ci": None,
         }
+        mock_suggestions.return_value = []
 
         render_project_compliance(mock_gl, 123)
 
         mock_streamlit.subheader.assert_called()
-        mock_streamlit.metric.assert_called()
-        mock_streamlit.json.assert_called()
+        # st.metric is called inside columns context
+        mock_streamlit.columns.assert_called_with(4)
+        mock_streamlit.tabs.assert_called()
 
 
 class TestRenderProjectSection:

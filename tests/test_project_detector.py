@@ -58,12 +58,12 @@ class TestDetectProjectType:
         filenames = ["PyProject.toml", "Package.json"]
         assert detect_project_type(filenames) == "Unknown"
 
-    def test_only_requirements_txt_not_python(self):
-        """requirements.txt alone should not detect Python."""
-        filenames = ["requirements.txt", "main.py"]
-        assert detect_project_type(filenames) == "Unknown"
+    def test_only_requirements_txt_detects_python(self):
+        """requirements.txt alone should detect Python."""
+        filenames = ["requirements.txt"]
+        assert detect_project_type(filenames) == "Python"
 
-    def test_only_yarn_lock_not_javascript(self):
-        """yarn.lock alone should not detect JavaScript."""
-        filenames = ["yarn.lock", "index.js"]
-        assert detect_project_type(filenames) == "Unknown"
+    def test_only_yarn_lock_detects_javascript(self):
+        """yarn.lock alone should detect JavaScript."""
+        filenames = ["yarn.lock"]
+        assert detect_project_type(filenames) == "JavaScript"

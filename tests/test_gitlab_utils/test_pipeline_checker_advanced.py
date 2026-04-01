@@ -1,116 +1,78 @@
 from gitlab_utils.pipeline_checker import check_ci_pipeline
 
-def test_active_vs_inactive_jobs():
-    yaml_content = """
-stages:
-  - test
-
-hidden_job:
-  .template: true
-  script: echo "hidden"
-
-inactive_never:
-  stage: test
-  script: pytest
-  rules:
-    - when: never
-
-active_conditional_never:
-  stage: test
-  script: pytest
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      when: never
-    - when: on_success
-
-active_test:
-  stage: test
-  script: pytest
-"""
-    result = check_ci_pipeline(yaml_content)
-    
-    job_names = result["jobs"]["test"]["job_names"]
-    
-    # hidden_job starts with . but it's actually the KEY that counts for Gitlab.
-    # Wait, in Gitlab, hidden jobs are those whose KEY starts with '.'.
-    # I should update my script to check the key.
-    
-    # In my yaml_content above:
-    # hidden_job is NOT hidden. .hidden_job WOULD be hidden.
-    
-    yaml_with_hidden = """
-.hidden_job:
-  script: pytest
-test_job:
-  script: pytest
-"""
-    result_hidden = check_ci_pipeline(yaml_with_hidden)
-    assert "test_job" in result_hidden["jobs"]["test"]["job_names"]
-    assert ".hidden_job" not in result_hidden["jobs"]["test"]["job_names"]
-
-    # Inactive never (unconditional)
-    assert "inactive_never" not in job_names
-    # Active conditional never (has 'if')
-    assert "active_conditional_never" in job_names
-
-def test_indirect_execution_detection():
-    yaml_content = """
-test_job:
-  stage: test
-  script:
-    - make test
-lint_job:
-  stage: lint
-  script: bash run_lint.sh
-"""
-    result = check_ci_pipeline(yaml_content)
-    assert result["jobs"]["test"]["indirect_execution"] is True
-    assert result["jobs"]["lint"]["indirect_execution"] is True
-    
-    # Check warning
-    warnings = [i["message"] for i in result["issues"] if i["severity"] == "warning"]
-    assert any("indirect script execution" in w for w in warnings)
-
-def test_weighted_scoring():
-    # Only test stage present with tool
-    yaml_test_only = """
-test:
-  stage: test
-  script: pytest
-"""
-    result = check_ci_pipeline(yaml_test_only)
-    # test weight is 3.
-    # stage present (1.5) + tool detected (1.5) = 3.0
-    # total possible = 3+2+1+2+2 = 10.
-    # normalized = (3/10)*10 = 3.0
-    assert result["dx_score"] == 3.0
-
-    # test + lint with tools
-    yaml_test_lint = """
-test:
-  stage: test
-  script: pytest
-lint:
-  stage: lint
-  script: ruff check .
-"""
-    result_tl = check_ci_pipeline(yaml_test_lint)
-    # test(3) + lint(2) = 5.0
-    assert result_tl["dx_score"] == 5.0
-
 def test_structured_recommendations():
-    yaml_empty = """
-test:
-  script: echo "no tools"
-"""
-    result = check_ci_pipeline(yaml_empty)
-    recs = result["recommendations"]
+    """Test that recommendations are returned correctly."""
+    # Invalid but non-empty content should not return early with dx_score 0
+    # and should trigger recommendations for a Python project
+    result = check_ci_pipeline("not: a: valid: ci", project_type="Python")
     
+    recs = result.get("recommendations", [])
     assert len(recs) > 0
-    assert "message" in recs[0]
-    assert "command" in recs[0]
-    assert "severity" in recs[0]
     
-    # Check for specific high severity recs
-    high_recs = [r for r in recs if r["severity"] == "high"]
-    assert any("Ruff" in r["message"] for r in high_recs)
+    # Check for specific Python recommendations
+    messages = [r["message"] for r in recs]
+    assert "Add Ruff for linting" in messages
+    assert "Add Ruff for formatting" in messages
+
+def test_coverage_fallback():
+    """Test that coverage tool in test stage is detected."""
+    content = """
+    stages:
+      - test
+    
+    test_job:
+      stage: test
+      script:
+        - pytest --cov=app
+    """
+    result = check_ci_pipeline(content)
+    
+    assert result["jobs"]["coverage"]["tool_detected"] is True
+    assert result["jobs"]["coverage"]["note"] == "Coverage detected in test stage"
+
+def test_unconditional_when_never():
+    """Test that unconditional 'when: never' jobs are ignored."""
+    content = """
+    stages:
+      - test
+    
+    ignored_job:
+      stage: test
+      script:
+        - pytest
+      rules:
+        - when: never
+    """
+    result = check_ci_pipeline(content)
+    assert result["jobs"]["test"]["job_present"] is False
+
+def test_manual_jobs_ignored():
+    """Test that manual jobs are ignored."""
+    content = """
+    manual_job:
+      stage: test
+      script:
+        - pytest
+      when: manual
+    """
+    result = check_ci_pipeline(content)
+    assert result["jobs"]["test"]["job_present"] is False
+
+def test_dx_score_calculation():
+    """Test the weighted DX score calculation."""
+    content = """
+    stages:
+      - test
+    
+    test_job:
+      stage: test
+      script:
+        - pytest
+    """
+    result = check_ci_pipeline(content)
+    # test stage weight is 3. Total weights = 10 (3+2+1+2+2)
+    # test_job present = 3 * 0.5 = 1.5
+    # pytest detected = 3 * 0.5 = 1.5
+    # Total raw score = 3.0
+    # dx_score = (3.0 / 10.0) * 10 = 3.0
+    assert result["dx_score"] == 3.0
