@@ -6,6 +6,9 @@ from urllib.parse import urlparse
 import streamlit as st
 from gitlab import GitlabGetError
 
+# --- New Import ---
+from gitlab_utils.pipeline_checker import check_ci_pipeline
+
 # --- Helper Functions (copied/adapted from app.py) ---
 
 
@@ -237,6 +240,15 @@ def check_project_compliance(project, branch=None):
         report["description_present"] = bool(project.description and project.description.strip())
         report["tags_present"] = len(project.tags.list(per_page=1)) > 0
 
+        # --- DX CI Pipeline Check ---
+        ci_yaml_content = read_file_content(project, ".gitlab-ci.yml", branch)
+        if ci_yaml_content:
+            report[".gitlab-ci.yml"] = True
+            report["dx_ci"] = check_ci_pipeline(ci_yaml_content)
+        else:
+            report[".gitlab-ci.yml"] = False
+            report["dx_ci"] = None
+
     except Exception as e:
         report["error"] = f"Error during compliance check: {e}"
     return report
@@ -309,6 +321,64 @@ def get_suggestions_for_missing_items(report):
     elif report.get("readme_needs_improvement"):
         st.markdown("🟡 **README needs improvement** — Consider adding Installation/Usage/License/Contributing.")
 
+    if not report.get(".gitlab-ci.yml"):
+        st.markdown("❌ **.gitlab-ci.yml missing** — Add a `.gitlab-ci.yml` for CI/CD.")
+
+
+def render_dx_ci_pipeline_ui(dx_report):
+    st.markdown("#### 🧠 DX Checker → CI Pipeline")
+
+    if "error" in dx_report:
+        st.error(f"Error parsing CI configuration: {dx_report['error']}")
+        return
+
+    # Display DX Score
+    score = dx_report.get("dx_score", 0)
+    st.metric("CI DX Score", f"{score}/10")
+
+    from gitlab_utils.pipeline_checker import EXPECTED_STAGES
+
+    # Stage Status Overview
+    st.markdown("---")
+    cols = st.columns(len(EXPECTED_STAGES))
+    for i, stage in enumerate(EXPECTED_STAGES):
+        details = dx_report.get("jobs", {}).get(stage, {})
+        with cols[i]:
+            if not details.get("stage_present"):
+                st.markdown(f"❌ **{stage}**")
+                st.caption("Missing stage")
+            else:
+                job_icon = "✅" if details.get("job_present") else "❌"
+                tool_icon = "✅" if details.get("tool_detected") else "❌"
+                st.markdown(f"**{stage}**")
+                st.write(f"Job: {job_icon}")
+                st.write(f"Tool: {tool_icon}")
+                if details.get("note"):
+                    st.caption(f"_{details['note']}_")
+                if details.get("detected_tools"):
+                    st.caption(f"Tools: {', '.join(details['detected_tools'])}")
+                if details.get("indirect_execution"):
+                    st.caption("⚠️ _Indirect Execution (Shell/Make)_")
+
+    # Display Issues with severity icons
+    issues = dx_report.get("issues", [])
+    if issues:
+        st.markdown("##### 🚩 Issues & Improvements:")
+        for issue in issues:
+            icon = "🔴" if issue.get("severity") == "error" else "🟡"
+            st.markdown(f"{icon} {issue.get('message')}")
+    else:
+        st.success("No DX CI pipeline issues detected!")
+
+    # Display Structured Recommendations
+    recs = dx_report.get("recommendations", [])
+    if recs:
+        with st.expander("💡 View Advanced Recommendations"):
+            for rec in recs:
+                severity_icon = "🔥" if rec.get("severity") == "high" else "⚡"
+                st.markdown(f"**{severity_icon} {rec.get('message')}**")
+                st.code(rec.get("command"), language="bash")
+
 
 def render_project_compliance_ui(report, project=None, branch=None, _classification=None):
     if report.get("error"):
@@ -357,6 +427,13 @@ def render_project_compliance_ui(report, project=None, branch=None, _classificat
             else:
                 icon = "✅" if status else "❌"
             st.write(f"{icon} {label}")
+
+    st.markdown("---")
+
+    if report.get("dx_ci"):
+        render_dx_ci_pipeline_ui(report["dx_ci"])
+    elif not report.get(".gitlab-ci.yml", True):
+        st.warning("⚠️ `.gitlab-ci.yml` not found. DX CI Pipeline validation skipped.")
 
 
 def render_compliance_mode(gl_client):
@@ -453,6 +530,7 @@ def render_batch_project_compliance_internal(gl_client):
                     "GitProcess": "✅"
                     if report.get("issue_templates_folder") or report.get("merge_request_templates_folder")
                     else "❌",
+                    "DX Score": f"{report['dx_ci'].get('dx_score', 0)}/10" if report.get("dx_ci") else "❌",
                 }
                 if report.get("error"):
                     row["Error"] = report["error"]
