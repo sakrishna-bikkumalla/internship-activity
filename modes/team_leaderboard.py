@@ -511,8 +511,8 @@ def _render_json_upload() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_create_team_form() -> None:
-    """Expandable form for creating a brand-new team."""
+def _render_create_team_form(scope: str = "all") -> None:
+    """Expandable form for creating a brand-new team. scope='all' for All Teams context, 'specific' for No Team context."""
     # Don't show either form while an edit is active
     if st.session_state.get("edit_team_index") is not None:
         return
@@ -610,6 +610,7 @@ def _render_create_team_form() -> None:
                     "team_name": team_name.strip(),
                     "project_name": project_name.strip(),
                     "members": list(st.session_state["_lb_draft_members"]),
+                    "scope": scope,  # 'all' or 'specific'
                 }
             )
             st.session_state["_lb_draft_members"] = []
@@ -617,6 +618,8 @@ def _render_create_team_form() -> None:
             st.session_state["_lb_triggered"] = False
             st.session_state["_lb_cached_results"] = None  # invalidate cache
             st.session_state["_lb_last_filters"] = None
+            # Queue new team for auto-selection on the next rerun
+            st.session_state["_lb_pending_team_select"] = team_name.strip()
             st.success(f'✅ Team **"{team_name}"** saved!')
             st.rerun()
 
@@ -754,9 +757,18 @@ def _render_edit_form(edit_idx: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_teams_overview() -> None:
+def _render_teams_overview(filter_team_name: str | None = None) -> None:
     """Show all configured teams with Edit and Delete controls."""
-    teams: list[dict] = st.session_state["teams"]
+    all_teams: list[dict] = st.session_state["teams"]
+
+    if filter_team_name == "All Teams" or filter_team_name is None:
+        # In "All Teams" context: only show teams with scope 'all' (or no scope set = legacy)
+        teams = [t for t in all_teams if t.get("scope", "all") == "all"]
+    elif filter_team_name == "No Team":
+        teams = []
+    else:
+        # Specific team selected
+        teams = [t for t in all_teams if t["team_name"] == filter_team_name]
     active_edit = st.session_state.get("edit_team_index")
 
     if not teams:
@@ -1393,6 +1405,101 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
 
+def _render_specific_team_analytics(
+    team_name: str, project_name: str, member_rows: list[dict], totals: dict, raw_results: list[dict]
+) -> None:
+    """Detailed analytics view for a specific team."""
+    st.subheader(f"🎯 Detailed View: {team_name}")
+    if project_name:
+        st.caption(f"Project: {project_name}")
+
+    # 1. Team Metrics Dashboard
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Commits", totals.get("Total Commits", 0))
+    m2.metric("MR Merged", totals.get("MR Merged", 0))
+    m3.metric("MR Open", totals.get("MR Open", 0))
+    m4.metric("MR Closed", totals.get("MR Closed", 0))
+    m5.metric("Issues Raised", totals.get("Issues Raised", 0))
+    m6.metric("Issues Closed", totals.get("Issues Closed", 0))
+
+    # 2. Individual User Performance
+    st.markdown("#### 👤 Individual User Performance")
+    user_perf_cols = [
+        "Username",
+        "Status",
+        "Error",
+        "Total Commits",
+        "Issues Raised",
+        "Issues Closed",
+        "MR Created",
+        "MR Merged",
+        "MR Open",
+        "MR Closed",
+        "Score",
+    ]
+    if member_rows:
+        df_users = pd.DataFrame(member_rows)
+        # Ensure all columns exist
+        for col in user_perf_cols:
+            if col not in df_users.columns:
+                df_users[col] = 0
+        st.dataframe(df_users[user_perf_cols], use_container_width=True, hide_index=True)
+    else:
+        st.info("No member data available.")
+
+    # 3. Activity Feed (MRs & Issues)
+    st.markdown("#### 📑 Activity Feed")
+    activity_data = []
+
+    for user_res in raw_results:
+        if not user_res or not isinstance(user_res, dict):
+            continue
+        if user_res.get("status") != "Success":
+            continue
+
+        data = user_res.get("data", {})
+        username = user_res.get("username", "unknown")
+
+        # MRs
+        for mr in data.get("mrs", []):
+            activity_data.append(
+                {
+                    "Date": mr.get("created_at")[:10] if mr.get("created_at") else "—",
+                    "Type": "Merge Request",
+                    "User": username,
+                    "Title": mr.get("title", "—"),
+                    "Status": str(mr.get("state", "—")).capitalize(),
+                    "Link": mr.get("web_url", "#"),
+                }
+            )
+
+        # Issues
+        for issue in data.get("issues", []):
+            activity_data.append(
+                {
+                    "Date": issue.get("created_at")[:10] if issue.get("created_at") else "—",
+                    "Type": "Issue",
+                    "User": username,
+                    "Title": issue.get("title", "—"),
+                    "Status": str(issue.get("state", "—")).capitalize(),
+                    "Link": issue.get("web_url", "#"),
+                }
+            )
+
+    if activity_data:
+        df_activity = pd.DataFrame(activity_data).sort_values("Date", ascending=False)
+        st.dataframe(
+            df_activity,
+            column_config={
+                "Link": st.column_config.LinkColumn("GitLab Link"),
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No recent MRs or Issues found for this team.")
+
+
 # ---------------------------------------------------------------------------
 # UI: Overall Leaderboard
 # ---------------------------------------------------------------------------
@@ -1888,17 +1995,46 @@ def render_team_leaderboard(client) -> None:
         _render_ranking_page()
         return
 
-    # ── Section 1: Create Team ────────────────────────────────────────────
-    _render_create_team_form()
+    # Load teams to build the dropdown options
+    all_teams: list[dict] = st.session_state["teams"]
+    # Dropdown shows All Teams + specific teams only (scope != 'no_team')
+    global_teams = [t for t in all_teams if t.get("scope", "all") == "all"]
+    team_names = [t["team_name"] for t in all_teams]
+
+    # If a new team was just created, apply the queued auto-selection before the widget is instantiated
+    if "_lb_pending_team_select" in st.session_state:
+        st.session_state["_lb_selected_team_dropdown"] = st.session_state.pop("_lb_pending_team_select")
+
+    # --- Team Filter Dropdown ---
+    st.markdown("### 🎯 Team Filter")
+    selected_team = st.selectbox(
+        "Select Team to Analyze",
+        options=["No Team", "All Teams"] + team_names,
+        index=0,
+        key="_lb_selected_team_dropdown",
+        help="Choose a specific team to view detailed metrics, or 'All Teams' for an overall comparison.",
+    )
     st.divider()
+
+    # ── Section 1: Create Team ────────────────────────────────────────────
+    _render_create_team_form(scope="specific" if selected_team == "No Team" else "all")
+    st.divider()
+
+    if selected_team == "No Team":
+        return
 
     # ── Section 2: Teams Overview (with inline edit) ──────────────────────
     st.markdown("### 📋 Configured Teams")
-    _render_teams_overview()
+    _render_teams_overview(selected_team)
     st.divider()
 
     # ── Section 3: Analysis ───────────────────────────────────────────────
-    teams: list[dict] = st.session_state["teams"]
+    # Only use teams corresponding to the current scope
+    if selected_team == "All Teams":
+        teams = global_teams
+    else:
+        teams = [t for t in all_teams if t["team_name"] == selected_team]
+
     if not teams:
         st.info("Add at least one team above to enable analysis.")
         return
@@ -1922,7 +2058,17 @@ def render_team_leaderboard(client) -> None:
         st.info("Click **▶️ Run Leaderboard Analysis** to fetch data for all teams.")
         return
 
-    # ── Cache key: fingerprint of current teams + date filters ────────────
+    if selected_team != "All Teams":
+        teams_to_process = [t for t in teams if t["team_name"] == selected_team]
+    else:
+        teams_to_process = teams
+
+    if not teams_to_process:
+        st.warning(f"The selected team '{selected_team}' could not be found.")
+        return
+
+    # ── Cache key: fingerprint of current ALL teams configuration + date filters ────────────
+    # We use ALL teams for the configuration key, so that changing the dropdown alone does not invalidate it.
     current_filters = {
         "teams": [
             {
@@ -1936,24 +2082,36 @@ def render_team_leaderboard(client) -> None:
         "until": until_iso,
     }
 
-    cached_results = st.session_state.get("_lb_cached_results")
-    last_filters = st.session_state.get("_lb_last_filters")
+    cached_results = st.session_state.get("_lb_cached_results", {}) or {}
+    last_filters = st.session_state.get("_lb_last_filters", {})
 
-    # If cache is valid and filters haven't changed, reuse cached data
-    if cached_results is not None and last_filters == current_filters and not run_button_clicked:
+    needs_fetch = run_button_clicked
+    if not cached_results:
+        needs_fetch = True
+    elif last_filters != current_filters:
+        needs_fetch = True
+    else:
+        # Check if we already have the requested data
+        for t in teams_to_process:
+            if t["team_name"] not in cached_results:
+                needs_fetch = True
+                break
+
+    if not needs_fetch:
         team_data = cached_results
     else:
         # ── Fetch ─────────────────────────────────────────────────────────
-        team_data = {}
+        # Retain existing cached results if we are just adding to it
+        team_data = cached_results if not run_button_clicked and last_filters == current_filters else {}
         progress = st.progress(0, text="Fetching team data…")
 
-        for idx, team in enumerate(teams):
+        for idx, team in enumerate(teams_to_process):
             team_name = team["team_name"]
             usernames = [m["username"] for m in team.get("members", []) if m.get("username")]
 
             if not usernames:
                 team_data[team_name] = (team, [], _aggregate_team_totals([]))
-                progress.progress((idx + 1) / len(teams), text=f"Skipped: {team_name}")
+                progress.progress((idx + 1) / len(teams_to_process), text=f"Skipped: {team_name}")
                 continue
 
             with st.spinner(f"Fetching **{team_name}** ({len(usernames)} member(s))…"):
@@ -1971,7 +2129,7 @@ def render_team_leaderboard(client) -> None:
             member_rows = [_extract_member_row(r) for r in results if r]
             totals = _aggregate_team_totals(member_rows)
             team_data[team_name] = (team, member_rows, totals)
-            progress.progress((idx + 1) / len(teams), text=f"Done: {team_name}")
+            progress.progress((idx + 1) / len(teams_to_process), text=f"Done: {team_name}")
 
         progress.empty()
 
@@ -1979,20 +2137,27 @@ def render_team_leaderboard(client) -> None:
             st.error("No team data could be fetched. Check your GitLab connection.")
             return
 
-        # Store results and filters in cache
-        st.session_state["_lb_cached_results"] = team_data
+        # Only update cache if we processed something new.
+        # Don't erase the rest of the cache if we only fetched a sub-team.
+        for k, v in team_data.items():
+            cached_results[k] = v
+
+        st.session_state["_lb_cached_results"] = cached_results
         st.session_state["_lb_last_filters"] = current_filters
 
         # Cache ranking rows for the Ranking page
-        st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(team_data)
-        st.session_state["_lb_last_individual_rows"] = _build_individual_rows(team_data)
+        st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(st.session_state["_lb_cached_results"])
+        st.session_state["_lb_last_individual_rows"] = _build_individual_rows(st.session_state["_lb_cached_results"])
 
     # ── Render results ────────────────────────────────────────────────────
     st.markdown("### 📊 Team Results")
-    for team_name, (meta, member_rows, totals) in team_data.items():
-        _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
+    for team_name in [t["team_name"] for t in teams_to_process]:
+        if team_name in team_data:
+            meta, member_rows, totals = team_data[team_name]
+            _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
 
-    _render_overall_leaderboard(team_data)
+    if selected_team == "All Teams":
+        _render_overall_leaderboard(team_data)
 
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")

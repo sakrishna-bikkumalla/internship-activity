@@ -2,6 +2,7 @@ from .file_classifier import classify_files
 from .license_checker import check_license
 from .readme_checker import check_readme
 from .templates_checker import check_templates
+from .tools_checker import check_tools
 
 
 def run_project_compliance_checks(gl, project_id: int) -> dict:
@@ -14,6 +15,7 @@ def run_project_compliance_checks(gl, project_id: int) -> dict:
         "license": check_license(gl, project_id),
         "templates": check_templates(gl, project_id),
         "file_types": classify_files(gl, project_id),
+        "tools": check_tools(gl, project_id),
     }
 
     return results

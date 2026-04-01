@@ -4,6 +4,7 @@ from .file_classifier import classify_files
 from .license_checker import check_license
 from .readme_checker import check_readme
 from .templates_checker import check_templates
+from .tools_checker import check_tools
 
 
 def get_project_compliance(gl, project_id: int) -> dict:
@@ -13,6 +14,7 @@ def get_project_compliance(gl, project_id: int) -> dict:
         "license": check_license(gl, project_id),
         "templates": check_templates(gl, project_id),
         "file_types": classify_files(gl, project_id),
+        "tools": check_tools(gl, project_id),
     }
 
 
@@ -29,6 +31,18 @@ def render_project_compliance(gl, project_id: int):
 
     with col2:
         st.metric("Templates", results["templates"]["status"])
+
+    st.markdown("### 🛠 Tools Found")
+    
+    if "error" in results.get("tools", {}):
+        st.error(f"Error checking tools: {results['tools']['error']}")
+    else:
+        for category, tool_dict in results.get("tools", {}).items():
+            active_tools = [tool for tool, present in tool_dict.items() if present]
+            if active_tools:
+                st.markdown(f"**{category.replace('_', ' ').title()}**: {', '.join(active_tools)}")
+            else:
+                st.markdown(f"**{category.replace('_', ' ').title()}**: None")
 
     st.markdown("### 📂 File Classification")
     st.json(results["file_types"])

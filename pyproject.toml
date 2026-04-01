@@ -82,6 +82,6 @@ dev = [
 ]
 
 [tool.vulture]
-exclude = ["*__init__.py", "tests/", "migrations/"]
+exclude = ["*__init__.py", "tests/", "migrations/", "venv/", ".venv/"]
 min_confidence = 80
 paths = ["."]
