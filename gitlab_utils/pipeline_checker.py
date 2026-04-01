@@ -4,12 +4,13 @@ from typing import Any, Dict, List
 import yaml
 
 EXPECTED_STAGES = ["test", "lint", "format", "type_check", "coverage"]
+
 STAGE_TOOLS = {
-    "test": ["pytest", "unittest"],
-    "lint": ["ruff", "flake8"],
-    "format": ["black", "isort"],
-    "type_check": ["mypy", "pyright"],
-    "coverage": ["coverage", "pytest-cov", "--cov", "cov-report"],
+    "test": ["pytest", "unittest", "jest", "vitest", "mocha", "ava", "cypress", "playwright"],
+    "lint": ["ruff", "flake8", "pylint", "eslint", "biome", "jshint", "stylelint"],
+    "format": ["black", "isort", "prettier", "biome", "clang-format"],
+    "type_check": ["mypy", "pyright", "tsc", "typescript", "flow"],
+    "coverage": ["coverage", "pytest-cov", "istanbul", "nyc", "c8", "vitest run --coverage"],
 }
 
 # New weighted scoring per stage
@@ -74,7 +75,7 @@ def is_active_job(job: Dict[str, Any]) -> bool:
     return True
 
 
-def check_ci_pipeline(ci_content: str) -> Dict[str, Any]:
+def check_ci_pipeline(ci_content: str, project_type: str = "Unknown") -> Dict[str, Any]:
     """
     Refined DX CI Pipeline Analyzer.
     Validates stages, jobs, tool usage, and provides insights with severity classification.
@@ -233,30 +234,72 @@ def check_ci_pipeline(ci_content: str) -> Dict[str, Any]:
 
     # 8. Structured Recommendations (Bonus)
     recommendations = []
+    is_python = "Python" in project_type
+    is_js_ts = any(x in project_type for x in ["JavaScript", "TypeScript", "JS/TS"])
+
     if not result["jobs"]["lint"]["tool_detected"]:
-        recommendations.append(
-            {"message": "Add Ruff for linting", "command": "pip install ruff && ruff check .", "severity": "high"}
-        )
+        if is_python:
+            recommendations.append(
+                {"message": "Add Ruff for linting", "command": "uv add --dev ruff && ruff check .", "severity": "high"}
+            )
+        elif is_js_ts:
+            recommendations.append(
+                {
+                    "message": "Add ESLint or Biome for linting",
+                    "command": "npm install --save-dev eslint OR npm install --save-dev @biomejs/biome",
+                    "severity": "high",
+                }
+            )
+
     if not result["jobs"]["format"]["tool_detected"]:
-        recommendations.append(
-            {
-                "message": "Add Black or Isort for formatting",
-                "command": "pip install black isort && black . && isort .",
-                "severity": "medium",
-            }
-        )
+        if is_python:
+            recommendations.append(
+                {"message": "Add Ruff for formatting", "command": "ruff format .", "severity": "medium"}
+            )
+        elif is_js_ts:
+            recommendations.append(
+                {
+                    "message": "Add Prettier for formatting",
+                    "command": "npm install --save-dev prettier",
+                    "severity": "medium",
+                }
+            )
+
     if not result["jobs"]["coverage"]["tool_detected"]:
-        recommendations.append(
-            {
-                "message": "Add coverage reporting",
-                "command": "pip install pytest-cov && pytest --cov=.",
-                "severity": "high",
-            }
-        )
+        if is_python:
+            recommendations.append(
+                {
+                    "message": "Add coverage reporting",
+                    "command": "uv add --dev pytest-cov && pytest --cov=.",
+                    "severity": "high",
+                }
+            )
+        elif is_js_ts:
+            recommendations.append(
+                {
+                    "message": "Add coverage reporting (Jest/Vitest)",
+                    "command": "npm test -- --coverage",
+                    "severity": "high",
+                }
+            )
+
     if not result["jobs"]["type_check"]["tool_detected"]:
-        recommendations.append(
-            {"message": "Add Mypy for type checking", "command": "pip install mypy && mypy .", "severity": "medium"}
-        )
+        if is_python:
+            recommendations.append(
+                {
+                    "message": "Add Mypy for type checking",
+                    "command": "uv add --dev mypy && mypy .",
+                    "severity": "medium",
+                }
+            )
+        elif is_js_ts:
+            recommendations.append(
+                {
+                    "message": "Add TypeScript for type checking",
+                    "command": "npm install --save-dev typescript && npx tsc",
+                    "severity": "medium",
+                }
+            )
 
     result["recommendations"] = recommendations
 

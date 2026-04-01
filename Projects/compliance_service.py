@@ -32,10 +32,11 @@ def run_project_compliance_checks(gl, project_id: int) -> Dict[str, Any]:
     }
 
     # --- GitLab CI Deep Dive ---
+    project_type = results["tools"].get("project_type", "Unknown")
     try:
         f = project.files.get(file_path=".gitlab-ci.yml", ref=branch)
         ci_content = base64.b64decode(f.content).decode("utf-8")
-        results["dx_ci"] = check_ci_pipeline(ci_content)
+        results["dx_ci"] = check_ci_pipeline(ci_content, project_type=project_type)
     except Exception:
         pass
 
