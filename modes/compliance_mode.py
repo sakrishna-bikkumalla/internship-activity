@@ -8,9 +8,9 @@ from Projects.compliance_service import get_dx_suggestions, run_project_complian
 
 
 @st.cache_data(ttl=60)
-def get_project_with_retries(gl_client, path_or_id):
+def get_project_with_retries(_gl_client, path_or_id):
     try:
-        return gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
+        return _gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
     except GitlabGetError:
         raise
 
@@ -32,7 +32,7 @@ def get_project_branches(project):
 
 
 def render_compliance_mode(gl_client):
-    st.subheader("🔍 Production-Grade DX Analysis")
+    st.subheader("🔍 Project Compliance Analysis")
 
     tabs = st.tabs(["Single Project", "Batch Projects"])
 
@@ -42,7 +42,7 @@ def render_compliance_mode(gl_client):
             "Enter Project ID or URL", placeholder="https://gitlab.com/group/project", key="single_project_input"
         )
 
-        if st.button("Run Ultimate Analysis", key="run_analysis_single"):
+        if st.button("Run Compliance Analysis", key="run_analysis_single"):
             if project_input:
                 try:
                     with st.spinner("Analyzing project..."):
@@ -54,7 +54,7 @@ def render_compliance_mode(gl_client):
                         col1, col2, col3 = st.columns(3)
                         col1.metric("DX Score", f"{report.get('dx_score', 0)}%")
                         col2.metric("Stack", report.get("tools", {}).get("project_type", "Unknown"))
-                        col3.metric("AGPLv3", "✅" if report["license"].get("valid") else "❌")
+                        col3.metric("AGPLv3 Compliance", "✅" if report["license"].get("valid") else "❌")
 
                         # Tabs for details
                         d_tabs = st.tabs(["Tools & Quality", "Security", "Testing", "Automation", "Suggestions"])
@@ -107,7 +107,7 @@ def render_batch_project_compliance_internal(gl_client):
 
                 return {
                     "Project": project.name_with_namespace,
-                    "Score": f"{report.get('dx_score', 0)}%",
+                    "DX Score": f"{report.get('dx_score', 0)}%",
                     "Stack": report.get("tools", {}).get("project_type", "Unknown"),
                     "AGPLv3": "✅" if report["license"].get("valid") else "❌",
                     "Security": "✅" if report["tools"]["security"].get("secret_scanning") else "❌",
@@ -125,5 +125,5 @@ def render_batch_project_compliance_internal(gl_client):
                 progress_bar.progress((i + 1) / len(lines))
 
         if results:
-            st.write("### 📊 Ultimate Batch Summary")
+            st.write("### 📊 Batch Compliance Summary")
             st.dataframe(results)

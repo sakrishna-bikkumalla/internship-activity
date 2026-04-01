@@ -6,7 +6,7 @@ from .compliance_service import get_dx_suggestions, run_project_compliance_check
 
 
 def render_dx_ci_pipeline_ui(dx_report: Dict[str, Any]):
-    st.markdown("#### 🧠 CI Pipeline Deep-Dive")
+    st.markdown("#### 🧠 CI Pipeline Analysis")
 
     if "error" in dx_report:
         st.error(f"Error parsing CI configuration: {dx_report['error']}")
@@ -41,15 +41,15 @@ def render_dx_ci_pipeline_ui(dx_report: Dict[str, Any]):
 
 
 def render_project_compliance(gl, project_id: int):
-    st.subheader("📦 Production-Grade DX Analysis")
+    st.subheader("📦 Project Compliance Analysis")
 
-    with st.spinner("Deep analysis of tools, CI/CD, and quality gates..."):
+    with st.spinner("Analyzing tools, CI/CD, and quality gates..."):
         report = run_project_compliance_checks(gl, project_id)
 
     # --- Summary Metrics ---
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("DX Score", f"{report.get('dx_score', 0)}%")
+        st.metric("Compliance Score", f"{report.get('dx_score', 0)}%")
     with col2:
         lang = report.get("tools", {}).get("project_type", "Unknown")
         st.metric("Stack", lang)
@@ -103,10 +103,10 @@ def render_project_compliance(gl, project_id: int):
 
     # --- Actionable Suggestions ---
     st.markdown("---")
-    st.markdown("### 📌 Actionable DX Suggestions")
+    st.markdown("### 📌 Actionable Compliance Suggestions")
     suggestions = get_dx_suggestions(report)
     if not suggestions:
-        st.success("Your project DX is absolutely perfect! No suggestions.")
+        st.success("Your project compliance is absolutely perfect! No suggestions.")
     else:
         for sug in suggestions:
             with st.expander(f"❌ {sug['item']} — {sug['reason']}"):
@@ -115,14 +115,14 @@ def render_project_compliance(gl, project_id: int):
 
 def render_project_section(gitlab_url: str, gitlab_token: str):
     """Main Streamlit section for project compliance checks."""
-    st.subheader("📦 Ultimate Project Compliance")
+    st.subheader("📦 Project Compliance")
 
     project_ref = st.text_input(
         "Enter Project ID or Full Path",
         placeholder="e.g. 12345 or group/subgroup/project",
     )
 
-    if not st.button("Run Project Compliance"):
+    if not st.button("Run Project Compliance Analysis"):
         return
 
     if not project_ref.strip():
