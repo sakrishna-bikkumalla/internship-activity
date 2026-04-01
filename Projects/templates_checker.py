@@ -1,13 +1,13 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
-def check_templates(gl, project_id: int) -> Dict[str, Any]:
+def check_templates(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Detailed GitLab templates checker for issues and MRs.
     """
     try:
         project = gl.projects.get(project_id)
-        branch = getattr(project, "default_branch", "main")
+        branch = ref or getattr(project, "default_branch", "main")
 
         result = {
             "issue_templates_folder": False,

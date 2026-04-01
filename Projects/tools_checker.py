@@ -1,19 +1,19 @@
 import base64
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from gitlab_utils.parsers import parse_json, parse_yaml
 
 from .project_detector import detect_project_type
 
 
-def check_tools(gl, project_id: int) -> Dict[str, Any]:
+def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Ultimate DX-checker: Deep analysis of CLI tools and CI/CD pipelines.
     Checks for: ruff, uv audit, vulture, knip, mypy, git-cliff, secret scanning, etc.
     """
     try:
         project = gl.projects.get(project_id)
-        branch = getattr(project, "default_branch", "main")
+        branch = ref or getattr(project, "default_branch", "main")
 
         # Fetch root files for language detection
         try:

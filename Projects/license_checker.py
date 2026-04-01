@@ -1,14 +1,14 @@
 import base64
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
-def check_license(gl, project_id: int) -> Dict[str, Any]:
+def check_license(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Detailed AGPLv3 license checker.
     """
     try:
         project = gl.projects.get(project_id)
-        branch = getattr(project, "default_branch", "main")
+        branch = ref or getattr(project, "default_branch", "main")
 
         license_variants = ["LICENSE", "LICENSE.md", "LICENSE.txt"]
         content = ""

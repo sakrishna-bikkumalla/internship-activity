@@ -1,5 +1,5 @@
 import base64
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from gitlab_utils.pipeline_checker import check_ci_pipeline
 
@@ -11,23 +11,23 @@ from .templates_checker import check_templates
 from .tools_checker import check_tools
 
 
-def run_project_compliance_checks(gl, project_id: int) -> Dict[str, Any]:
+def run_project_compliance_checks(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Ultimate entry point: Runs all production-grade compliance checks for a project.
     """
     try:
         project = gl.projects.get(project_id)
-        branch = getattr(project, "default_branch", "main")
+        branch = ref or getattr(project, "default_branch", "main")
     except Exception:
         branch = "main"
 
     results: Dict[str, Any] = {
-        "readme": check_readme(gl, project_id),
-        "license": check_license(gl, project_id),
-        "templates": check_templates(gl, project_id),
+        "readme": check_readme(gl, project_id, ref=branch),
+        "license": check_license(gl, project_id, ref=branch),
+        "templates": check_templates(gl, project_id, ref=branch),
         "metadata": check_metadata(gl, project_id),
-        "file_types": classify_files(gl, project_id),
-        "tools": check_tools(gl, project_id),
+        "file_types": classify_files(gl, project_id, ref=branch),
+        "tools": check_tools(gl, project_id, ref=branch),
         "dx_ci": None,
     }
 
