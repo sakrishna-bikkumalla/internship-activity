@@ -5,6 +5,7 @@ Test script to verify the changes made to app.py:
 3. README scores appear for every project
 """
 
+import os
 import re
 import sys
 
@@ -129,5 +130,110 @@ def main():
         return 1
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
+
+
+class TestMainFunction:
+    """Tests for the main() function in test_changes.py."""
+
+    def test_main_passes(self):
+        """Test that main() passes when all tests pass."""
+        from tests import test_changes
+
+        result = test_changes.main()
+        assert result == 0
+
+    def test_main_returns_zero_on_success(self):
+        """Test that main returns 0 when all tests pass."""
+        import tests.test_changes as tc
+
+        assert tc.main() == 0
+
+    def test_main_prints_results(self, capsys):
+        """Test that main prints results."""
+        import tests.test_changes as tc
+
+        tc.main()
+        captured = capsys.readouterr()
+        assert "Test Results:" in captured.out
+
+    def test_main_prints_passed_tests(self, capsys):
+        """Test that main prints passed tests."""
+        import tests.test_changes as tc
+
+        tc.main()
+        captured = capsys.readouterr()
+        assert "PASS" in captured.out
+
+    def test_main_success_message(self, capsys):
+        """Test that main prints success message when all tests pass."""
+        import tests.test_changes as tc
+
+        tc.main()
+        captured = capsys.readouterr()
+        assert "All tests passed" in captured.out or "passed" in captured.out
+
+    def test_exception_handling_in_main(self):
+        """Test that main handles exceptions gracefully."""
+        import tests.test_changes as tc
+
+        original_test = tc.test_file_categories_removed
+
+        def failing_test():
+            raise RuntimeError("Test error")
+
+        tc.test_file_categories_removed = failing_test
+        try:
+            result = tc.main()
+            assert result == 1
+        finally:
+            tc.test_file_categories_removed = original_test
+
+    def test_main_handles_non_assertion_errors(self, capsys):
+        """Test that main handles non-AssertionError exceptions and prints error."""
+        import tests.test_changes as tc
+
+        original_test = tc.test_file_categories_removed
+
+        def failing_test():
+            raise ValueError("Non-assertion error")
+
+        tc.test_file_categories_removed = failing_test
+        try:
+            tc.main()
+            captured = capsys.readouterr()
+            assert "ERROR" in captured.out or "ValueError" in captured.out
+        finally:
+            tc.test_file_categories_removed = original_test
+
+    def test_name_main_block(self, tmp_path):
+        """Test that the if __name__ == '__main__' block executes."""
+        import subprocess
+
+        test_file = __file__
+        result = subprocess.run(
+            [sys.executable, test_file],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.dirname(test_file)) or ".",
+        )
+        assert result.returncode == 0
+        assert "All tests passed" in result.stdout
+
+    def test_main_handles_assertion_error(self, capsys):
+        """Test that main handles AssertionError and prints fail message."""
+        import tests.test_changes as tc
+
+        original_test = tc.test_file_categories_removed
+
+        def failing_test():
+            raise AssertionError("Expected failure")
+
+        tc.test_file_categories_removed = failing_test
+        try:
+            tc.main()
+            captured = capsys.readouterr()
+            assert "FAIL" in captured.out or "AssertionError" in captured.out
+        finally:
+            tc.test_file_categories_removed = original_test

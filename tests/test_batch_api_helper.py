@@ -85,14 +85,12 @@ def test_check_extensions_json_for_ruff():
     def mock_read(p, f, b):
         if f == ".vscode/extensions.json":
             return '{"recommendations": ["charliermarsh.ruff"]}'
-        return None
+        raise AssertionError("Unexpected file path: " + str(f))  # pragma: no cover
 
     assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=mock_read) is True
 
-    # Not found case
     assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=lambda p, f, b: None) is False
 
-    # Invalid JSON
     assert api_helper.check_extensions_json_for_ruff(project, read_file_fn=lambda p, f, b: "{invalid}") is False
 
 
@@ -108,13 +106,12 @@ def test_list_markdown_files_in_folder():
 def test_check_templates_presence():
     project = MagicMock()
 
-    # Mock issue templates find
     def mock_tree(path, ref):
         if path == ".gitlab/issue_templates":
             return [{"name": "bug.md"}]
         if path == ".gitlab/merge_request_templates":
             return [{"name": "mr.md"}]
-        return []
+        raise AssertionError("Unexpected path: " + str(path))  # pragma: no cover
 
     project.repository_tree.side_effect = mock_tree
     res = api_helper.check_templates_presence(project)
@@ -123,7 +120,6 @@ def test_check_templates_presence():
     assert res["merge_request_templates_folder"] is True
     assert "mr.md" in res["merge_request_template_files"]
 
-    # Exception case
     project.repository_tree.side_effect = Exception("fail")
     res = api_helper.check_templates_presence(project)
     assert res["issue_templates_folder"] is False
@@ -172,6 +168,11 @@ def test_check_project_compliance():
             return "GNU Affero General Public License version 3 19 November 2007"
         return None
 
+    res = api_helper.check_project_compliance(project, read_file_fn=mock_read)
+    assert res["README.md"] is True
+    assert res["LICENSE"] is True
+    assert res["license_status"] == "valid"
+
 
 def test_check_project_compliance_extended():
     project = MagicMock()
@@ -206,9 +207,82 @@ def test_internal_import_coverage():
     project.default_branch = "main"
     project.repository_tree.return_value = [{"name": "README.md"}, {"name": "LICENSE"}]
     project.tags.list.return_value = []
-    # Mock the internal imports to avoid hitting real API
     with patch("gitlab_utils.files_reader.read_file_content", return_value="some content"):
-        # This will trigger 'if read_file_fn is None' blocks
         api_helper.check_extensions_json_for_ruff(project)
         api_helper.check_license_content(project)
         api_helper.check_project_compliance(project)
+
+
+def test_check_project_compliance_with_python_files():
+    """Test that check_project_compliance handles python files."""
+    project = MagicMock()
+    project.default_branch = "main"
+    project.repository_tree.return_value = [
+        {"name": "README.md", "path": "README.md"},
+        {"name": "LICENSE", "path": "LICENSE"},
+        {"name": "main.py", "path": "main.py"},
+        {"name": "test.py", "path": "tests/test.py"},
+    ]
+    project.tags.list.return_value = []
+
+    def mock_read(p, f, b):
+        if f == "README.md":
+            return "Installation Guide"
+        if f == "LICENSE":
+            return "GNU General Public License"
+        return None
+
+    res = api_helper.check_project_compliance(project, read_file_fn=mock_read)
+    assert res.get("README.md") is not None
+    assert res.get("LICENSE") is not None
+
+
+def test_check_templates_with_both_folders():
+    """Test check_templates_presence with both folders."""
+    project = MagicMock()
+
+    def mock_tree(path, ref):
+        if path == ".gitlab/issue_templates":
+            return [{"name": "bug.md"}, {"name": "feature.md"}]
+        if path == ".gitlab/merge_request_templates":
+            return [{"name": "default.md"}]
+        raise AssertionError("Unexpected path: " + str(path))  # pragma: no cover
+
+    project.repository_tree.side_effect = mock_tree
+    res = api_helper.check_templates_presence(project)
+
+    assert res["issue_templates_folder"] is True
+    assert res["merge_request_templates_folder"] is True
+    assert len(res["issue_template_files"]) == 2
+    assert len(res["merge_request_template_files"]) == 1
+
+
+def test_classify_repository_files_edge_cases():
+    """Test classify_repository_files with edge cases."""
+    files = [
+        "setup.py",
+        "pyproject.toml",
+        "src/main.py",
+        "tests/test.py",
+        ".github/workflows/ci.yml",
+    ]
+    res = api_helper.classify_repository_files(files)
+    assert "setup.py" in res["python_files"]
+    assert "pyproject.toml" in res["common_requirements"]
+    assert "src/main.py" in res["project_files"]
+    assert "tests/test.py" in res["project_files"]
+    assert ".github/workflows/ci.yml" in res["tech_files"]
+
+
+def test_list_all_files_with_nested_paths():
+    """Test list_all_files with nested blob paths."""
+    project = MagicMock()
+    project.repository_tree.return_value = [
+        {"path": "src/module/file.py", "type": "blob"},
+        {"path": "src/module", "type": "tree"},
+        {"path": "docs/readme.md", "type": "blob"},
+    ]
+    files = api_helper.list_all_files(project)
+    assert "src/module/file.py" in files
+    assert "docs/readme.md" in files
+    assert "src/module" not in files

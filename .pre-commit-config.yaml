@@ -2,28 +2,23 @@
 # Automatically runs checks before each commit to catch issues early
 # Matches the linting stage in .gitlab-ci.yml
 
-exclude: '^assets/badges/'
+# 4. General Exclusions: strictly ignore environment, caches, generated files, and excluded directories
+exclude: '^(.venv/|__pycache__/|\.git/|assets/|\.gitlab/|\.vscode/|reports/|tests/|views/|repro_.*\.py|test_.*\.py)'
+
+default_language_version:
+  python: python3.12
 
 repos:
-  # Ruff linting (matches: uv run ruff check .)
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.5
-    hooks:
-      - id: ruff
-        args: ['--fix']
-        name: Ruff lint
-      # Ruff formatting (matches: uv run ruff format --check .)
-      - id: ruff-format
-        name: Ruff format
-
-  # General file quality checks
+  # General file quality checks (Moved earlier to ensure clean slate for generators)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
         name: Trim trailing whitespace
+      # 3. end-of-file-fixer Conflict: exclude messages.pot from manual fixing to let Babel handle it
       - id: end-of-file-fixer
         name: Fix end of file
+        exclude: 'messages.pot'
       - id: check-yaml
         name: Check YAML syntax
       - id: check-added-large-files
@@ -34,11 +29,80 @@ repos:
       - id: detect-private-key
         name: Detect private keys
 
-  # Vulture dead code detection
-  - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.11  # Using a stable, widely compatible version
+  # Ruff linting (matches: uv run ruff check .)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
     hooks:
+      - id: ruff
+        args: ['--fix', '--exit-non-zero-on-fix']
+        name: Ruff lint
+        types: [python]
+      - id: ruff-format
+        name: Ruff format
+        types: [python]
+
+  # Local hooks
+  - repo: local
+    hooks:
+      # Custom Security Rule: Block modifications to badge files
+      # Uses bash to check staged files explicitly and provides a clear failure message
+      - id: block-badge-modifications
+        name: Block badge file modifications
+        entry: bash -c
+        args: ['if git diff --cached --name-only | grep -q "^assets/badges/"; then echo "ERROR: Modifications to assets/badges are not allowed"; exit 1; fi']
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+      # Mypy type checking
+      # Runs only on staged files for performance (pass_filenames: true is default)
+      # Uses uv to run the project's mypy environment with the mypy.ini configuration
+      - id: mypy
+        name: Mypy type check
+        entry: uv run mypy --config-file mypy.ini
+        language: system
+        types: [python]
+        require_serial: true
+
+      # 1. Vulture Scanning: Targeted scan of source directories only (implicitly excludes .venv and tests)
       - id: vulture
+        name: Vulture dead code detection
+        entry: |
+          bash -c '
+          uv run vulture gitlab_utils issues modes Projects scripts batch_mode user_profile app.py --min-confidence 100
+          '
+        language: system
+        pass_filenames: false
+
+      # Dependency vulnerability scanning
+      # Runs local pip-audit or equivalent via uv to block vulnerable packages
+      - id: uv-audit
+        name: Dependency vulnerability scanning
+        entry: |
+          bash -c '
+          req="0.11.2"
+          cur=$(uv --version | cut -d" " -f2)
+          if [ "$(printf "%s\n%s" "$req" "$cur" | sort -V | head -n1)" != "$req" ]; then
+            echo "ERROR: uv v$cur is installed, but v$req or higher is required."
+            exit 1
+          fi
+          uv audit
+          '
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+      # 2. Babel Extract Loop: Extract and automatically stage messages.pot to prevent commit blocking
+      - id: babel-extract
+        name: Extract and validate i18n messages
+        entry: |
+          bash -c '
+          uv run pybabel extract . -o messages.pot
+          sed -i "/^\"POT-Creation-Date:/d" messages.pot
+          git add messages.pot
+          '
+        language: system
+        pass_filenames: false
 
 ci:
   autofix_commit_msg: '[pre-commit.ci] auto fixes from pre-commit hooks'

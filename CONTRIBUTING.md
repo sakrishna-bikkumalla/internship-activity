@@ -50,30 +50,48 @@ Thank you for your interest in contributing to **gitlab-compliance-checker**! We
 
 We use `pre-commit` to automatically run code quality checks before each commit:
 
-1. **Install pre-commit** (included in dev dependencies):
+1. **Install dependencies (including pre-commit)**:
    ```bash
    uv sync --all-extras
    ```
 
-2. **Install the git hooks**:
+2. **Install the git hooks** (including conventional commit linting):
    ```bash
-   pre-commit install
+   uv run pre-commit install
+   uv run pre-commit install --hook-type commit-msg
    ```
 
 3. **Run hooks manually** (optional):
    ```bash
-   pre-commit run --all-files  # Run on all files
-   pre-commit run              # Run on staged files
+   uv run pre-commit run --all-files  # Run on all files
+   uv run pre-commit run              # Run on staged files
    ```
 
-## Code Style and Testing
+### Running Individual Checks
 
-- This project uses `ruff` for linting and code formatting.
-- Tests are run with `pytest`.
-- Run tests locally before creating a merge request:
-  ```bash
-  uv run pytest tests/
-  ```
+If you want to run specific tools directly or via pre-commit without running the entire suite, you can use these commands:
+
+| Tool | Pre-commit Hook | Standalone Tool Command |
+| :--- | :--- | :--- |
+| **Ruff (Lint)** | `uv run pre-commit run ruff --all-files` | `uv run ruff check .` |
+| **Ruff (Format)** | `uv run pre-commit run ruff-format --all-files` | `uv run ruff format .` |
+| **Mypy** | `uv run pre-commit run mypy --all-files` | `uv run mypy --config-file mypy.ini .` |
+| **Vulture** | `uv run pre-commit run vulture --all-files` | `uv run vulture gitlab_utils/ modes/ Projects/ app.py --min-confidence 100` |
+| **UV Audit** | `uv run pre-commit run uv-audit --all-files` | `uv audit` |
+| **Babel** | `uv run pre-commit run babel-extract --all-files` | `uv run pybabel extract . -o messages.pot --no-creation-date` |
+| **Test Coverage** | N/A | `uv run pytest --cov --cov-report=term-missing` |
+
+### Running Tests
+
+Run tests locally before creating a merge request. You can run the entire suite or target specific areas:
+
+| Test Target | Command |
+| :--- | :--- |
+| **All Tests** | `uv run pytest` |
+| **Verbose Output** | `uv run pytest -v` |
+| **Stop on First Failure** | `uv run pytest -x` |
+| **Specific Directory** | `uv run pytest tests/` |
+| **Specific File** | `uv run pytest tests/test_app.py` |
 
 ## Code of Conduct
 
