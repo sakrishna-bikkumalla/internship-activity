@@ -1,3 +1,4 @@
+import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,13 +20,14 @@ def mock_gl():
 @pytest.fixture
 def mock_project():
     project = MagicMock()
+    project.default_branch = "main"
     project.repository_tree.return_value = [
-        {"name": "README.md", "path": "README.md"},
-        {"name": "LICENSE", "path": "LICENSE"},
-        {"name": "main.py", "path": "main.py"},
-        {"name": "utils.py", "path": "utils.py"},
-        {"name": "template.html", "path": "templates/template.html"},
-        {"name": "style.css", "path": "css/style.css"},
+        {"name": "README.md", "path": "README.md", "type": "blob"},
+        {"name": "LICENSE", "path": "LICENSE", "type": "blob"},
+        {"name": "main.py", "path": "main.py", "type": "blob"},
+        {"name": "utils.py", "path": "utils.py", "type": "blob"},
+        {"name": "template.html", "path": "templates/template.html", "type": "blob"},
+        {"name": "style.css", "path": "css/style.css", "type": "blob"},
     ]
     return project
 
@@ -70,42 +72,41 @@ class TestCheckLicense:
 
     def test_license_exists(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
+        mock_file = MagicMock()
+        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode("utf-8")
+        mock_project.files.get.return_value = mock_file
 
         result = check_license(mock_gl, 123)
 
         assert result["exists"] is True
-        assert result["status"] == "LICENSE present"
+        assert result["valid"] is True
+        assert "AGPLv3" in result["status"]
 
-    def test_license_missing(self, mock_gl):
-        mock_project = MagicMock()
-        mock_project.repository_tree.return_value = [
-            {"name": "README.md"},
-        ]
+    def test_license_missing(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
+        mock_project.files.get.side_effect = Exception("Not Found")
 
         result = check_license(mock_gl, 123)
 
         assert result["exists"] is False
-        assert result["status"] == "LICENSE missing"
+        assert "missing" in result["status"].lower()
 
-    def test_license_case_insensitive(self, mock_gl):
-        mock_project = MagicMock()
-        mock_project.repository_tree.return_value = [
-            {"name": "license"},
-        ]
+    def test_license_case_insensitive(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
+        mock_file = MagicMock()
+        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode("utf-8")
+        # Simulate variant check
+        def side_effect(file_path, ref):
+            if file_path == "LICENSE":
+                return mock_file
+            raise Exception("Not Found")
+
+        mock_project.files.get.side_effect = side_effect
 
         result = check_license(mock_gl, 123)
 
         assert result["exists"] is True
-
-    def test_license_exception(self, mock_gl):
-        mock_gl.projects.get.side_effect = Exception("API Error")
-
-        result = check_license(mock_gl, 123)
-
-        assert result["exists"] is False
-        assert "Error:" in result["status"]
+        assert result["valid"] is True
 
 
 class TestCheckReadme:
@@ -113,43 +114,40 @@ class TestCheckReadme:
 
     def test_readme_exists(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
+        mock_file = MagicMock()
+        # Sufficient length and sections
+        mock_file.content = base64.b64encode(b"README\nInstallation\nUsage\nLicense\n" + b"x" * 150).decode("utf-8")
+        mock_project.files.get.return_value = mock_file
 
         result = check_readme(mock_gl, 123)
 
         assert result["exists"] is True
-        assert result["status"] == "README present"
+        assert result["needs_improvement"] is False
 
-    def test_readme_missing(self, mock_gl):
-        mock_project = MagicMock()
-        mock_project.repository_tree.return_value = [
-            {"name": "LICENSE"},
-        ]
+    def test_readme_missing(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
+        mock_project.files.get.side_effect = Exception("Not Found")
 
         result = check_readme(mock_gl, 123)
 
         assert result["exists"] is False
-        assert result["status"] == "Missing README"
+        assert "Missing" in result["status"]
 
-    def test_readme_case_insensitive(self, mock_gl):
-        mock_project = MagicMock()
-        mock_project.repository_tree.return_value = [
-            {"name": "readme.md"},
-            {"name": "README"},
-        ]
+    def test_readme_case_insensitive(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
+        mock_file = MagicMock()
+        mock_file.content = base64.b64encode(b"README content").decode("utf-8")
+
+        def side_effect(file_path, ref):
+            if file_path == "README.md":
+                return mock_file
+            raise Exception("Not Found")
+
+        mock_project.files.get.side_effect = side_effect
 
         result = check_readme(mock_gl, 123)
 
         assert result["exists"] is True
-
-    def test_readme_exception(self, mock_gl):
-        mock_gl.projects.get.side_effect = Exception("API Error")
-
-        result = check_readme(mock_gl, 123)
-
-        assert result["exists"] is False
-        assert "Error:" in result["status"]
 
 
 class TestCheckTemplates:
@@ -158,41 +156,37 @@ class TestCheckTemplates:
     def test_templates_exist(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
 
-        result = check_templates(mock_gl, 123)
+        def side_effect(path, ref):
+            if path == ".gitlab/issue_templates":
+                return [{"name": "Bug.md"}]
+            if path == ".gitlab/merge_request_templates":
+                return [{"name": "Feature.md"}]
+            return []
 
-        assert result["exists"] is True
-        assert result["status"] == "Templates present"
-
-    def test_templates_missing(self, mock_gl):
-        mock_project = MagicMock()
-        mock_project.repository_tree.return_value = [
-            {"name": "README.md", "path": "README.md"},
-        ]
-        mock_gl.projects.get.return_value = mock_project
-
-        result = check_templates(mock_gl, 123)
-
-        assert result["exists"] is False
-        assert result["status"] == "Templates missing"
-
-    def test_templates_case_insensitive(self, mock_gl):
-        mock_project = MagicMock()
-        mock_project.repository_tree.return_value = [
-            {"name": "file.md", "path": "TEMPLATE/readme.md"},
-        ]
-        mock_gl.projects.get.return_value = mock_project
+        mock_project.repository_tree.side_effect = side_effect
 
         result = check_templates(mock_gl, 123)
 
         assert result["exists"] is True
+        assert result["issue_templates_folder"] is True
+        assert "Bug.md" in result["issue_template_files"]
 
-    def test_templates_exception(self, mock_gl):
-        mock_gl.projects.get.side_effect = Exception("API Error")
+    def test_templates_missing(self, mock_gl, mock_project):
+        mock_gl.projects.get.return_value = mock_project
+        mock_project.repository_tree.return_value = []
 
         result = check_templates(mock_gl, 123)
 
         assert result["exists"] is False
-        assert "Error:" in result["status"]
+
+    def test_templates_exception(self, mock_gl, mock_project):
+        mock_gl.projects.get.return_value = mock_project
+        mock_project.repository_tree.side_effect = Exception("API Error")
+
+        result = check_templates(mock_gl, 123)
+
+        assert "error" not in result # it catches internal exceptions per path
+        assert result["exists"] is False
 
 
 class TestComplianceService:

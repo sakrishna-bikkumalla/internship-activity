@@ -10,7 +10,7 @@ STAGE_TOOLS = {
     "lint": ["ruff", "flake8", "pylint", "eslint", "biome", "jshint", "stylelint"],
     "format": ["black", "isort", "prettier", "biome", "clang-format"],
     "type_check": ["mypy", "pyright", "tsc", "typescript", "flow"],
-    "coverage": ["coverage", "pytest-cov", "istanbul", "nyc", "c8", "vitest run --coverage"],
+    "coverage": ["coverage", "pytest-cov", "pytest --cov", "istanbul", "nyc", "c8", "vitest run --coverage"],
 }
 
 # New weighted scoring per stage
@@ -39,15 +39,18 @@ def _parse_yaml(content: str) -> Dict[str, Any]:
 
 def contains_tool(script_text: str, tools: List[str]) -> List[str]:
     """
-    Returns list of detected tools using regex matching with word boundaries.
-    Avoids false positives like matching 'pytest' in 'pytest-cov'.
+    Returns list of detected tools using regex matching.
+    Improved to match tools that might be part of a command (e.g., 'pytest-cov' should match if 'pytest' is in tools)
+    while still using boundaries to avoid matching 'py' in 'pytest'.
     """
     detected = []
     for tool in tools:
-        # Use negative lookbehind/lookahead to ensure the tool is not preceded or followed by
-        # word characters or dashes (which \b normally includes as separators)
-        # This prevents 'pytest' from matching 'pytest-cov'
-        pattern = rf"(?<![\w-]){re.escape(tool)}(?![\w-])"
+        # We want to match 'tool' as a whole word, allowing hyphens as part of the word
+        # This matches 'pytest' in 'pytest --cov' but also 'pytest-cov' in 'pytest-cov .'
+        # We use word boundaries \b but need to be careful with hyphens.
+
+        # Simple heuristic: look for the tool as a word, or as part of a hyphenated word
+        pattern = rf"\b{re.escape(tool)}\b"
         if re.search(pattern, script_text, re.IGNORECASE):
             detected.append(tool)
     return detected
@@ -81,15 +84,15 @@ def check_ci_pipeline(ci_content: str, project_type: str = "Unknown") -> Dict[st
     Validates stages, jobs, tool usage, and provides insights with severity classification.
     """
     parsed_yaml = _parse_yaml(ci_content)
-    if not parsed_yaml:
+    if not ci_content.strip():
         return {
-            "error": "Invalid, empty, or non-dictionary YAML content",
+            "error": "Empty .gitlab-ci.yml content",
             "stages_present": [],
             "missing_stages": EXPECTED_STAGES,
             "jobs": {},
             "issues": [
                 {
-                    "message": "Invalid or empty .gitlab-ci.yml content",
+                    "message": "Empty .gitlab-ci.yml content",
                     "severity": "error",
                 }
             ],
@@ -97,6 +100,9 @@ def check_ci_pipeline(ci_content: str, project_type: str = "Unknown") -> Dict[st
         }
 
     issues: List[Dict[str, str]] = []
+    if not parsed_yaml:
+        issues.append({"message": "Invalid or non-dictionary YAML content", "severity": "error"})
+        parsed_yaml = {}
 
     # 1. Explicit vs Implicit Stages Detection
     has_explicit_stages = "stages" in parsed_yaml and isinstance(parsed_yaml["stages"], list)

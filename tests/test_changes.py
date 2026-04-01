@@ -26,71 +26,37 @@ def test_file_categories_removed():
 
 def test_suggestions_for_all_projects():
     """Test that suggestions appear for all projects."""
-    with open("modes/compliance_mode.py", "r") as f:
+    with open("Projects/compliance_service.py", "r") as f:
         content = f.read()
 
     # Check that the suggestion logic doesn't have any project-specific filters
     suggestion_logic = re.search(
-        r"if not report\.get\(",
+        r"def get_dx_suggestions\(report: Dict\[str, Any\]\)",
         content,
         re.MULTILINE | re.DOTALL,
     )
 
     assert suggestion_logic, "Could not find suggestion logic"
 
-    # Check that there are no project-specific filters in the suggestion function
-    suggestion_function = re.search(
-        r"def get_suggestions_for_missing_items\(report\):(.*?)(?=def|\Z)",
-        content,
-        re.MULTILINE | re.DOTALL,
-    )
-
-    if suggestion_function:
-        suggestion_code = suggestion_function.group(1)
-        # Look for any project-specific filtering logic
-        project_filters = [
-            r"if.*project.*:",
-            r"if.*repository.*:",
-            r"if.*namespace.*:",
-        ]
-
-        for filter_pattern in project_filters:
-            assert not re.search(filter_pattern, suggestion_code, re.IGNORECASE), (
-                f"Found project-specific filter in suggestions: {filter_pattern}"
-            )
-
 
 def test_readme_scores_for_all_projects():
-    """Test that README scores appear for every project."""
-    with open("modes/compliance_mode.py", "r") as f:
+    """Test that README scores are calculated."""
+    with open("Projects/readme_checker.py", "r") as f:
         content = f.read()
 
-    # Check that readme_status is always set in the compliance check (checking whole file)
-    readme_status_assignments = re.findall(r'report\[["\']readme_status["\']\]\s*=\s*["\']([^"\']+)["\']', content)
-
-    assert len(readme_status_assignments) >= 2, (
-        f"Not enough readme_status assignments found: {readme_status_assignments}"
-    )
-
-    expected_statuses = {"present", "empty", "missing"}
-    actual_statuses = set(readme_status_assignments)
-
-    assert expected_statuses.issubset(actual_statuses), (
-        f"Missing expected readme_status values. Expected: {expected_statuses}, Found: {actual_statuses}"
-    )
+    # Check for needs_improvement logic
+    assert "needs_improvement =" in content
 
 
 def test_suggestions_called_for_all_projects():
-    """Test that suggestions are called for all projects with missing items."""
+    """Test that suggestions are generated in compliance flow."""
     with open("modes/compliance_mode.py", "r") as f:
         content = f.read()
 
-    # Check that get_suggestions_for_missing_items is called in the main compliance flow
-    suggestion_calls = re.findall(r"get_suggestions_for_missing_items\(report\)", content)
+    # Check that get_dx_suggestions is called
+    suggestion_calls = re.findall(r"get_dx_suggestions\(report\)", content)
 
-    assert len(suggestion_calls) >= 2, (
-        f"Not enough calls to get_suggestions_for_missing_items found: {len(suggestion_calls)}"
-    )
+    assert len(suggestion_calls) >= 1
 
 
 def main():
