@@ -4,10 +4,10 @@ bad_issue.py
 Streamlit UI for the "BAD Issues (Batch)" mode.
 
 Fetches Issue data for all 34 users concurrently using ThreadPoolExecutor.
-Single endpoint per user: GET /issues?author_id=<id>&scope=all
+Single endpoint per user: GET /issues?assignee_id=<id>&scope=all
 
-Columns: Username | Closed Issues | No Desc | Improper Desc | No Labels
-         | No Milestone | No Time Spent | Long Open Time (>3 days)
+Columns: Username | Closed Issues | No Desc | No Labels
+         | No Milestone | No Time Spent | Long Open Time (>2 days)
 """
 
 from __future__ import annotations
@@ -23,13 +23,13 @@ from gitlab_utils.client import BATCH_USERNAMES
 @st.cache_data(ttl=3600)
 def cached_batch_evaluate_issues(_client, usernames_tuple):
     """Cache the batch issue evaluation results for 1 hour."""
-    return _client.batch_evaluate_issues(list(usernames_tuple))
+    return _client.batch_evaluate_issues(list(usernames_tuple), issue_scope="assignee")
 
 
 @st.cache_data(ttl=3600)
 def cached_single_user_issues(_client, username):
     """Cache single user issue evaluation results for 1 hour."""
-    return _client.batch_evaluate_issues([username])
+    return _client.batch_evaluate_issues([username], issue_scope="assignee")
 
 
 def render_bad_issue_batch_ui(client) -> None:
@@ -55,11 +55,15 @@ def render_bad_issue_batch_ui(client) -> None:
         df = pd.DataFrame(rows)
 
         # ── Summary metrics ──────────────────────────────────────────────────
+        total_assigned = int(df["Total Assigned"].sum())
+        total_opened = int(df["Opened Issues"].sum())
         total_closed = int(df["Closed Issues"].sum())
 
-        col1, col2 = st.columns(2)
-        col1.metric("Total Closed Issues", total_closed)
-        col2.metric("Total Users", len(df))
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Assigned", total_assigned)
+        col2.metric("Total Opened", total_opened)
+        col3.metric("Total Closed", total_closed)
+        col4.metric("Total Users", len(df))
 
         # ── Results table ────────────────────────────────────────────────────
         st.markdown("### 📋 BAD Issue Count per User")
@@ -74,25 +78,27 @@ def render_bad_issue_batch_ui(client) -> None:
 
                 summary_data = {
                     "Metric": [
+                        "Total Assigned",
+                        "Total Opened",
                         "Total Closed Issues",
                         "Total Users",
                         "Total No Desc",
-                        "Total Improper Desc",
                         "Total No Labels",
                         "Total No Milestone",
                         "Total No Time Spent",
-                        "Total Long Open Time",
+                        "Total Long Open Time (>2 days)",
                         "Total No Semantic Title",
                     ],
                     "Count": [
+                        total_assigned,
+                        total_opened,
                         total_closed,
                         len(df),
                         int(df["No Desc"].sum()),
-                        int(df["Improper Desc"].sum()),
                         int(df["No Labels"].sum()),
                         int(df["No Milestone"].sum()),
                         int(df["No Time Spent"].sum()),
-                        int(df["Long Open Time"].sum()),
+                        int(df["Long Open Time (>2 days)"].sum()),
                         int(df["No Semantic Title"].sum()),
                     ],
                 }
@@ -112,7 +118,7 @@ def render_bad_issue_batch_ui(client) -> None:
     # --- Single User Fetch Section ---
     st.markdown("---")
     st.subheader("👤 Single User Fetch")
-    st.caption("Fetch BAD Issue metrics for a single user not in the batch.")
+    st.caption("Fetch BAD Issue metrics for a single user based on assigned issues.")
 
     col1, col2 = st.columns([3, 1])
     single_user = col1.text_input("Enter GitLab Username", key="_bad_issues_single_user", placeholder="e.g. john_doe")
@@ -133,16 +139,19 @@ def render_bad_issue_batch_ui(client) -> None:
                     st.success(f"Analysis complete for {single_user}!")
 
                     m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("Closed Issues", res["Closed Issues"])
-                    m2.metric("No Desc", res["No Desc"])
-                    m3.metric("Improper Desc", res["Improper Desc"])
-                    m4.metric("No Labels", res["No Labels"])
+                    m1.metric("Total Assigned", res["Total Assigned"])
+                    m2.metric("Opened Issues", res["Opened Issues"])
+                    m3.metric("Closed Issues", res["Closed Issues"])
+                    m4.metric("No Desc", res["No Desc"])
 
                     m5, m6, m7, m8 = st.columns(4)
-                    m5.metric("No Milestone", res["No Milestone"])
-                    m6.metric("No Time Spent", res["No Time Spent"])
-                    m7.metric("Long Open Time", res["Long Open Time"])
-                    m8.metric("No Semantic Title", res["No Semantic Title"])
+                    m5.metric("No Labels", res["No Labels"])
+                    m6.metric("No Milestone", res["No Milestone"])
+                    m7.metric("No Time Spent", res["No Time Spent"])
+                    m8.metric("Long Open Time (>2 days)", res["Long Open Time (>2 days)"])
+
+                    m9, _, _ = st.columns(3)
+                    m9.metric("No Semantic Title", res["No Semantic Title"])
 
                     # Also show as a small dataframe for consistency
                     st.dataframe(pd.DataFrame([res]), use_container_width=True, hide_index=True)

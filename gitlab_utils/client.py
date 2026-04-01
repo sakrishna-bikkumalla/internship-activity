@@ -8,9 +8,6 @@ import aiohttp
 import gitlab
 
 # import nest_asyncio # Causes "Timeout context manager should be used inside a task" in aiohttp 3.11+
-from gitlab_utils.description_quality import analyze_description
-
-# nest_asyncio.apply()
 
 
 async def safe_api_call_async(func, *args, **kwargs):
@@ -109,7 +106,6 @@ _ZERO_ROW: dict[str, Any] = {
     "Username": "",
     "Closed MRs": 0,
     "No Desc": 0,
-    "Improper Desc": 0,
     "No Issues": 0,
     "No Time Spent": 0,
     "No Unit Tests": 0,
@@ -122,13 +118,14 @@ _ZERO_ROW: dict[str, Any] = {
 
 _ZERO_ISSUE_ROW: dict[str, Any] = {
     "Username": "",
+    "Total Assigned": 0,
+    "Opened Issues": 0,
     "Closed Issues": 0,
     "No Desc": 0,
-    "Improper Desc": 0,
     "No Labels": 0,
     "No Milestone": 0,
     "No Time Spent": 0,
-    "Long Open Time": 0,
+    "Long Open Time (>2 days)": 0,
     "No Semantic Title": 0,
 }
 
@@ -215,7 +212,6 @@ class GitLabClient:
             "is_merged": mr.get("state") == "merged",
             "is_closed_rejected": mr.get("state") == "closed",
             "no_desc": False,
-            "improper_desc": False,
             "no_issues": False,
             "no_time": False,
             "no_unit_tests": False,
@@ -230,11 +226,6 @@ class GitLabClient:
             desc = mr.get("description") or ""
             if not str(desc).strip():
                 flags["no_desc"] = True
-            try:
-                if analyze_description(desc)["quality_label"] != "High":
-                    flags["improper_desc"] = True
-            except Exception:
-                pass
 
             # 1. Pipeline Check
             pipeline = mr.get("pipeline")
@@ -326,14 +317,25 @@ class GitLabClient:
             pass
         return uname, flags
 
-    async def _fetch_user_mrs(self, uname: str, project_id=None, group_id=None) -> list[dict]:
+    async def _fetch_user_mrs(
+        self,
+        uname: str,
+        project_id=None,
+        group_id=None,
+        mr_scope: str = "author",
+    ) -> list[dict]:
         u_data = await self._async_request("GET", "/users", params={"username": uname})
         target_user = next(
             (u for u in (u_data or []) if str(u.get("username", "")).lower() == str(uname).lower()), None
         )
         if not target_user:
             return []
-        params = {"author_id": str(target_user["id"]), "scope": "all", "per_page": "100"}
+        scope = str(mr_scope or "author").strip().lower()
+        if scope not in {"author", "assignee"}:
+            scope = "author"
+
+        user_filter_key = "assignee_id" if scope == "assignee" else "author_id"
+        params = {user_filter_key: str(target_user["id"]), "scope": "all", "per_page": "100"}
         if project_id:
             params["project_id"] = project_id
         if group_id:
@@ -343,9 +345,15 @@ class GitLabClient:
             mr["_username"] = uname
         return mrs or []
 
-    async def _batch_evaluate_mrs_async(self, usernames: list[str], project_id=None, group_id=None) -> list[dict]:
+    async def _batch_evaluate_mrs_async(
+        self,
+        usernames: list[str],
+        project_id=None,
+        group_id=None,
+        mr_scope: str = "author",
+    ) -> list[dict]:
         result_map = {u: {**_ZERO_ROW, "Username": u} for u in usernames}
-        user_tasks = [self._fetch_user_mrs(u, project_id, group_id) for u in usernames]
+        user_tasks = [self._fetch_user_mrs(u, project_id, group_id, mr_scope) for u in usernames]
         all_users_mrs = await asyncio.gather(*user_tasks)
         all_mrs = [mr for sublist in all_users_mrs for mr in sublist]
         eval_results = await asyncio.gather(*[self._evaluate_single_mr(mr) for mr in all_mrs])
@@ -357,8 +365,6 @@ class GitLabClient:
                     row["Failed Pipeline"] += 1
                 if f.get("no_desc"):
                     row["No Desc"] += 1
-                if f.get("improper_desc"):
-                    row["Improper Desc"] += 1
                 if f.get("no_issues"):
                     row["No Issues"] += 1
                 if f.get("no_time"):
@@ -375,16 +381,16 @@ class GitLabClient:
                     row["Merge > 2 Days"] += 1
         return sorted(result_map.values(), key=lambda r: r["Username"])
 
-    def batch_evaluate_mrs(self, usernames, project_id=None, group_id=None):
-        return self._run_sync(self._batch_evaluate_mrs_async(usernames, project_id, group_id))
+    def batch_evaluate_mrs(self, usernames, project_id=None, group_id=None, mr_scope: str = "author"):
+        return self._run_sync(self._batch_evaluate_mrs_async(usernames, project_id, group_id, mr_scope))
 
     async def _evaluate_single_issue(self, issue: dict) -> tuple[str, dict]:
         """Evaluate a single issue for quality metrics."""
         uname = issue.get("_username", "unknown")
         flags = {
+            "is_opened": issue.get("state") == "opened",
             "is_closed": issue.get("state") == "closed",
             "no_desc": False,
-            "improper_desc": False,
             "no_labels": False,
             "no_milestone": False,
             "no_time": False,
@@ -397,12 +403,6 @@ class GitLabClient:
             desc = issue.get("description") or ""
             if not str(desc).strip():
                 flags["no_desc"] = True
-            else:
-                try:
-                    if analyze_description(desc)["quality_label"] != "High":
-                        flags["improper_desc"] = True
-                except Exception:
-                    flags["improper_desc"] = True
 
             # 2. Labels Check
             labels = issue.get("labels") or []
@@ -425,7 +425,7 @@ class GitLabClient:
             if not any(title_lower.startswith(p) for p in semantic_prefixes):
                 flags["no_semantic_title"] = True
 
-            # 6. Long Open Time Check (issues open for more than 3 days)
+            # 6. Long Open Time Check (issues open for more than 2 days)
             created_s = issue.get("created_at")
             closed_s = issue.get("closed_at")
             if created_s:
@@ -436,7 +436,7 @@ class GitLabClient:
                     else datetime.now(timezone.utc)
                 )
                 diff = (end_dt - created_dt).total_seconds() / 86400
-                if diff > 3:
+                if diff > 2:
                     flags["long_open_time"] = True
 
         except Exception:
@@ -444,15 +444,26 @@ class GitLabClient:
 
         return uname, flags
 
-    async def _fetch_user_issues(self, uname: str, project_id=None, group_id=None) -> list[dict]:
-        """Fetch all issues authored by a specific user."""
+    async def _fetch_user_issues(
+        self,
+        uname: str,
+        project_id=None,
+        group_id=None,
+        issue_scope: str = "author",
+    ) -> list[dict]:
+        """Fetch all issues for a specific user by author or assignee scope."""
         u_data = await self._async_request("GET", "/users", params={"username": uname})
         target_user = next(
             (u for u in (u_data or []) if str(u.get("username", "")).lower() == str(uname).lower()), None
         )
         if not target_user:
             return []
-        params = {"author_id": str(target_user["id"]), "scope": "all", "per_page": "100"}
+        scope = str(issue_scope or "author").strip().lower()
+        if scope not in {"author", "assignee"}:
+            scope = "author"
+
+        user_filter_key = "assignee_id" if scope == "assignee" else "author_id"
+        params = {user_filter_key: str(target_user["id"]), "scope": "all", "per_page": "100"}
         if project_id:
             params["project_id"] = project_id
         if group_id:
@@ -462,38 +473,51 @@ class GitLabClient:
             issue["_username"] = uname
         return issues or []
 
-    async def _batch_evaluate_issues_async(self, usernames: list[str], project_id=None, group_id=None) -> list[dict]:
+    async def _batch_evaluate_issues_async(
+        self,
+        usernames: list[str],
+        project_id=None,
+        group_id=None,
+        issue_scope: str = "author",
+    ) -> list[dict]:
         """Batch evaluate issues for multiple users."""
         result_map = {u: {**_ZERO_ISSUE_ROW, "Username": u} for u in usernames}
-        user_tasks = [self._fetch_user_issues(u, project_id, group_id) for u in usernames]
+        user_tasks = [self._fetch_user_issues(u, project_id, group_id, issue_scope) for u in usernames]
         all_users_issues = await asyncio.gather(*user_tasks)
         all_issues = [issue for sublist in all_users_issues for issue in sublist]
         eval_results = await asyncio.gather(*[self._evaluate_single_issue(issue) for issue in all_issues])
 
         for uname, f in eval_results:
-            if uname in result_map and f.get("is_closed"):
+            if uname in result_map:
                 row = result_map[uname]
-                row["Closed Issues"] += 1
-                if f.get("no_desc"):
-                    row["No Desc"] += 1
-                if f.get("improper_desc"):
-                    row["Improper Desc"] += 1
-                if f.get("no_labels"):
-                    row["No Labels"] += 1
-                if f.get("no_milestone"):
-                    row["No Milestone"] += 1
-                if f.get("no_time"):
-                    row["No Time Spent"] += 1
-                if f.get("long_open_time"):
-                    row["Long Open Time"] += 1
-                if f.get("no_semantic_title"):
-                    row["No Semantic Title"] += 1
+                # Count total assigned issues
+                row["Total Assigned"] += 1
+                
+                # Count opened issues
+                if f.get("is_opened"):
+                    row["Opened Issues"] += 1
+                
+                # Count and evaluate only closed issues
+                if f.get("is_closed"):
+                    row["Closed Issues"] += 1
+                    if f.get("no_desc"):
+                        row["No Desc"] += 1
+                    if f.get("no_labels"):
+                        row["No Labels"] += 1
+                    if f.get("no_milestone"):
+                        row["No Milestone"] += 1
+                    if f.get("no_time"):
+                        row["No Time Spent"] += 1
+                    if f.get("long_open_time"):
+                        row["Long Open Time (>2 days)"] += 1
+                    if f.get("no_semantic_title"):
+                        row["No Semantic Title"] += 1
 
         return sorted(result_map.values(), key=lambda r: r["Username"])
 
-    def batch_evaluate_issues(self, usernames, project_id=None, group_id=None):
+    def batch_evaluate_issues(self, usernames, project_id=None, group_id=None, issue_scope: str = "author"):
         """Public method to batch evaluate issues for multiple users."""
-        return self._run_sync(self._batch_evaluate_issues_async(usernames, project_id, group_id))
+        return self._run_sync(self._batch_evaluate_issues_async(usernames, project_id, group_id, issue_scope))
 
     def _request(self, method, endpoint, params=None):
         return self._run_sync(self._async_request(method, endpoint, params))
