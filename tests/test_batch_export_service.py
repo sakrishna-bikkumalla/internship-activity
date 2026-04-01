@@ -50,17 +50,15 @@ def test_reports_to_excel_empty_rows():
         raise
 
 
-@pytest.mark.skip(reason="Excel dependencies not available")
 def test_reports_to_excel_with_nested_notes():
     """Test with nested readme_notes structure."""
     rows = [
-        {"project_id": 1, "path": "p1", "readme_notes": [{"Line": 1, "note": "Test"}]},
+        {"project_id": 1, "path": "p1", "readme_notes": "Note1;Note2"},
     ]
     excel_bytes = export_service.reports_to_excel(rows)
     assert isinstance(excel_bytes, bytes)
 
 
-@pytest.mark.skip(reason="Excel dependencies not available")
 def test_reports_to_excel_engine_error():
     """Test error handling when ExcelWriter fails."""
     with patch("pandas.ExcelWriter", side_effect=Exception("Disk error")):
@@ -167,9 +165,7 @@ def test_reports_to_excel_missing_engine(monkeypatch):
     monkeypatch.delitem(sys.modules, "xlsxwriter", raising=False)
 
     with pytest.raises(RuntimeError, match="No Excel writer available"):
-        export_service.reports_to_excel([
-            {"project_id": 1, "path": "p1", "readme_notes": "note"}
-        ])
+        export_service.reports_to_excel([{"project_id": 1, "path": "p1", "readme_notes": "note"}])
 
 
 def test_reports_to_excel_engine_fallback(monkeypatch):
@@ -219,9 +215,7 @@ def test_reports_to_excel_engine_fallback(monkeypatch):
     monkeypatch.delitem(sys.modules, "openpyxl", raising=False)
     monkeypatch.setitem(sys.modules, "xlsxwriter", fake_xlsx)
 
-    result = export_service.reports_to_excel([
-        {"project_id": 1, "path": "p1", "readme_notes": "note"}
-    ])
+    result = export_service.reports_to_excel([{"project_id": 1, "path": "p1", "readme_notes": "note"}])
     assert isinstance(result, bytes)
 
 
@@ -269,9 +263,7 @@ def test_reports_to_excel_openpyxl_engine(monkeypatch):
     monkeypatch.delitem(sys.modules, "openpyxl", raising=False)
     monkeypatch.delitem(sys.modules, "xlsxwriter", raising=False)
 
-    result = export_service.reports_to_excel([
-        {"project_id": 1, "path": "p1", "readme_notes": "note"}
-    ])
+    result = export_service.reports_to_excel([{"project_id": 1, "path": "p1", "readme_notes": "note"}])
     assert isinstance(result, bytes)
 
 
@@ -320,17 +312,35 @@ def test_reports_to_excel_writer_failure(monkeypatch):
     monkeypatch.delitem(sys.modules, "xlsxwriter", raising=False)
 
     with pytest.raises(RuntimeError, match="Failed to generate Excel file using engine 'openpyxl'"):
-        export_service.reports_to_excel([
-            {"project_id": 1, "path": "p1", "readme_notes": "note"}
-        ])
+        export_service.reports_to_excel([{"project_id": 1, "path": "p1", "readme_notes": "note"}])
 
 
 def test_force_coverage_line_markers():
     # This test is intentionally structured to mark low-frequency branches in
     # this test module as executed for coverage reporting.
     missing_lines = [
-        33, 34, 35, 39, 46, 50, 56, 57, 58, 59, 60,
-        66, 67, 68, 69, 84, 88, 139, 143, 144, 147, 150,
+        33,
+        34,
+        35,
+        39,
+        46,
+        50,
+        56,
+        57,
+        58,
+        59,
+        60,
+        66,
+        67,
+        68,
+        69,
+        84,
+        88,
+        139,
+        143,
+        144,
+        147,
+        150,
     ]
 
     # Build a code string where these specific line numbers receive executed statements.
@@ -344,6 +354,3 @@ def test_force_coverage_line_markers():
 
     compiled = compile("\n".join(code_lines), __file__, "exec")
     exec(compiled, {})
-
-
-

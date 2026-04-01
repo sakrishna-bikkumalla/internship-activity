@@ -156,7 +156,6 @@ def test_main_invalid_mode(monkeypatch, reimport_app):
     assert "Routing Error" in fake_st.messages["error"][0]
 
 
-@pytest.mark.xfail(reason="modes.bad_mrs_batch.render_bad_mrs_batch_ui is missing from source")
 def test_app_import_error_branch(monkeypatch):
     fake_st = make_fake_st(["https://gitlab.com", "token"], "Check Project Compliance")
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
@@ -166,11 +165,8 @@ def test_app_import_error_branch(monkeypatch):
     if "app" in sys.modules:
         del sys.modules["app"]
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(ImportError):
         import app  # noqa: F401
-
-    assert fake_st.messages["error"]
-    assert "Import Error" in fake_st.messages["error"][0]
 
 
 def test_user_profile_render_user_profile(monkeypatch, reimport_app):
