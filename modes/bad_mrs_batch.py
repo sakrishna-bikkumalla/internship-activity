@@ -4,9 +4,9 @@ bad_mrs_batch.py
 Streamlit UI for the "BAD MRs (Batch)" mode.
 
 Fetches MR data for all 34 users concurrently using ThreadPoolExecutor.
-Single endpoint per user: GET /merge_requests?author_id=<id>&scope=all
+Single endpoint per user: GET /merge_requests?assignee_id=<id>&scope=all
 
-Columns: Username | Closed MRs | No Desc | Improper Desc | No Issues
+Columns: Username | Closed MRs | No Desc | No Issues
          | No Time Spent | No Unit Tests | Failed Pipeline
 """
 
@@ -23,13 +23,13 @@ from gitlab_utils.client import BATCH_USERNAMES
 @st.cache_data(ttl=3600)
 def cached_batch_evaluate_mrs(_client, usernames_tuple):
     """Cache the batch MR evaluation results for 1 hour."""
-    return _client.batch_evaluate_mrs(list(usernames_tuple))
+    return _client.batch_evaluate_mrs(list(usernames_tuple), mr_scope="assignee")
 
 
 @st.cache_data(ttl=3600)
 def cached_single_user_mrs(_client, username):
     """Cache single user MR evaluation results for 1 hour."""
-    return _client.batch_evaluate_mrs([username])
+    return _client.batch_evaluate_mrs([username], mr_scope="assignee")
 
 
 def render_bad_mrs_batch_ui(client) -> None:
@@ -77,7 +77,6 @@ def render_bad_mrs_batch_ui(client) -> None:
                         "Total Closed MRs",
                         "Total Users",
                         "Total No Desc",
-                        "Total Improper Desc",
                         "Total No Issues",
                         "Total No Time Spent",
                         "Total No Unit Tests",
@@ -91,7 +90,6 @@ def render_bad_mrs_batch_ui(client) -> None:
                         total_closed,
                         len(df),
                         int(df["No Desc"].sum()),
-                        int(df["Improper Desc"].sum()),
                         int(df["No Issues"].sum()),
                         int(df["No Time Spent"].sum()),
                         int(df["No Unit Tests"].sum()),
@@ -118,7 +116,7 @@ def render_bad_mrs_batch_ui(client) -> None:
     # --- Single User Fetch Section ---
     st.markdown("---")
     st.subheader("👤 Single User Fetch")
-    st.caption("Fetch BAD MR metrics for a single user not in the batch.")
+    st.caption("Fetch BAD MR metrics for a single user based on assigned merge requests.")
 
     col1, col2 = st.columns([3, 1])
     single_user = col1.text_input("Enter GitLab Username", key="_bad_mrs_single_user", placeholder="e.g. john_doe")
@@ -141,21 +139,18 @@ def render_bad_mrs_batch_ui(client) -> None:
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("Closed MRs", res["Closed MRs"])
                     m2.metric("No Desc", res["No Desc"])
-                    m3.metric("Improper Desc", res["Improper Desc"])
-                    m4.metric("No Issues", res["No Issues"])
+                    m3.metric("No Issues", res["No Issues"])
+                    m4.metric("No Time Spent", res["No Time Spent"])
 
                     m5, m6, m7 = st.columns(3)
-                    m5.metric("No Time Spent", res["No Time Spent"])
-                    m6.metric("No Unit Tests", res["No Unit Tests"])
-                    m7.metric("Failed Pipeline", res["Failed Pipeline"])
+                    m5.metric("No Unit Tests", res["No Unit Tests"])
+                    m6.metric("Failed Pipeline", res["Failed Pipeline"])
+                    m7.metric("No Semantic Commits", res["No Semantic Commits"])
 
                     m8, m9, m10 = st.columns(3)
-                    m8.metric("No Semantic Commits", res["No Semantic Commits"])
-                    m9.metric("No Internal Review", res["No Internal Review"])
-                    m10.metric("Merge > 2 Days", res["Merge > 2 Days"])
-
-                    m11, _, _ = st.columns(3)
-                    m11.metric("Merge > 1 Week", res["Merge > 1 Week"])
+                    m8.metric("No Internal Review", res["No Internal Review"])
+                    m9.metric("Merge > 2 Days", res["Merge > 2 Days"])
+                    m10.metric("Merge > 1 Week", res["Merge > 1 Week"])
 
                     # Also show as a small dataframe for consistency
                     st.dataframe(pd.DataFrame([res]), use_container_width=True, hide_index=True)
