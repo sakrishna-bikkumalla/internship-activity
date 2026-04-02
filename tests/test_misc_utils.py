@@ -13,7 +13,7 @@ def test_get_user_by_username():
     # Found - mock returns list from first call, full user dict from second call
     mock_client._get.side_effect = [
         [{"id": 1, "username": "testuser"}],
-        {"id": 1, "username": "testuser", "name": "Test User", "email": "test@test.com"}
+        {"id": 1, "username": "testuser", "name": "Test User", "email": "test@test.com"},
     ]
     res = get_user_by_username(mock_client, "testuser")
     assert res["id"] == 1
