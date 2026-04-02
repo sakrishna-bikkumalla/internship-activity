@@ -10,17 +10,20 @@ from gitlab_compliance_checker.infrastructure.gitlab.users import get_user_by_us
 
 def test_get_user_by_username():
     mock_client = MagicMock()
-    # Found
-    mock_client._get.return_value = [{"id": 1, "username": "testuser"}]
+    # Found - mock returns list from first call, full user dict from second call
+    mock_client._get.side_effect = [
+        [{"id": 1, "username": "testuser"}],
+        {"id": 1, "username": "testuser", "name": "Test User", "email": "test@test.com"}
+    ]
     res = get_user_by_username(mock_client, "testuser")
     assert res["id"] == 1
 
     # Not found
-    mock_client._get.return_value = []
+    mock_client._get.side_effect = [[]]
     assert get_user_by_username(mock_client, "none") is None
 
     # Invalid response
-    mock_client._get.return_value = None
+    mock_client._get.side_effect = [None]
     assert get_user_by_username(mock_client, "none") is None
 
 

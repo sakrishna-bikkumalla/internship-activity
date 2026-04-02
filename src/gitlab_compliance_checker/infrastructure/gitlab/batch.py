@@ -93,12 +93,12 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
 
             # Resolve the list of projects to scan for commits
             # We must ensure we don't have duplicates here as it results in double-counting commits.
-            {p.get("id"): p for p in projs["all"]}
+            all_projs_dict = {p.get("id"): p for p in projs["all"]}
 
             if project_ids is not None:
                 pid_set = set(project_ids)
                 # Keep only projects that are in the pid_set
-                all_projs_list = [p for p in projs["all"] if p.get("id") in pid_set]
+                all_projs_list = [p for p in all_projs_dict.values() if p.get("id") in pid_set]
                 existing_ids = {p.get("id") for p in all_projs_list}
 
                 # Fetch details for project_ids that weren't in the user's projects list
@@ -111,7 +111,7 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
                         except Exception:
                             pass
             else:
-                all_projs_list = projs["all"]
+                all_projs_list = list(all_projs_dict.values())
 
             # 3. Commits (Start after projects list is ready)
             f_commits = executor.submit(

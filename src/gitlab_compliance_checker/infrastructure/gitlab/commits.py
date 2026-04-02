@@ -25,9 +25,11 @@ def get_user_commits(client, user, projects, since=None, until=None):
     ist = timezone(timedelta(hours=5, minutes=30))
 
     # Define slot boundary times for comparison
-    morn_start = datetime.strptime("09:30", "%H:%M").time()
-    morn_end = datetime.strptime("12:30", "%H:%M").time()
-    aft_start = datetime.strptime("14:00", "%H:%M").time()
+    # Morning: 9:00 AM to 12:29 PM (ends just before afternoon starts)
+    # Afternoon: 12:30 PM to 5:00 PM (inclusive)
+    morn_start = datetime.strptime("09:00", "%H:%M").time()
+    morn_end = datetime.strptime("12:29", "%H:%M").time()
+    aft_start = datetime.strptime("12:30", "%H:%M").time()
     aft_end = datetime.strptime("17:00", "%H:%M").time()
 
     stats = {
@@ -53,7 +55,10 @@ def get_user_commits(client, user, projects, since=None, until=None):
             project_seen_shas = set()
             valid_project_commits = 0
 
-            api_params = {"author": search_term, "all": True, "with_stats": "false"}
+            # Fetch ALL commits from ALL branches without API-side author filter
+            # We'll do filtering on the client side to ensure we don't miss commits
+            # due to API inconsistencies
+            api_params = {"all": True, "with_stats": "false"}
             if since:
                 api_params["since"] = since
             if until:
@@ -63,7 +68,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                 f"/projects/{pid}/repository/commits",
                 params=api_params,
                 per_page=100,
-                max_pages=20,
+                max_pages=500,
             )
 
             if not commits_data:
@@ -74,25 +79,33 @@ def get_user_commits(client, user, projects, since=None, until=None):
                 if not sha or sha in project_seen_shas:
                     continue
 
-                # EXCLUDE MERGE COMMITS: These are often not "authored" by the user
-                # but just result from merging branches.
-                parent_ids = c.get("parent_ids", [])
-                if len(parent_ids) > 1:
-                    continue
+                # Include merge commits - they count as contributions!
+                # No longer filtering out commits with multiple parents
 
                 c_author_name = (c.get("author_name", "") or "").lower()
                 c_author_email = (c.get("author_email", "") or "").lower()
 
-                # Stricter identity matching
+                # More flexible identity matching
                 is_match = False
+
+                # Try exact email match first
                 if author_email and c_author_email == author_email.lower():
                     is_match = True
+                # Try exact name match
                 elif author_name and c_author_name == author_name.lower():
                     is_match = True
-                elif username and (
-                    username.lower() in c_author_name.lower() or c_author_email.startswith(f"{username.lower()}@")
-                ):
+                # Try username in email (e.g., "username@...")
+                elif username and c_author_email.startswith(f"{username.lower()}@"):
                     is_match = True
+                # Try username in author name (e.g., "John Doe" for "johndoe")
+                elif username and username.lower() in c_author_name.lower():
+                    is_match = True
+                # Try partial email match (e.g., "john.doe" matches "john.doe@...")
+                elif author_email:
+                    # Extract local part of email for comparison
+                    email_local = author_email.split("@")[0].lower()
+                    if email_local in c_author_email.lower() or email_local in c_author_name.lower():
+                        is_match = True
 
                 if not is_match:
                     continue
@@ -152,7 +165,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                     t_obj = dt_ist.time()
 
                     slot = "Other"
-                    if t_obj >= morn_start and t_obj < morn_end:
+                    if t_obj >= morn_start and t_obj <= morn_end:
                         slot = "Morning"
                         stats["morning_commits"] += 1
                     elif t_obj >= aft_start and t_obj <= aft_end:

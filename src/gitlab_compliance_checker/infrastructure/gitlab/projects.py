@@ -41,7 +41,11 @@ def get_user_projects(client, user_id, username):
             )
             # 2. projects from events
             f_events = executor.submit(
-                client._get_paginated, f"/users/{user_id}/events", params={"action": "pushed"}, per_page=50, max_pages=5
+                client._get_paginated,
+                f"/users/{user_id}/events",
+                params={"action": "pushed"},
+                per_page=50,
+                max_pages=20,
             )
 
             projects_data = f_projects.result() or []

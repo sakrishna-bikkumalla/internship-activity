@@ -78,8 +78,8 @@ def render_user_profile(client, simple_user_info):
     st.subheader("💻 Commits Analysis (IST)")
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Commits", commit_stats["total"])
-    c2.metric("Morning (9:30-12:30)", commit_stats["morning_commits"])
-    c3.metric("Afternoon (2:00-5:00)", commit_stats["afternoon_commits"])
+    c2.metric("Morning (9:00-12:29)", commit_stats["morning_commits"])
+    c3.metric("Afternoon (12:30-5:00)", commit_stats["afternoon_commits"])
 
     if all_commits:
         with st.expander("View Recent Commits"):

@@ -309,13 +309,11 @@ class TestEdgeCases:
         client = _make_client([commit])
         user = {"email": "alice@test.com"}  # No name or username
 
-        get_user_commits(client, user, [_make_project(1)])
-        # Check that search was attempted with email
-        called_params = [
-            call.kwargs.get("params", {}) or call.args[1] if call.args else {}
-            for call in client._get_paginated.call_args_list
-        ]
-        assert any("alice@test.com" in str(p) for p in called_params)
+        commits, _, _ = get_user_commits(client, user, [_make_project(1)])
+        # After removing API-side author filter, email matching happens client-side
+        # The commit should still be found via flexible email matching
+        assert len(commits) == 1
+        assert commits[0]["author_name"] == "Alice"
 
     def test_invalid_date_format_handled(self):
         """Commits with weird dates should return N/A slot."""
