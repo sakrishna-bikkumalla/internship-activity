@@ -75,7 +75,7 @@ test_job:
   needs:
     - job: setup_job
   script:
-    - uv run pytest tests/
+    - uv run pytest --cov=. --cov-report=term --cov-fail-under=80 tests/
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
