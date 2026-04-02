@@ -137,23 +137,23 @@ class GitLabClient:
         if not path.startswith("/"):
             path = f"/{path}"
 
-        async def make_request():
-            async with self._sem:
-                if method.upper() == "GET":
-                    return gl.http_get(path, query_data=params or {})
-                elif method.upper() == "POST":
-                    return gl.http_post(path, post_data=params or {})
-                elif method.upper() == "PUT":
-                    return gl.http_put(path, post_data=params or {})
-                elif method.upper() == "DELETE":
-                    return gl.http_delete(path)
-                return None
+        def make_request_sync():
+            if method.upper() == "GET":
+                return gl.http_get(path, query_data=params or {})
+            elif method.upper() == "POST":
+                return gl.http_post(path, post_data=params or {})
+            elif method.upper() == "PUT":
+                return gl.http_put(path, post_data=params or {})
+            elif method.upper() == "DELETE":
+                return gl.http_delete(path)
+            return None
 
-        return await safe_api_call_async(make_request)
+        async with self._sem:
+            return await safe_api_call_async(make_request_sync)
 
     async def _evaluate_single_mr(self, mr: dict) -> tuple[str, dict]:
         uname = mr.get("_username", "unknown")
-        pid, iid = mr["project_id"], mr["iid"]
+        pid, iid = mr.get("project_id"), mr.get("iid")
         flags = {
             "is_terminal": mr.get("state") in ("merged", "closed"),
             "is_merged": mr.get("state") == "merged",
@@ -185,6 +185,7 @@ class GitLabClient:
                     if pl[0].get("status") == "failed":
                         flags["failed_pipe"] = True
 
+            print(f"DEBUG: {iid} Time Spent check starting")
             # 2. Time Spent Check
             ts = mr.get("time_stats")
             if ts is None or (isinstance(ts, dict) and not ts):
@@ -194,6 +195,7 @@ class GitLabClient:
             if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
                 flags["no_time"] = True
 
+            print(f"DEBUG: {iid} Semantic Commits check starting")
             # 3. Semantic Commits Check
             m_commits = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/commits")
             if m_commits and isinstance(m_commits, list):
@@ -212,6 +214,7 @@ class GitLabClient:
                 ):
                     flags["no_semantic_commits"] = True
 
+            print(f"DEBUG: {iid} Internal Review check starting")
             # 4. Internal Review
             m_notes = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/notes")
             mr_author_id = mr.get("author", {}).get("id")
@@ -222,6 +225,7 @@ class GitLabClient:
                 has_human_review = True
             flags["no_internal_review"] = not has_human_review
 
+            print(f"DEBUG: {iid} Issues check starting")
             # 5. Issues check
             content = f"{mr.get('title', '')} {mr.get('description', '')}"
             if re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", content, re.IGNORECASE):
@@ -237,6 +241,7 @@ class GitLabClient:
                     if not has_issue_link_in_notes:
                         flags["no_issues"] = True
 
+            print(f"DEBUG: {iid} Unit Tests check starting")
             # 6. Unit Tests check
             title_l = str(mr.get("title") or "").lower()
             if "test" in title_l or "spec" in title_l:
@@ -249,7 +254,6 @@ class GitLabClient:
                 )
                 flags["no_unit_tests"] = not h_tests
 
-            # Time tracking
             created_s = mr.get("created_at")
             merged_s = mr.get("merged_at")
             if created_s:
@@ -297,9 +301,11 @@ class GitLabClient:
             params["project_id"] = project_id
         if group_id:
             params["group_id"] = group_id
+
         mrs = await self._async_request("GET", "/merge_requests", params=params)
         for mr in mrs or []:
-            mr["_username"] = uname
+            if isinstance(mr, dict):
+                mr["_username"] = uname
         return mrs or []
 
     async def _batch_evaluate_mrs_async(
@@ -720,14 +726,17 @@ class GitLabClient:
 
         p_params = {**(params or {}), "per_page": per_page}
 
-        async def fetch_page(p_no, as_list=False):
+        def fetch_page_sync(p_no, as_list=False):
             curr_params = {**p_params, "page": p_no}
+            return gl.http_get(path, query_data=curr_params, as_list=as_list)
+
+        async def fetch_page(p_no, as_list=False):
             async with self._sem:
-                return gl.http_get(path, query_data=curr_params, as_list=as_list)
+                return await safe_api_call_async(fetch_page_sync, p_no, as_list=as_list)
 
         try:
             # Fetch first page to get total pages
-            first_page_list = await safe_api_call_async(fetch_page, 1, as_list=True)
+            first_page_list = await fetch_page(1, as_list=True)
             if not first_page_list:
                 return []
 
@@ -736,7 +745,7 @@ class GitLabClient:
             num_to_fetch = min(total_pages, max_pages)
 
             if num_to_fetch > 1:
-                tasks = [safe_api_call_async(fetch_page, p) for p in range(2, num_to_fetch + 1)]
+                tasks = [fetch_page(p) for p in range(2, num_to_fetch + 1)]
                 results = await asyncio.gather(*tasks)
                 for page_data in results:
                     if page_data and isinstance(page_data, list):

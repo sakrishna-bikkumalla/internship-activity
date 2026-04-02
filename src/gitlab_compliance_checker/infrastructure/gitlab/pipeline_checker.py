@@ -6,7 +6,21 @@ import yaml
 EXPECTED_STAGES = ["test", "lint", "format", "type_check", "coverage"]
 
 STAGE_TOOLS = {
-    "test": ["pytest", "unittest", "jest", "vitest", "mocha", "ava", "cypress", "playwright"],
+    "test": [
+        "pytest",
+        "unittest",
+        "jest",
+        "vitest",
+        "mocha",
+        "ava",
+        "cypress",
+        "playwright",
+        "npm test",
+        "npm run test",
+        "bun test",
+        "yarn test",
+        "pnpm test",
+    ],
     "lint": ["ruff", "flake8", "pylint", "eslint", "biome", "jshint", "stylelint"],
     "format": ["black", "isort", "prettier", "biome", "clang-format"],
     "type_check": ["mypy", "pyright", "tsc", "typescript", "flow"],

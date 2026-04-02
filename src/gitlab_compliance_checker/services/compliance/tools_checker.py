@@ -50,7 +50,7 @@ def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any
         i18n: Dict[str, Any] = {}
 
         pyproject_content = str(configs.get("pyproject", ""))
-        pre_commit_content = str(configs.get("pre_commit", ""))
+        pre_commit_content = str(configs.get("pre_commit", "")) + str(configs.get("husky_pre_commit", ""))
         gitlab_ci_content = str(configs.get("gitlab_ci", ""))
 
         # --- 1. Quality & Linting Tools ---
@@ -100,7 +100,7 @@ def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any
 
         # --- 4. Automation & Changelog ---
         automation["git_cliff"] = configs["cliff_toml"] != "" or "git-cliff" in ci_str
-        automation["pre_commit"] = configs["pre_commit"] is not None
+        automation["pre_commit"] = configs["pre_commit"] is not None or quality_tools.get("husky")
         automation["gitlab_ci"] = configs["gitlab_ci"] is not None
 
         # --- 5. Internationalization (i18n) ---
