@@ -123,7 +123,7 @@ def test_main_mode_user_profile_exception(monkeypatch, reimport_app):
 @pytest.mark.parametrize(
     "mode, expected_called",
     [
-        ("Batch Analytics (Unified)", "batch"),
+        ("Batch Analytics", "batch"),
         ("Team Leaderboard", "team"),
     ],
 )
