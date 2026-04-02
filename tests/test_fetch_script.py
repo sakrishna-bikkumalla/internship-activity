@@ -14,20 +14,19 @@ class TestAsyncFetchPatterns:
         assert callable(GitLabClient)
 
     def test_gitlab_client_has_headers(self):
-        """Test GitLabClient has headers attribute."""
+        """Test GitLabClient has private_token attribute."""
         from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
 
         client = GitLabClient("https://gitlab.com", "test_token")
-        assert hasattr(client, "headers")
+        assert hasattr(client, "private_token")
         assert hasattr(client, "base_url")
-        assert "PRIVATE-TOKEN" in client.headers
 
     def test_gitlab_client_headers_contains_token(self):
-        """Test GitLabClient headers contain the token."""
+        """Test GitLabClient private_token is stored."""
         from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
 
         client = GitLabClient("https://gitlab.com", "my_secret_token")
-        assert client.headers["PRIVATE-TOKEN"] == "my_secret_token"
+        assert client.private_token == "my_secret_token"
 
     @pytest.mark.asyncio
     async def test_coroutine_function_detection(self):
@@ -73,11 +72,3 @@ class TestAsyncFetchPatterns:
 
         mock_cm.__aenter__.assert_called_once()
         mock_cm.__aexit__.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_aiohttp_session_context_manager(self):
-        """Test aiohttp session can be used as async context manager."""
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            assert session is not None

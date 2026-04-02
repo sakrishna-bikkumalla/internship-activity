@@ -265,7 +265,7 @@ elements.append(Spacer(1, 0.2 * inch))
 elements.append(Paragraph("2.3 Other Libraries", subheading_style))
 other_libs = [
     ["Library", "Purpose"],
-    ["aiohttp", "Asynchronous HTTP client for API calls & retries"],
+    ["python-gitlab", "Official GitLab API client for Python"],
     ["pandas", "Data manipulation & analysis"],
     ["openpyxl/xlsxwriter", "Excel file generation"],
     ["python-dotenv", "Environment variable loading"],
@@ -590,7 +590,7 @@ elements.append(
         "Catches errors:<br/>"
         "• ConnectionResetError<br/>"
         "• ConnectionAbortedError<br/>"
-        "• aiohttp.ClientError<br/>"
+        "• gitlab.exceptions.GitlabHttpError<br/>"
         "• OSError<br/>"
         "• http.client.RemoteDisconnected<br/>"
         "<br/>"

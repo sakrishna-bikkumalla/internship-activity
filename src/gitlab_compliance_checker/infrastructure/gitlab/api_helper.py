@@ -1,9 +1,6 @@
-# gitlab_compliance_checker/infrastructure/gitlab/api_helper.py
-
-import asyncio
 from urllib.parse import urlparse
 
-import aiohttp
+import gitlab
 
 
 def extract_path_from_url(input_str):
@@ -22,39 +19,21 @@ def get_project_branches(project):
         return []
 
 
-async def _get_user_from_token_async(base_url, token):
+def get_user_from_token(base_url, token):
     try:
-        headers = {"PRIVATE-TOKEN": token}
-        url = f"{base_url}/api/v4/user"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=15, ssl=False) as r:
-                r.raise_for_status()
-                return await r.json()
+        gl = gitlab.Gitlab(url=base_url, private_token=token, timeout=15, ssl_verify=False)
+        gl.auth()
+        if gl.user:
+            return gl.user.as_dict()
+        return "Error validating token: User is None"
     except Exception as e:
         return f"Error validating token: {e}"
 
 
-def get_user_from_token(base_url, token):
-    return asyncio.run(_get_user_from_token_async(base_url, token))
-
-
-async def _get_user_groups_by_token_async(base_url, token):
+def get_user_groups_by_token(base_url, token):
     try:
-        headers = {"PRIVATE-TOKEN": token}
-        api_base = base_url.rstrip("/")
-
-        if api_base.endswith("/api/v4"):
-            url = f"{api_base}/groups?membership=true"
-        else:
-            url = f"{api_base}/api/v4/groups?membership=true"
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=15, ssl=False) as r:
-                r.raise_for_status()
-                return await r.json()
+        gl = gitlab.Gitlab(url=base_url, private_token=token, timeout=15, ssl_verify=False)
+        groups = gl.groups.list(membership=True, all=True)
+        return [g.as_dict() for g in groups]
     except Exception as e:
         return f"Error fetching groups: {e}"
-
-
-def get_user_groups_by_token(base_url, token):
-    return asyncio.run(_get_user_groups_by_token_async(base_url, token))

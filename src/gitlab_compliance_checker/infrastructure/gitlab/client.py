@@ -5,7 +5,6 @@ import threading
 from datetime import datetime, timezone
 from typing import Any
 
-import aiohttp
 import gitlab
 
 # Set up logging
@@ -20,24 +19,12 @@ async def safe_api_call_async(func, *args, **kwargs):
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            return await func(*args, **kwargs)
-        except aiohttp.ClientResponseError as e:
-            if e.status == 429:
-                retry_after = e.headers.get("Retry-After")
+            return await asyncio.to_thread(func, *args, **kwargs)
+        except gitlab.exceptions.GitlabHttpError as e:
+            if e.response_code == 429:
                 wait_time = 5 * (attempt + 1)
-                if retry_after:
-                    try:
-                        wait_limit = int(retry_after)
-                        if wait_limit > 60:
-                            logger.error(f"GitLab API Rate Limit Exceeded. Wait {wait_limit}s.")
-                            raise Exception(
-                                f"GitLab API Rate Limit Exceeded. Please try again after {wait_limit} seconds."
-                            )
-                        wait_time = max(wait_time, wait_limit)
-                    except (ValueError, TypeError):
-                        pass
 
-                logger.warning(f"Rate limited (429) on {e.request_info.url}. Waiting {wait_time}s...")
+                logger.warning(f"Rate limited (429). Waiting {wait_time}s...")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(wait_time)
                     continue
@@ -47,9 +34,9 @@ async def safe_api_call_async(func, *args, **kwargs):
             if attempt < max_retries - 1:
                 await asyncio.sleep(2)
                 continue
-            logger.error(f"HTTP ERROR {e.status} on {getattr(func, '__name__', 'unknown')}: {e.message}")
+            logger.error(f"HTTP ERROR {e.response_code} on {getattr(func, '__name__', 'unknown')}: {e.error_message}")
             return []
-        except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
+        except gitlab.exceptions.GitlabConnectionError as e:
             wait_time = 5 * (attempt + 1)
             logger.warning(f"Connection Error: {e}. Waiting {wait_time}s...")
             if attempt < max_retries - 1:
@@ -97,12 +84,10 @@ class GitLabClient:
     def __init__(self, base_url: str, private_token: str, ssl_verify: bool = True):
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v4"
-        self.headers = {"PRIVATE-TOKEN": private_token}
         self.private_token = private_token
         self.ssl_verify = ssl_verify
         self.error_msg = None
         self._client = None
-        self._session = None
 
         # We run a separate background thread for the asyncio loop to avoid
         # conflicts with Streamlit's own execution model.
@@ -128,19 +113,13 @@ class GitLabClient:
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return fut.result()
 
-    async def _get_session(self):
-        if self._session is None or self._session.closed:
-            connector = aiohttp.TCPConnector(ssl=self.ssl_verify)
-            self._session = aiohttp.ClientSession(connector=connector, headers=self.headers)
-        return self._session
-
     @property
     def client(self):
         """Lazy-loaded python-gitlab client."""
         if self._client is None:
             try:
                 self._client = gitlab.Gitlab(
-                    url=self.base_url, private_token=self.private_token, timeout=10, ssl_verify=self.ssl_verify
+                    url=self.base_url, private_token=self.private_token, timeout=30, ssl_verify=self.ssl_verify
                 )
             except Exception as e:
                 self.error_msg = str(e)
@@ -149,20 +128,26 @@ class GitLabClient:
         return self._client
 
     async def _async_request(self, method, endpoint, params=None):
-        url = endpoint if endpoint.startswith("http") else f"{self.api_base}{endpoint}"
-        session = await self._get_session()
+        gl = self.client
+        if not gl:
+            return []
 
-        # aiohttp requires params to be str/int/float, not bool
-        if params:
-            params = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in params.items()}
+        # Remove leading / if present for http_get etc.
+        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
+        if not path.startswith("/"):
+            path = f"/{path}"
 
         async def make_request():
             async with self._sem:
-                async with session.request(method, url, params=params, timeout=30) as response:
-                    response.raise_for_status()
-                    if response.status == 204:
-                        return None
-                    return await response.json()
+                if method.upper() == "GET":
+                    return gl.http_get(path, query_data=params or {})
+                elif method.upper() == "POST":
+                    return gl.http_post(path, post_data=params or {})
+                elif method.upper() == "PUT":
+                    return gl.http_put(path, post_data=params or {})
+                elif method.upper() == "DELETE":
+                    return gl.http_delete(path)
+                return None
 
         return await safe_api_call_async(make_request)
 
@@ -725,66 +710,47 @@ class GitLabClient:
         return self._request("GET", endpoint, params=params)
 
     async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
-        url = endpoint if endpoint.startswith("http") else f"{self.api_base}{endpoint}"
-        session = await self._get_session()
+        gl = self.client
+        if not gl:
+            return []
 
-        # aiohttp requires params to be str/int/float, not bool
-        if params:
-            params = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in params.items()}
+        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
+        if not path.startswith("/"):
+            path = f"/{path}"
 
-        all_items = []
+        p_params = {**(params or {}), "per_page": per_page}
 
-        # 1. Fetch first page to get total pages from header
-        p_params = {**(params or {}), "per_page": per_page, "page": 1}
-
-        async def fetch_page(p_no):
+        async def fetch_page(p_no, as_list=False):
             curr_params = {**p_params, "page": p_no}
             async with self._sem:
-                async with session.get(url, params=curr_params, timeout=30) as response:
-                    response.raise_for_status()
-                    return await response.json(), response.headers
+                return gl.http_get(path, query_data=curr_params, as_list=as_list)
 
         try:
-            res = await safe_api_call_async(fetch_page, 1)
-            if not res or not isinstance(res, tuple):
+            # Fetch first page to get total pages
+            first_page_list = await safe_api_call_async(fetch_page, 1, as_list=True)
+            if not first_page_list:
                 return []
 
-            first_page_data, headers = res
-            if not first_page_data or not isinstance(first_page_data, list):
-                return []
+            all_items = list(first_page_list)
+            total_pages = getattr(first_page_list, "total_pages", 1) or 1
+            num_to_fetch = min(total_pages, max_pages)
 
-            all_items.extend(first_page_data)
-
-            if len(first_page_data) < per_page:
-                return all_items
-
-            total_pages_header = headers.get("X-Total-Pages")
-            if total_pages_header:
-                total_pages = min(int(total_pages_header), max_pages)
-            else:
-                total_pages = max_pages
-
-            if total_pages > 1:
-                tasks = [safe_api_call_async(fetch_page, p) for p in range(2, total_pages + 1)]
+            if num_to_fetch > 1:
+                tasks = [safe_api_call_async(fetch_page, p) for p in range(2, num_to_fetch + 1)]
                 results = await asyncio.gather(*tasks)
-                for res in results:
-                    if res and isinstance(res, tuple):
-                        page_data, _ = res
-                        if page_data and isinstance(page_data, list):
-                            all_items.extend(page_data)
+                for page_data in results:
+                    if page_data and isinstance(page_data, list):
+                        all_items.extend(page_data)
+            return all_items
         except Exception as e:
             logger.error(f"Error in async paginated request: {e}")
-
-        return all_items
+            return []
 
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
         return self._run_sync(self._async_get_paginated(endpoint, params, per_page, max_pages))
 
     def __del__(self):
-        if self._session and not self._session.closed:
-            # When using a separate thread, we can reliably close from any context
-            try:
-                self._run_sync(self._session.close())
-                self._loop.stop()
-            except Exception:
-                pass
+        try:
+            self._loop.stop()
+        except Exception:
+            pass

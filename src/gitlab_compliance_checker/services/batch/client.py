@@ -1,54 +1,64 @@
-import asyncio
-
-import aiohttp
-import nest_asyncio
-
-nest_asyncio.apply()
+import gitlab
 
 
 class GitLabClient:
     def __init__(self, base_url, private_token):
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v4"
-        self.headers = {"PRIVATE-TOKEN": private_token}
+        self.private_token = private_token
+        self._client = None
         self.users = GitLabUsersAPI(self)
-        self._loop = self._get_or_create_loop()
 
-    def _get_or_create_loop(self):
-        try:
-            return asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return loop
-
-    async def _async_request(self, method, endpoint, params=None):
-        url = f"{self.api_base}{endpoint}"
-        async with aiohttp.ClientSession(headers=self.headers) as session:
-            async with session.request(method, url, params=params, timeout=30, ssl=False) as response:
-                response.raise_for_status()
-                if response.status == 204:
-                    return None
-                return await response.json()
+    @property
+    def client(self):
+        """Lazy-loaded python-gitlab client."""
+        if self._client is None:
+            self._client = gitlab.Gitlab(
+                url=self.base_url, private_token=self.private_token, timeout=30, ssl_verify=False
+            )
+        return self._client
 
     def _request(self, method, endpoint, params=None):
-        return self._loop.run_until_complete(self._async_request(method, endpoint, params))
+        gl = self.client
+        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
+        if not path.startswith("/"):
+            path = f"/{path}"
+
+        if method.upper() == "GET":
+            return gl.http_get(path, query_data=params or {})
+        elif method.upper() == "POST":
+            return gl.http_post(path, post_data=params or {})
+        elif method.upper() == "PUT":
+            return gl.http_put(path, post_data=params or {})
+        elif method.upper() == "DELETE":
+            return gl.http_delete(path)
+        return None
 
     def _get(self, endpoint, params=None):
         return self._request("GET", endpoint, params=params)
 
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
-        all_items = []
-        base_params = dict(params or {})
+        gl = self.client
+        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
+        if not path.startswith("/"):
+            path = f"/{path}"
 
-        for page in range(1, max_pages + 1):
-            page_params = {**base_params, "per_page": per_page, "page": page}
-            batch = self._get(endpoint, params=page_params)
-            if not isinstance(batch, list) or not batch:
-                break
-            all_items.extend(batch)
-            if len(batch) < per_page:
-                break
+        all_items = []
+        base_params = {**(params or {}), "per_page": per_page}
+
+        try:
+            # Using as_list=True to get total_pages if needed,
+            # but here we just loop manually to respect max_pages
+            for page in range(1, max_pages + 1):
+                page_params = {**base_params, "page": page}
+                batch = gl.http_get(path, query_data=page_params)
+                if not isinstance(batch, list) or not batch:
+                    break
+                all_items.extend(batch)
+                if len(batch) < per_page:
+                    break
+        except Exception:
+            pass
 
         return all_items
 

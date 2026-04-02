@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -11,33 +11,26 @@ def mock_client():
 
 
 def test_client_request_success(mock_client):
-    with patch("aiohttp.ClientSession.request") as mock_req:
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        from unittest.mock import AsyncMock
-
-        mock_resp.json = AsyncMock(return_value={"id": 1})
-        mock_req.return_value.__aenter__.return_value = mock_resp
+    with patch("gitlab_compliance_checker.services.batch.client.gitlab.Gitlab.http_get") as mock_get:
+        mock_get.return_value = {"id": 1}
 
         res = mock_client._get("/test")
         assert res == {"id": 1}
-        mock_req.assert_called_once()
+        mock_get.assert_called_once()
 
 
 def test_client_request_204(mock_client):
-    with patch("aiohttp.ClientSession.request") as mock_req:
-        mock_resp = MagicMock()
-        mock_resp.status = 204
-        mock_req.return_value.__aenter__.return_value = mock_resp
+    with patch("gitlab_compliance_checker.services.batch.client.gitlab.Gitlab.http_get") as mock_get:
+        mock_get.return_value = None
 
         res = mock_client._get("/test")
         assert res is None
 
 
 def test_client_get_paginated(mock_client):
-    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
+    with patch("gitlab_compliance_checker.services.batch.client.gitlab.Gitlab.http_get") as mock_get:
         # Page 1: 100 items, Page 2: 50 items
-        mock_get.side_effect = [list(range(100)), list(range(50))]
+        mock_get.side_effect = [list(range(100)), list(range(50)), []]
 
         res = mock_client._get_paginated("/test", per_page=100)
         assert len(res) == 150
@@ -164,7 +157,7 @@ def test_users_api_get_user_commits_extended(mock_client):
 
 
 def test_client_paginated_break(mock_client):
-    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
+    with patch("gitlab.Gitlab.http_get") as mock_get:
         # Case: not a list
         mock_get.return_value = {"error": "bad"}
         assert mock_client._get_paginated("/test") == []

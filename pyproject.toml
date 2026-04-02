@@ -11,8 +11,6 @@ requires-python = ">=3.11"
 dependencies = [
   "streamlit>=1.33.0",
   "xlsxwriter",
-  "aiohttp>=3.13.4",
-  "nest_asyncio",
   "python-gitlab",
   "python-dotenv",
   "plotly",
@@ -27,7 +25,6 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "pytest-cov",
-  "aioresponses",
   "pre-commit",
   "openpyxl",
   "vulture",
