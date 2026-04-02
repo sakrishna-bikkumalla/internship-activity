@@ -1,7 +1,7 @@
 from gitlab_utils.description_quality import analyze_description
 
 
-def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
+def get_user_mrs(client, user_id, username=None, since=None, until=None, project_ids=None):
     """
     Fetch Merge Requests:
     - Authored MRs (GET /merge_requests?author_id=:id)
@@ -57,16 +57,23 @@ def get_user_mrs(client, user_id, since=None, until=None, project_ids=None):
                     mrs_list.append(
                         {
                             "title": item.get("title"),
+                            "description": item.get("description"),
                             "project_id": item.get("project_id"),
+                            "iid": item.get("iid"),
                             "web_url": item.get("web_url"),
                             "state": state,
                             "created_at": item.get("created_at"),
                             "merged_at": item.get("merged_at"),
                             "closed_at": item.get("closed_at"),
                             "role": role_label,
+                            "upvotes": item.get("upvotes", 0),
+                            "user_notes_count": item.get("user_notes_count", 0),
+                            "time_stats": item.get("time_stats", {}),
+                            "head_pipeline": item.get("head_pipeline"),
                             "desc_score": desc_quality["description_score"],
                             "quality": desc_quality["quality_label"],
                             "feedback": desc_quality["feedback"],
+                            "_username": username,
                         }
                     )
                     seen_ids.add(item["id"])

@@ -57,10 +57,22 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
             f_projs = executor.submit(projects.get_user_projects, client, user_id, username)
             f_groups = executor.submit(groups.get_user_groups, client, user_id)
             f_mrs = executor.submit(
-                merge_requests.get_user_mrs, client, user_id, since=since, until=until, project_ids=project_ids
+                merge_requests.get_user_mrs,
+                client,
+                user_id,
+                username=username,
+                since=since,
+                until=until,
+                project_ids=project_ids,
             )
             f_issues = executor.submit(
-                issues.get_user_issues, client, user_id, since=since, until=until, project_ids=project_ids
+                issues.get_user_issues,
+                client,
+                user_id,
+                username=username,
+                since=since,
+                until=until,
+                project_ids=project_ids,
             )
 
             # Wait for projects to resolve commit targets
@@ -94,6 +106,15 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
             user_mrs, mr_stats = f_mrs.result()
             user_issues, issue_stats = f_issues.result()
 
+        # 4. Quality Evaluation (Efficient)
+        # Issues: Quality for AUTHOR
+        # MRs: Quality for ASSIGNEE
+        authored_issues = [i for i in user_issues if i.get("role") == "Author"]
+        assigned_mrs = [m for m in user_mrs if m.get("role") == "Assigned"]
+
+        issue_quality = client.batch_evaluate_issues_efficiently(authored_issues)
+        mr_quality = client.batch_evaluate_mrs_efficiently(assigned_mrs)
+
         # Populate result data
         result["data"]["commits"] = all_commits
         result["data"]["commit_stats"] = commit_stats
@@ -102,6 +123,8 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
         result["data"]["mr_stats"] = mr_stats
         result["data"]["issues"] = user_issues
         result["data"]["issue_stats"] = issue_stats
+        result["data"]["issue_quality"] = issue_quality
+        result["data"]["mr_quality"] = mr_quality
 
     except Exception as e:
         result["status"] = "Error"

@@ -109,6 +109,16 @@ def check_ci_pipeline(ci_content: str, project_type: str = "Unknown") -> Dict[st
     if not has_explicit_stages:
         issues.append({"message": "No explicit 'stages:' defined in CI", "severity": "warning"})
 
+    # 1b. Check for includes (which might define stages/jobs elsewhere)
+    has_includes = "include" in parsed_yaml
+    if has_includes:
+        issues.append(
+            {
+                "message": "CI uses 'include:', which may define stages or jobs not visible to this analyzer.",
+                "severity": "info",
+            }
+        )
+
     # 2. Extract defined stages
     defined_stages = set()
     if has_explicit_stages:

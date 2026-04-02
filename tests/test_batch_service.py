@@ -1,26 +1,42 @@
+from unittest.mock import MagicMock, patch
 from batch_mode.batch_service import process_single_project
 
 
 class TestBatchService:
     """Tests for batch_mode/batch_service.py - process_single_project function."""
 
-    def test_process_single_project_returns_empty_dict(self):
-        """Test that process_single_project returns empty dict (TODO implementation)."""
-        gl_client = None
+    @patch("batch_mode.batch_service.run_project_compliance_checks")
+    def test_process_single_project_success(self, mock_run):
+        """Test that process_single_project returns the report on success."""
+        gl_client = MagicMock()
+        mock_report = {"dx_score": 85, "tools": {"project_type": "Python"}}
+        mock_run.return_value = mock_report
+        
         result = process_single_project(gl_client, "123", include_details=True)
-        assert result == {}
+        assert result == mock_report
+        mock_run.assert_called_once()
 
-    def test_process_single_project_without_details(self):
+    @patch("batch_mode.batch_service.run_project_compliance_checks")
+    def test_process_single_project_without_details(self, mock_run):
         """Test process_single_project without details flag."""
-        result = process_single_project(None, "456", include_details=False)
-        assert result == {}
+        gl_client = MagicMock()
+        mock_report = {"dx_score": 85, "tools": {"project_type": "Python"}}
+        mock_run.return_value = mock_report
+        
+        result = process_single_project(gl_client, "456", include_details=False)
+        assert result == {
+            "project_id": "456",
+            "dx_score": 85,
+            "project_type": "Python"
+        }
 
-    def test_process_single_project_with_string_id(self):
-        """Test process_single_project with string project ID."""
-        result = process_single_project(None, "789")
-        assert result == {}
-
-    def test_process_single_project_with_int_id(self):
-        """Test process_single_project with integer project ID."""
-        result = process_single_project(None, 123)
-        assert result == {}
+    @patch("batch_mode.batch_service.run_project_compliance_checks")
+    def test_process_single_project_error(self, mock_run):
+        """Test process_single_project handling error."""
+        gl_client = MagicMock()
+        mock_run.side_effect = Exception("API Error")
+        
+        result = process_single_project(gl_client, "789")
+        assert "error" in result
+        assert result["error"] == "API Error"
+        assert result["dx_score"] == 0

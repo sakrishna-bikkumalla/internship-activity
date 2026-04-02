@@ -1,26 +1,15 @@
 import concurrent.futures
-from urllib.parse import urlparse
 
 import streamlit as st
-from gitlab import GitlabGetError
 
+from gitlab_utils.projects import extract_path_from_url, get_project_with_retries
 from Projects.compliance_service import get_dx_suggestions, run_project_compliance_checks
 
 
 @st.cache_data(ttl=60)
-def get_project_with_retries(_gl_client, path_or_id):
-    try:
-        return _gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
-    except GitlabGetError:
-        raise
-
-
-def extract_path_from_url(input_str):
-    try:
-        path = urlparse(input_str).path.strip("/")
-        return path[:-4] if path.endswith(".git") else path
-    except Exception:
-        return input_str.strip()
+def cached_get_project(_gl_client, path_or_id):
+    """Cached wrapper for get_project_with_retries."""
+    return get_project_with_retries(_gl_client, path_or_id)
 
 
 def get_project_branches(project):
@@ -55,7 +44,7 @@ def render_compliance_mode(gl_client):
                 if fetch_project:
                     with st.spinner("Fetching branches..."):
                         pid = extract_path_from_url(project_input)
-                        project = get_project_with_retries(gl_client, pid)
+                        project = cached_get_project(gl_client, pid)
                         st.session_state["current_project_obj"] = project
                         st.session_state["current_project_id"] = project_input
                         st.session_state["project_branches"] = get_project_branches(project)
@@ -134,7 +123,7 @@ def render_batch_project_compliance_internal(gl_client):
         def _process_line(line):
             try:
                 pid = extract_path_from_url(line)
-                project = get_project_with_retries(gl_client, pid)
+                project = cached_get_project(gl_client, pid)
                 report = run_project_compliance_checks(gl_client, project.id)
 
                 return {

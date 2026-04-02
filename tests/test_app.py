@@ -6,9 +6,10 @@ from conftest import make_fake_st
 
 
 class FakeClient:
-    def __init__(self, url, token):
+    def __init__(self, url, token, ssl_verify=True):
         self.url = url
         self.token = token
+        self.ssl_verify = ssl_verify
         self.client = "fake-client"
 
 
@@ -122,10 +123,8 @@ def test_main_mode_user_profile_exception(monkeypatch, reimport_app):
 @pytest.mark.parametrize(
     "mode, expected_called",
     [
-        ("Batch 2026 ICFAI", "batch"),
-        ("Batch 2026 RCTS", "batch"),
+        ("Batch Analytics (Unified)", "batch"),
         ("Team Leaderboard", "team"),
-        ("BAD MRs (Batch)", "bad"),
     ],
 )
 def test_main_other_modes(monkeypatch, reimport_app, mode, expected_called):
@@ -136,9 +135,8 @@ def test_main_other_modes(monkeypatch, reimport_app, mode, expected_called):
 
     called = {}
 
-    monkeypatch.setattr(app, "render_batch_mode_ui", lambda c, x=None: called.setdefault("batch", True))
+    monkeypatch.setattr(app, "render_batch_analytics_ui", lambda c: called.setdefault("batch", True))
     monkeypatch.setattr(app, "render_team_leaderboard", lambda c: called.setdefault("team", True))
-    monkeypatch.setattr(app, "render_bad_mrs_batch_ui", lambda c: called.setdefault("bad", True))
 
     app.main()
 
@@ -160,7 +158,8 @@ def test_app_import_error_branch(monkeypatch):
     fake_st = make_fake_st(["https://gitlab.com", "token"], "Check Project Compliance")
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
     monkeypatch.setitem(sys.modules, "dotenv", type("Dotenv", (), {"load_dotenv": lambda: None}))
-    monkeypatch.setitem(sys.modules, "modes.bad_mrs_batch", types.ModuleType("modes.bad_mrs_batch"))
+    # Mocking the new consolidated mode module
+    monkeypatch.setitem(sys.modules, "modes.batch_analytics", types.ModuleType("modes.batch_analytics"))
 
     if "app" in sys.modules:
         del sys.modules["app"]
@@ -174,7 +173,8 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_app):
     fake_st = make_fake_st(["https://gitlab.com", "token", "ghost"], "User Profile Overview")
     app.st = fake_st
     app_client = FakeClient("https://gitlab.com", "token")
-    monkeypatch.setattr(app, "GitLabClient", lambda url, token: app_client)
+    monkeypatch.setattr(app, "GitLabClient", lambda url, token, ssl_verify=True: app_client)
+
     monkeypatch.setattr(app.users, "get_user_by_username", lambda client, username: {"id": 1})
 
     called = {}
@@ -198,12 +198,11 @@ def test_app_run_as_script_calls_main(monkeypatch):
         sys.modules, "gitlab_utils.users", types.SimpleNamespace(get_user_by_username=lambda c, u: None)
     )
     monkeypatch.setitem(
-        sys.modules, "gitlab_utils.client", types.SimpleNamespace(GitLabClient=FakeClient, BATCH_USERNAMES=[])
+        sys.modules, "gitlab_utils.client", types.SimpleNamespace(GitLabClient=FakeClient)
     )
     monkeypatch.setitem(
-        sys.modules, "modes.bad_mrs_batch", types.SimpleNamespace(render_bad_mrs_batch_ui=lambda c: None)
+        sys.modules, "modes.batch_analytics", types.SimpleNamespace(render_batch_analytics_ui=lambda c: None)
     )
-    monkeypatch.setitem(sys.modules, "modes.batch_mode", types.SimpleNamespace(render_batch_mode_ui=lambda c, x: None))
     monkeypatch.setitem(
         sys.modules, "modes.compliance_mode", types.SimpleNamespace(render_compliance_mode=lambda c: None)
     )
