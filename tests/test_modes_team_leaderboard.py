@@ -19,7 +19,7 @@ def test_init_state():
     with patch("streamlit.session_state", {}):
         team_leaderboard._init_state()
         assert "teams" in st.session_state
-        assert len(st.session_state["teams"]) > 0
+        assert isinstance(st.session_state["teams"], list)
 
 
 def test_calculate_score():
@@ -192,22 +192,24 @@ def test_render_edit_form_update():
                         assert state["teams"][0]["team_name"] == "T1-New"
 
 
-def test_get_contribution_index_uses_icfai_group_window():
+def test_get_contribution_index_no_cohort():
     with patch("streamlit.session_state", {}):
-        active_days, total_days, consistency = team_leaderboard._get_contribution_index({}, "prav2702")
-    expected_total = (team_leaderboard.datetime.date.today() - team_leaderboard.ICFAI_START_DATE).days + 1
+        active_days, total_days, consistency = team_leaderboard._get_contribution_index({}, "unknown_user")
     assert active_days == 0
-    assert total_days == expected_total
+    assert total_days == 0
     assert consistency == 0.0
 
 
-def test_get_contribution_index_uses_rcts_group_window():
-    with patch("streamlit.session_state", {}):
-        active_days, total_days, consistency = team_leaderboard._get_contribution_index({}, "vai5h")
-    expected_total = (team_leaderboard.datetime.date.today() - team_leaderboard.RCTS_START_DATE).days + 1
-    assert active_days == 0
-    assert total_days == expected_total
-    assert consistency == 0.0
+def test_get_contribution_index_with_dates():
+    with patch("streamlit.session_state", {
+        "_lb_from_date": datetime.date(2024, 1, 1),
+        "_lb_to_date": datetime.date(2024, 1, 10)
+    }):
+        active_days, total_days, consistency = team_leaderboard._get_contribution_index({}, "user1")
+    assert total_days == 10
+
+
+import datetime
 
 
 def test_team_name_exists():

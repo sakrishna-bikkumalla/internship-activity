@@ -1,4 +1,26 @@
 import concurrent.futures
+from urllib.parse import urlparse
+
+
+def extract_path_from_url(input_str: str) -> str:
+    """Extract project path from GitLab URL or return input as is."""
+    try:
+        path = urlparse(input_str).path.strip("/")
+        if path.endswith(".git"):
+            return path[:-4]
+        return path
+    except Exception:
+        return input_str.strip()
+
+
+def get_project_with_retries(gl_client, path_or_id):
+    """Fetch project by ID or path from python-gitlab client."""
+    try:
+        # Note: gl_client here should be the raw python-gitlab client
+        pid = int(path_or_id) if str(path_or_id).isdigit() else path_or_id
+        return gl_client.projects.get(pid)
+    except Exception:
+        raise
 
 
 def get_user_projects(client, user_id, username):

@@ -19,138 +19,37 @@ Session state keys (all prefixed _lb_ except "teams" and "edit_team_index"):
 import copy
 import datetime
 import io
+import json
+import os
 import statistics
 from html import escape
 from pathlib import Path
+from typing import Any, Dict, List, cast
 
 import dateutil.parser
 import pandas as pd
 import streamlit as st
 
 from gitlab_utils.batch import process_batch_users
-from modes.batch_mode import DEFAULT_ICFAI_USERS, DEFAULT_RCTS_USERS
+from gitlab_utils.config import DATA_DIR
 
 # ---------------------------------------------------------------------------
-# Default Teams (pre-configured)
+# Default Teams (loaded from data/teams.json)
 # ---------------------------------------------------------------------------
 
-BACKEND_TEAMS: list[dict] = [
-    {
-        "team_name": "Dev 3",
-        "project_name": "Dev 3",
-        "members": [
-            {"name": "Sai Krishna", "username": "saikrishna_b", "user_id": None},
-            {"name": "Bhavitha", "username": "MohanaSriBhavitha", "user_id": None},
-            {
-                "name": "Madavarapu Sai Harshavardhan",
-                "username": "Saiharshavardhan",
-                "user_id": None,
-            },
-        ],
-    },
-    {
-        "team_name": "Trinity",
-        "project_name": "Trinity",
-        "members": [
-            {"name": "Praneeth Ashish", "username": "praneethashish", "user_id": None},
-            {"name": "Vaishnavi Prabhala", "username": "vai5h", "user_id": None},
-            {"name": "Greeshma Kanukunta", "username": "kanukuntagreeshma2004", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "Sudo",
-        "project_name": "Sudo",
-        "members": [
-            {"name": "Balannagari Vandana Reddy", "username": "vandana1735", "user_id": None},
-            {"name": "Rajuldev Vandana", "username": "vandana_rajuldev", "user_id": None},
-            {"name": "Challa lakshmi Pavani", "username": "lakshmipavani_20", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "Trishul",
-        "project_name": "Trishul",
-        "members": [
-            {"name": "Mukthananad Reddy", "username": "Mukthanand21", "user_id": None},
-            {"name": "Lanke Shanmukha Varma", "username": "Shanmukh16", "user_id": None},
-            {"name": "Maddula Rushika Sritha", "username": "Rushika_1105", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "BrainStorm",
-        "project_name": "BrainStorm",
-        "members": [
-            {"name": "Daliboina satish", "username": "satish05", "user_id": None},
-            {
-                "name": "Damanagari Sathwika",
-                "username": "Sathwikareddy_Damanagari",
-                "user_id": None,
-            },
-            {"name": "C.Sahasra", "username": "Sahasraa", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "Core",
-        "project_name": "Core",
-        "members": [
-            {"name": "Abhilash", "username": "Abhilash653", "user_id": None},
-            {"name": "kanda swarna rathna madhuri", "username": "swarna_4539", "user_id": None},
-            {"name": "Laxman Reddy", "username": "laxmanreddypatlolla", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "Magnum",
-        "project_name": "Magnum",
-        "members": [
-            {"name": "Lagichetty Kushal", "username": "LagichettyKushal", "user_id": None},
-            {"name": "Lakshy Yarlagadda", "username": "Lakshy", "user_id": None},
-            {"name": "Nagi Reddy Pavani", "username": "pavaninagireddi", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "TrioForce",
-        "project_name": "TrioForce",
-        "members": [
-            {"name": "Aravindswamy", "username": "aravindswamy", "user_id": None},
-            {"name": "Suma Reddy", "username": "Suma2304", "user_id": None},
-            {"name": "Koushik Reddy", "username": "koushik_18", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "Techops",
-        "project_name": "Techops",
-        "members": [
-            {"name": "Prabhu kumari", "username": "kumari123", "user_id": None},
-            {"name": "Habiba", "username": "Habeebunissa", "user_id": None},
-            {"name": "Chesetti Sai Jeevana Jyothi", "username": "jeevana_31", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "Mind ops",
-        "project_name": "Mind ops",
-        "members": [
-            {"name": "Bhaskar", "username": "Bhaskar_Battula", "user_id": None},
-            {"name": "Sai Teja", "username": "saiteja3005", "user_id": None},
-            {"name": "Satya Pranavanadh", "username": "Pranav_rs", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "code dev",
-        "project_name": "code dev",
-        "members": [
-            {"name": "", "username": "klaxmi1908", "user_id": None},
-            {"name": "", "username": "prav2702", "user_id": None},
-        ],
-    },
-    {
-        "team_name": "spk",
-        "project_name": "spk",
-        "members": [
-            {"name": "", "username": "Pavani_Pothuganti", "user_id": None},
-            {"name": "", "username": "SandhyaRani_111", "user_id": None},
-            {"name": "", "username": "Kaveri_Mamidi", "user_id": None},
-        ],
-    },
-]
+
+def _load_default_teams() -> list[dict]:
+    """Load default teams from data/teams.json if it exists."""
+    teams_file = os.path.join(DATA_DIR, "teams.json")
+    if os.path.exists(teams_file):
+        try:
+            with open(teams_file, "r") as f:
+                data = json.load(f)
+                return cast(List[Dict[Any, Any]], data.get("teams", []))
+        except Exception as e:
+            st.error(f"Error loading teams from {teams_file}: {e}")
+    return []
+
 
 # ---------------------------------------------------------------------------
 # Session State Bootstrap
@@ -159,8 +58,10 @@ BACKEND_TEAMS: list[dict] = [
 
 def _init_state() -> None:
     """Initialise all session-state keys used by this module. Safe to call repeatedly."""
+    if "teams" not in st.session_state:
+        st.session_state["teams"] = copy.deepcopy(_load_default_teams())
+
     defaults: dict = {
-        "teams": copy.deepcopy(BACKEND_TEAMS),  # Pre-load with default teams
         "edit_team_index": None,
         "_lb_show_create_form": False,
         "_lb_show_upload_form": False,
@@ -889,19 +790,10 @@ def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
     return activity_map
 
 
-ICFAI_START_DATE = datetime.date(2026, 1, 5)
-RCTS_START_DATE = datetime.date(2026, 1, 27)
-ICFAI_USERNAMES = {u.strip().lower() for u in DEFAULT_ICFAI_USERS.splitlines() if u.strip()}
-RCTS_USERNAMES = {u.strip().lower() for u in DEFAULT_RCTS_USERS.splitlines() if u.strip()}
-
-
 def _get_group_start_date(username: str | None) -> datetime.date | None:
-    """Return cohort start date for known usernames; otherwise None."""
-    uname = (username or "").strip().lower()
-    if uname in ICFAI_USERNAMES:
-        return ICFAI_START_DATE
-    if uname in RCTS_USERNAMES:
-        return RCTS_START_DATE
+    """Return cohort start date for known usernames; otherwise None.
+    Note: Cohort start dates are currently not supported without BATCH_CONFIG.
+    """
     return None
 
 

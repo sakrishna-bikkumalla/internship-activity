@@ -24,10 +24,11 @@ This project helps teams and mentors quickly evaluate whether repositories follo
   - Commit activity (including time-slot stats)
   - Groups, merge requests, and issues summary
 
-- 🚀 **Batch Analytics Modes**
-  - Batch 2026 ICFAI
-  - Batch 2026 RCTS
-  - Excel report export
+- 🚀 **Batch Analytics (Unified)**
+  - Username Input (Text Area or .txt File)
+  - Unified report including General Stats, Authored Issue Quality, and Assigned MR Quality
+  - High-performance extraction with minimum API calls
+  - Comprehensive Excel report export
 
 - 📦 **Docker-ready deployment**
 
@@ -39,7 +40,7 @@ gitlab-compliance-checker/
 ├── modes/
 │   ├── compliance_mode.py
 │   ├── user_profile.py
-│   └── batch_mode.py
+│   └── batch_analytics.py
 ├── gitlab_utils/
 ├── tests/
 ├── public/

@@ -5,9 +5,7 @@ from dotenv import load_dotenv
 
 from gitlab_utils import users
 from gitlab_utils.client import GitLabClient
-from modes.bad_issue import render_bad_issue_batch_ui
-from modes.bad_mrs_batch import render_bad_mrs_batch_ui
-from modes.batch_mode import render_batch_mode_ui
+from modes.batch_analytics import render_batch_analytics_ui
 from modes.compliance_mode import render_compliance_mode
 from modes.team_leaderboard import render_team_leaderboard
 from modes.user_profile import render_user_profile
@@ -24,17 +22,18 @@ load_dotenv()
 
 
 def main():
-    st.title("GitLab Compliance & Analytics Tool")
+    st.title("GitLab Compliance Checker")
 
     # Sidebar: Config & Mode
     st.sidebar.header("Configuration")
 
     # Credentials (allow override or from env)
-    default_url = os.getenv("GITLAB_URL", "https://gitlab.com")
+    default_url = os.getenv("GITLAB_URL", "https://code.swecha.org")
     default_token = os.getenv("GITLAB_TOKEN", "")
 
     gitlab_url = st.sidebar.text_input("GitLab URL", value=default_url).strip()
     gitlab_token = st.sidebar.text_input("GitLab Token", value=default_token, type="password").strip()
+    ssl_verify = st.sidebar.checkbox("Verify SSL", value=True)
 
     mode = st.sidebar.radio(
         "Select Mode",
@@ -42,17 +41,8 @@ def main():
             "Check Project Compliance",
             "User Profile Overview",
             "Team Leaderboard",
-            "Batch 2026 ICFAI",
-            "Batch 2026 RCTS",
-            "BAD MRs (Batch)",
-            "BAD Issues (Batch)",
+            "Batch Analytics",
         ],
-    )
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### About")
-    st.sidebar.info(
-        "Refactored Tool:\n- Project Compliance\n- User Analytics (Single & Batch)\n- Groups, MRs, Issues, Commits"
     )
 
     if not gitlab_token:
@@ -61,7 +51,7 @@ def main():
 
     # Initialize Client
     try:
-        client = GitLabClient(gitlab_url, gitlab_token)
+        client = GitLabClient(gitlab_url, gitlab_token, ssl_verify=ssl_verify)
     except Exception as e:
         st.error(f"Critical Error initializing GitLab client: {e}")
         st.stop()
@@ -69,7 +59,6 @@ def main():
     # Routing
     if mode == "Check Project Compliance":
         # Compliance mode expects the python-gitlab object for now (legacy compatibility)
-        # We might want to refactor compliance_mode.py later, but for now passing .client works
         render_compliance_mode(client.client)
 
     elif mode == "User Profile Overview":
@@ -93,20 +82,11 @@ def main():
             else:
                 st.error(f"User '{user_input}' not found.")
 
-    elif mode == "Batch 2026 ICFAI":
-        render_batch_mode_ui(client, "ICFAI")
-
-    elif mode == "Batch 2026 RCTS":
-        render_batch_mode_ui(client, "RCTS")
+    elif mode == "Batch Analytics":
+        render_batch_analytics_ui(client)
 
     elif mode == "Team Leaderboard":
         render_team_leaderboard(client)
-
-    elif mode == "BAD MRs (Batch)":
-        render_bad_mrs_batch_ui(client)
-
-    elif mode == "BAD Issues (Batch)":
-        render_bad_issue_batch_ui(client)
 
     else:
         st.error(f"Routing Error: Unknown mode '{mode}' selected.")

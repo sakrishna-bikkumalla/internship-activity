@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import threading
 from datetime import datetime, timezone
@@ -7,12 +8,14 @@ from typing import Any
 import aiohttp
 import gitlab
 
-# import nest_asyncio # Causes "Timeout context manager should be used inside a task" in aiohttp 3.11+
+# Set up logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 async def safe_api_call_async(func, *args, **kwargs):
     """
-    Async safe wrapper for GitLab API calls with aggressive retry logic and 429 handling.
+    Async safe wrapper for GitLab API calls with retry logic and 429 handling.
     """
     max_retries = 5
     for attempt in range(max_retries):
@@ -21,18 +24,20 @@ async def safe_api_call_async(func, *args, **kwargs):
         except aiohttp.ClientResponseError as e:
             if e.status == 429:
                 retry_after = e.headers.get("Retry-After")
+                wait_time = 5 * (attempt + 1)
                 if retry_after:
                     try:
                         wait_limit = int(retry_after)
                         if wait_limit > 60:
+                            logger.error(f"GitLab API Rate Limit Exceeded. Wait {wait_limit}s.")
                             raise Exception(
                                 f"GitLab API Rate Limit Exceeded. Please try again after {wait_limit} seconds."
                             )
+                        wait_time = max(wait_time, wait_limit)
                     except (ValueError, TypeError):
                         pass
 
-                wait_time = 5 * (attempt + 1)
-                print(f"Rate limited (429) on {e.request_info.url}. Waiting {wait_time}s...")
+                logger.warning(f"Rate limited (429) on {e.request_info.url}. Waiting {wait_time}s...")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(wait_time)
                     continue
@@ -42,14 +47,11 @@ async def safe_api_call_async(func, *args, **kwargs):
             if attempt < max_retries - 1:
                 await asyncio.sleep(2)
                 continue
-            error_msg = f"HTTP ERROR {e.status} on {getattr(func, '__name__', 'unknown')}: {e.message}\n"
-            print(error_msg)
-            with open("/tmp/gitlab_api_errors.log", "a") as f:
-                f.write(error_msg)
+            logger.error(f"HTTP ERROR {e.status} on {getattr(func, '__name__', 'unknown')}: {e.message}")
             return []
         except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
             wait_time = 5 * (attempt + 1)
-            print(f"Connection Error: {e}. Waiting {wait_time}s...")
+            logger.warning(f"Connection Error: {e}. Waiting {wait_time}s...")
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait_time)
                 continue
@@ -58,56 +60,10 @@ async def safe_api_call_async(func, *args, **kwargs):
             if attempt < max_retries - 1:
                 await asyncio.sleep(1)
                 continue
-            error_msg = f"FAILED API CALL on {getattr(func, '__name__', 'unknown')}: {type(e).__name__} - {e}\n"
-            print(error_msg)
-            with open("/tmp/gitlab_api_errors.log", "a") as f:
-                f.write(error_msg)
+            logger.error(f"FAILED API CALL on {getattr(func, '__name__', 'unknown')}: {type(e).__name__} - {e}")
             return []
     return []
 
-
-# BATCH_USERNAMES etc constant
-BATCH_USERNAMES: list[str] = [
-    "prav2702",
-    "saikrishna_b",
-    "MohanaSriBhavitha",
-    "praneethashish",
-    "kanukuntagreeshma2004",
-    "vandana1735",
-    "vandana_rajuldev",
-    "Mukthanand21",
-    "Shanmukh16",
-    "Sathwikareddy_Damanagari",
-    "Sahasraa",
-    "laxmanreddypatlolla",
-    "Abhilash653",
-    "LagichettyKushal",
-    "Lakshy",
-    "Suma2304",
-    "koushik_18",
-    "kumari123",
-    "Habeebunissa",
-    "Bhaskar_Battula",
-    "Pranav_rs",
-    "vai5h",
-    "Saiharshavardhan",
-    "Rushika_1105",
-    "swarna_4539",
-    "satish05",
-    "aravindswamy",
-    "pavaninagireddi",
-    "jeevana_31",
-    "saiteja3005",
-    "SandhyaRani_111",
-    "klaxmi1908",
-    "Kaveri_Mamidi",
-    "Pavani_Pothuganti",
-    "prashanth0812",
-    "dasarajulavaishnavi04",
-    "ashrithakunjeti",
-    "srilathabandari",
-    "vemurispriya",
-]
 
 _ZERO_ROW: dict[str, Any] = {
     "Username": "",
@@ -138,23 +94,22 @@ _ZERO_ISSUE_ROW: dict[str, Any] = {
 
 
 class GitLabClient:
-    def __init__(self, base_url, private_token):
+    def __init__(self, base_url: str, private_token: str, ssl_verify: bool = True):
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v4"
         self.headers = {"PRIVATE-TOKEN": private_token}
         self.private_token = private_token
+        self.ssl_verify = ssl_verify
         self.error_msg = None
         self._client = None
         self._session = None
 
         # We run a separate background thread for the asyncio loop to avoid
-        # conflicts with Streamlit's own execution model and nest_asyncio quirks.
+        # conflicts with Streamlit's own execution model.
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
 
-        # The semaphore must be created in the same loop it will be used in.
-        # We use a Future to wait for it.
         self._sem = None
         self._init_sem()
 
@@ -175,7 +130,7 @@ class GitLabClient:
 
     async def _get_session(self):
         if self._session is None or self._session.closed:
-            connector = aiohttp.TCPConnector(ssl=False)
+            connector = aiohttp.TCPConnector(ssl=self.ssl_verify)
             self._session = aiohttp.ClientSession(connector=connector, headers=self.headers)
         return self._session
 
@@ -183,13 +138,13 @@ class GitLabClient:
     def client(self):
         """Lazy-loaded python-gitlab client."""
         if self._client is None:
-            # Note: We keep sidebar writes here for UI feedback
             try:
                 self._client = gitlab.Gitlab(
-                    url=self.base_url, private_token=self.private_token, timeout=10, ssl_verify=False
+                    url=self.base_url, private_token=self.private_token, timeout=10, ssl_verify=self.ssl_verify
                 )
             except Exception as e:
                 self.error_msg = str(e)
+                logger.error(f"Failed to initialize python-gitlab client: {e}")
                 self._client = None
         return self._client
 
@@ -499,11 +454,11 @@ class GitLabClient:
                 row = result_map[uname]
                 # Count total assigned issues
                 row["Total Assigned"] += 1
-                
+
                 # Count opened issues
                 if f.get("is_opened"):
                     row["Opened Issues"] += 1
-                
+
                 # Count and evaluate only closed issues
                 if f.get("is_closed"):
                     row["Closed Issues"] += 1
@@ -525,6 +480,217 @@ class GitLabClient:
     def batch_evaluate_issues(self, usernames, project_id=None, group_id=None, issue_scope: str = "author"):
         """Public method to batch evaluate issues for multiple users."""
         return self._run_sync(self._batch_evaluate_issues_async(usernames, project_id, group_id, issue_scope))
+
+    async def _evaluate_single_mr_efficiently(self, mr: dict) -> tuple[str, dict]:
+        """
+        Evaluate a single MR for quality metrics using ONLY data already present in the list response.
+        ZERO additional API calls.
+        """
+        uname = mr.get("_username", "unknown")
+
+        flags = {
+            "is_merged": mr.get("state") == "merged",
+            "is_closed": mr.get("state") == "closed",
+            "is_terminal": mr.get("state") in ("merged", "closed"),
+            "no_desc": False,
+            "no_issues": False,
+            "no_time": False,
+            "failed_pipe": False,
+            "no_semantic_commits": False,
+            "no_internal_review": False,
+            "merge_gt_2_days": False,
+            "merge_gt_1_week": False,
+        }
+
+        try:
+            # 1. Description Check
+            desc = mr.get("description") or ""
+            if not str(desc).strip():
+                flags["no_desc"] = True
+
+            # 2. Pipeline Check (head_pipeline is often in list response)
+            pipeline = mr.get("head_pipeline") or mr.get("pipeline")
+            if pipeline and isinstance(pipeline, dict):
+                if pipeline.get("status") == "failed":
+                    flags["failed_pipe"] = True
+
+            # 3. Time Spent Check (time_stats is usually in list response)
+            ts = mr.get("time_stats", {})
+            if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
+                flags["no_time"] = True
+
+            # 4. Semantic Title Check (Heuristic for semantic commits)
+            title_lower = str(mr.get("title") or "").lower()
+            if not re.match(
+                r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:", title_lower
+            ):
+                flags["no_semantic_commits"] = True
+
+            # 5. Internal Review (Heuristic: upvotes or notes)
+            upvotes = mr.get("upvotes", 0)
+            notes_count = mr.get("user_notes_count", 0)
+            if upvotes == 0 and notes_count == 0:
+                flags["no_internal_review"] = True
+
+            # 6. Issues check (Heuristic: search description/title)
+            content = f"{mr.get('title', '')} {desc}"
+            if not re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", content, re.IGNORECASE):
+                flags["no_issues"] = True
+
+            # 7. Merge Duration
+            created_s = mr.get("created_at")
+            merged_s = mr.get("merged_at") or mr.get("closed_at")
+            if created_s and merged_s:
+                created_dt = datetime.strptime(created_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                end_dt = datetime.strptime(merged_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                diff = (end_dt - created_dt).total_seconds() / 86400
+                if diff > 2:
+                    flags["merge_gt_2_days"] = True
+                if diff > 7:
+                    flags["merge_gt_1_week"] = True
+        except Exception:
+            pass
+        return uname, flags
+
+    async def _evaluate_single_issue_efficiently(self, issue: dict) -> tuple[str, dict]:
+        """
+        Evaluate a single issue for quality metrics using ONLY data already present in the list response.
+        ZERO additional API calls.
+        """
+        uname = issue.get("_username", "unknown")
+        flags = {
+            "is_opened": issue.get("state") == "opened",
+            "is_closed": issue.get("state") == "closed",
+            "no_desc": False,
+            "no_labels": False,
+            "no_milestone": False,
+            "no_time": False,
+            "long_open_time": False,
+            "no_semantic_title": False,
+        }
+
+        try:
+            # 1. Description Check
+            desc = issue.get("description") or ""
+            if not str(desc).strip():
+                flags["no_desc"] = True
+
+            # 2. Labels Check
+            labels = issue.get("labels") or []
+            if not labels:
+                flags["no_labels"] = True
+
+            # 3. Milestone Check
+            if not issue.get("milestone"):
+                flags["no_milestone"] = True
+
+            # 4. Time Spent Check
+            ts = issue.get("time_stats", {})
+            if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
+                flags["no_time"] = True
+
+            # 5. Semantic Title Check
+            title_lower = str(issue.get("title") or "").lower()
+            semantic_prefixes = ("feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "bug")
+            if not any(title_lower.startswith(p) for p in semantic_prefixes):
+                flags["no_semantic_title"] = True
+
+            # 6. Long Open Time Check (> 2 days)
+            created_s = issue.get("created_at")
+            closed_s = issue.get("closed_at")
+            if created_s:
+                created_dt = datetime.strptime(created_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                end_dt = (
+                    datetime.strptime(closed_s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                    if closed_s
+                    else datetime.now(timezone.utc)
+                )
+                diff = (end_dt - created_dt).total_seconds() / 86400
+                if diff > 2:
+                    flags["long_open_time"] = True
+
+        except Exception:
+            pass
+        return uname, flags
+
+    def batch_evaluate_mrs_efficiently(self, mrs: list[dict]) -> dict[str, Any]:
+        """
+        Evaluate a list of MRs efficiently.
+        Returns aggregated stats for a single user.
+        """
+        stats = {
+            "Closed MRs": 0,
+            "No Desc": 0,
+            "No Issues": 0,
+            "No Time Spent": 0,
+            "Failed Pipeline": 0,
+            "No Semantic Commits": 0,
+            "No Internal Review": 0,
+            "Merge > 1 Week": 0,
+            "Merge > 2 Days": 0,
+        }
+
+        # Only evaluate closed/merged MRs for quality
+        closed_mrs = [mr for mr in mrs if mr.get("state") in ("merged", "closed")]
+
+        for mr in closed_mrs:
+            _, f = self._run_sync(self._evaluate_single_mr_efficiently(mr))
+            stats["Closed MRs"] += 1
+            if f.get("no_desc"):
+                stats["No Desc"] += 1
+            if f.get("no_issues"):
+                stats["No Issues"] += 1
+            if f.get("no_time"):
+                stats["No Time Spent"] += 1
+            if f.get("failed_pipe"):
+                stats["Failed Pipeline"] += 1
+            if f.get("no_semantic_commits"):
+                stats["No Semantic Commits"] += 1
+            if f.get("no_internal_review"):
+                stats["No Internal Review"] += 1
+            if f.get("merge_gt_1_week"):
+                stats["Merge > 1 Week"] += 1
+            if f.get("merge_gt_2_days"):
+                stats["Merge > 2 Days"] += 1
+
+        return stats
+
+    def batch_evaluate_issues_efficiently(self, issues: list[dict]) -> dict[str, Any]:
+        """
+        Evaluate a list of Issues efficiently.
+        Returns aggregated stats for a single user.
+        """
+        stats = {
+            "Total Assigned": len(issues),
+            "Opened Issues": len([i for i in issues if i.get("state") == "opened"]),
+            "Closed Issues": 0,
+            "No Desc": 0,
+            "No Labels": 0,
+            "No Milestone": 0,
+            "No Time Spent": 0,
+            "Long Open Time (>2 days)": 0,
+            "No Semantic Title": 0,
+        }
+
+        closed_issues = [i for i in issues if i.get("state") == "closed"]
+
+        for issue in closed_issues:
+            _, f = self._run_sync(self._evaluate_single_issue_efficiently(issue))
+            stats["Closed Issues"] += 1
+            if f.get("no_desc"):
+                stats["No Desc"] += 1
+            if f.get("no_labels"):
+                stats["No Labels"] += 1
+            if f.get("no_milestone"):
+                stats["No Milestone"] += 1
+            if f.get("no_time"):
+                stats["No Time Spent"] += 1
+            if f.get("long_open_time"):
+                stats["Long Open Time (>2 days)"] += 1
+            if f.get("no_semantic_title"):
+                stats["No Semantic Title"] += 1
+
+        return stats
 
     def _request(self, method, endpoint, params=None):
         return self._run_sync(self._async_request(method, endpoint, params))

@@ -1,4 +1,4 @@
-def get_user_issues(client, user_id, since=None, until=None, project_ids=None):
+def get_user_issues(client, user_id, username=None, since=None, until=None, project_ids=None):
     """
     Fetch Issues:
     - Authored Issues (GET /issues?author_id=:id)
@@ -27,7 +27,7 @@ def get_user_issues(client, user_id, since=None, until=None, project_ids=None):
     if until:
         date_params["created_before"] = until
 
-    def fetch_and_add(base_params: dict, is_assigned: bool = False) -> None:
+    def fetch_and_add(base_params: dict, is_assigned: bool = False, role_label: str = "Author") -> None:
         try:
             params = {**base_params, **date_params}
             items = client._get_paginated("/issues", params=params, per_page=50, max_pages=10)
@@ -42,12 +42,18 @@ def get_user_issues(client, user_id, since=None, until=None, project_ids=None):
                     issues_list.append(
                         {
                             "title": item.get("title"),
+                            "description": item.get("description"),
                             "project_id": item.get("project_id"),
                             "web_url": item.get("web_url"),
                             "state": state,
                             "created_at": item.get("created_at"),
                             "closed_at": item.get("closed_at"),
                             "assigned": is_assigned,
+                            "role": role_label,
+                            "labels": item.get("labels", []),
+                            "milestone": item.get("milestone"),
+                            "time_stats": item.get("time_stats", {}),
+                            "_username": username,
                         }
                     )
                     seen_ids.add(item["id"])
@@ -65,9 +71,9 @@ def get_user_issues(client, user_id, since=None, until=None, project_ids=None):
             pass
 
     # 1. Authored
-    fetch_and_add({"author_id": user_id, "scope": "all"}, is_assigned=False)
+    fetch_and_add({"author_id": user_id, "scope": "all"}, is_assigned=False, role_label="Author")
 
     # 2. Assigned
-    fetch_and_add({"assignee_id": user_id, "scope": "all"}, is_assigned=True)
+    fetch_and_add({"assignee_id": user_id, "scope": "all"}, is_assigned=True, role_label="Assigned")
 
     return issues_list, stats

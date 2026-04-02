@@ -119,6 +119,9 @@ def make_fake_st(text_inputs=None, mode=None):
         def info(self, text):
             return None
 
+        def checkbox(self, label, value=True):
+            return value
+
     fake_st.sidebar = Sidebar(text_inputs, mode)
 
     # mirror real usage for st.text_input and st.cache_data
