@@ -1,7 +1,8 @@
-from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
-from gitlab_compliance_checker.infrastructure.gitlab import users
-import os
 import logging
+import os
+
+from gitlab_compliance_checker.infrastructure.gitlab import users
+from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
 
 logging.basicConfig(level=logging.DEBUG)
 
