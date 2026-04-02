@@ -1,5 +1,5 @@
 """
-Tests for gitlab_utils/commits.py
+Tests for gitlab_compliance_checker.infrastructure.gitlab.commits.py
 
 Covers all fixes made:
   - Timezone handling (aware vs naive timestamps)
@@ -12,7 +12,7 @@ Covers all fixes made:
 
 from unittest.mock import MagicMock
 
-from gitlab_utils.commits import get_user_commits
+from gitlab_compliance_checker.infrastructure.gitlab.commits import get_user_commits
 
 # ---------------------------------------------------------------------------
 # Helpers

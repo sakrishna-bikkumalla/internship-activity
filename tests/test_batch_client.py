@@ -1,8 +1,8 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from batch_mode.client import GitLabClient, GitLabUsersAPI
+from gitlab_compliance_checker.services.batch.client import GitLabClient, GitLabUsersAPI
 
 
 @pytest.fixture
@@ -11,33 +11,26 @@ def mock_client():
 
 
 def test_client_request_success(mock_client):
-    with patch("aiohttp.ClientSession.request") as mock_req:
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        from unittest.mock import AsyncMock
-
-        mock_resp.json = AsyncMock(return_value={"id": 1})
-        mock_req.return_value.__aenter__.return_value = mock_resp
+    with patch("gitlab_compliance_checker.services.batch.client.gitlab.Gitlab.http_get") as mock_get:
+        mock_get.return_value = {"id": 1}
 
         res = mock_client._get("/test")
         assert res == {"id": 1}
-        mock_req.assert_called_once()
+        mock_get.assert_called_once()
 
 
 def test_client_request_204(mock_client):
-    with patch("aiohttp.ClientSession.request") as mock_req:
-        mock_resp = MagicMock()
-        mock_resp.status = 204
-        mock_req.return_value.__aenter__.return_value = mock_resp
+    with patch("gitlab_compliance_checker.services.batch.client.gitlab.Gitlab.http_get") as mock_get:
+        mock_get.return_value = None
 
         res = mock_client._get("/test")
         assert res is None
 
 
 def test_client_get_paginated(mock_client):
-    with patch("batch_mode.client.GitLabClient._get") as mock_get:
+    with patch("gitlab_compliance_checker.services.batch.client.gitlab.Gitlab.http_get") as mock_get:
         # Page 1: 100 items, Page 2: 50 items
-        mock_get.side_effect = [list(range(100)), list(range(50))]
+        mock_get.side_effect = [list(range(100)), list(range(50)), []]
 
         res = mock_client._get_paginated("/test", per_page=100)
         assert len(res) == 150
@@ -45,7 +38,7 @@ def test_client_get_paginated(mock_client):
 
 
 def test_users_api_get_by_username(mock_client):
-    with patch("batch_mode.client.GitLabClient._get") as mock_get:
+    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
         mock_get.return_value = [{"id": 1, "username": "user1", "name": "User One"}]
         res = mock_client.users.get_by_username("user1")
         assert res["id"] == 1
@@ -58,14 +51,14 @@ def test_users_api_get_by_username(mock_client):
 
 
 def test_users_api_get_by_userid(mock_client):
-    with patch("batch_mode.client.GitLabClient._get") as mock_get:
+    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
         mock_get.return_value = {"id": 1, "username": "user1"}
         res = mock_client.users.get_by_userid(1)
         assert res["id"] == 1
 
 
 def test_users_api_get_user_projects(mock_client):
-    with patch("batch_mode.client.GitLabClient._get_paginated") as mock_paginated:
+    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get_paginated") as mock_paginated:
         mock_paginated.side_effect = [
             [{"id": 1, "name": "Owned"}],
             [{"id": 1, "name": "Owned"}, {"id": 2, "name": "Member"}],
@@ -164,7 +157,7 @@ def test_users_api_get_user_commits_extended(mock_client):
 
 
 def test_client_paginated_break(mock_client):
-    with patch("batch_mode.client.GitLabClient._get") as mock_get:
+    with patch("gitlab.Gitlab.http_get") as mock_get:
         # Case: not a list
         mock_get.return_value = {"error": "bad"}
         assert mock_client._get_paginated("/test") == []
@@ -175,7 +168,7 @@ def test_normalize_user_none(mock_client):
 
 
 def test_get_user_projects_exception(mock_client):
-    with patch("batch_mode.client.GitLabClient._get_paginated") as mock_paginated:
+    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get_paginated") as mock_paginated:
         # First two succeed, third fails (line 108)
         mock_paginated.side_effect = [[], [], Exception("Limit")]
         res = mock_client.users.get_user_projects(1)
@@ -183,7 +176,7 @@ def test_get_user_projects_exception(mock_client):
 
 
 def test_direct_api_calls(mock_client):
-    with patch("batch_mode.client.GitLabClient._get_paginated") as mock_paginated:
+    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get_paginated") as mock_paginated:
         mock_paginated.return_value = [{"id": 1}]
         assert mock_client.users.get_user_groups(1) == [{"id": 1}]
         assert mock_client.users.get_user_issues(1) == [{"id": 1}]

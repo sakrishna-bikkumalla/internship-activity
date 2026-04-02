@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from issues import issue_ui
+import gitlab_compliance_checker.ui.issues as issue_ui
 
 
 def test_render_issue_compliance_ui():

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from gitlab import GitlabGetError
 
-from batch_mode import file_reader, retry_helper
+from gitlab_compliance_checker.services.batch import file_reader, retry_helper
 
 # --- Tests for file_reader.py ---
 

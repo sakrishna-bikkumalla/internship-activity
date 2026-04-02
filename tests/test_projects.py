@@ -3,13 +3,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from Projects.classification import get_project_file_classification
-from Projects.compliance_checks import get_project_compliance_report
-from Projects.compliance_service import run_project_compliance_checks
-from Projects.file_classifier import classify_files
-from Projects.license_checker import check_license
-from Projects.readme_checker import check_readme
-from Projects.templates_checker import check_templates
+from gitlab_compliance_checker.services.compliance.classification import get_project_file_classification
+from gitlab_compliance_checker.services.compliance.compliance_checks import get_project_compliance_report
+from gitlab_compliance_checker.services.compliance.compliance_service import run_project_compliance_checks
+from gitlab_compliance_checker.services.compliance.file_classifier import classify_files
+from gitlab_compliance_checker.services.compliance.license_checker import check_license
+from gitlab_compliance_checker.services.compliance.readme_checker import check_readme
+from gitlab_compliance_checker.services.compliance.templates_checker import check_templates
 
 
 @pytest.fixture
@@ -73,7 +73,9 @@ class TestCheckLicense:
     def test_license_exists(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
         mock_file = MagicMock()
-        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode("utf-8")
+        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode(
+            "utf-8"
+        )
         mock_project.files.get.return_value = mock_file
 
         result = check_license(mock_gl, 123)
@@ -94,7 +96,10 @@ class TestCheckLicense:
     def test_license_case_insensitive(self, mock_gl, mock_project):
         mock_gl.projects.get.return_value = mock_project
         mock_file = MagicMock()
-        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode("utf-8")
+        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode(
+            "utf-8"
+        )
+
         # Simulate variant check
         def side_effect(file_path, ref):
             if file_path == "LICENSE":
@@ -185,17 +190,17 @@ class TestCheckTemplates:
 
         result = check_templates(mock_gl, 123)
 
-        assert "error" not in result # it catches internal exceptions per path
+        assert "error" not in result  # it catches internal exceptions per path
         assert result["exists"] is False
 
 
 class TestComplianceService:
     """Tests for compliance_service.py - run_project_compliance_checks function."""
 
-    @patch("Projects.compliance_service.check_templates")
-    @patch("Projects.compliance_service.check_license")
-    @patch("Projects.compliance_service.check_readme")
-    @patch("Projects.compliance_service.classify_files")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_templates")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_license")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_readme")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.classify_files")
     def test_run_compliance_checks_all_present(self, mock_classify, mock_readme, mock_license, mock_templates, mock_gl):
         mock_classify.return_value = {"py": 5}
         mock_readme.return_value = {"exists": True, "status": "README present"}
@@ -210,10 +215,10 @@ class TestComplianceService:
         assert "file_types" in result
         assert result["file_types"] == {"py": 5}
 
-    @patch("Projects.compliance_service.check_templates")
-    @patch("Projects.compliance_service.check_license")
-    @patch("Projects.compliance_service.check_readme")
-    @patch("Projects.compliance_service.classify_files")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_templates")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_license")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_readme")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_service.classify_files")
     def test_run_compliance_checks_some_missing(
         self, mock_classify, mock_readme, mock_license, mock_templates, mock_gl
     ):
@@ -232,7 +237,7 @@ class TestComplianceService:
 class TestClassification:
     """Tests for classification.py - get_project_file_classification function."""
 
-    @patch("Projects.classification.classify_files")
+    @patch("gitlab_compliance_checker.services.compliance.classification.classify_files")
     def test_classification_delegates_to_classify_files(self, mock_classify, mock_gl):
         mock_classify.return_value = {"py": 10, "js": 5}
 
@@ -245,7 +250,7 @@ class TestClassification:
 class TestComplianceChecks:
     """Tests for compliance_checks.py - get_project_compliance_report function."""
 
-    @patch("Projects.compliance_checks.run_project_compliance_checks")
+    @patch("gitlab_compliance_checker.services.compliance.compliance_checks.run_project_compliance_checks")
     def test_compliance_report_delegates(self, mock_run_checks, mock_gl):
         mock_run_checks.return_value = {"readme": {}, "license": {}}
 

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from batch_mode import export_service
+from gitlab_compliance_checker.services.batch import export_service
 
 
 def test_reports_to_csv():
@@ -124,8 +124,8 @@ def test_reports_to_excel_no_pandas(monkeypatch):
 
 def test_reports_to_excel_missing_engine(monkeypatch):
     import builtins
-    import types
     import sys
+    import types
 
     fake_pd = types.ModuleType("pandas")
 
@@ -170,9 +170,8 @@ def test_reports_to_excel_missing_engine(monkeypatch):
 
 def test_reports_to_excel_engine_fallback(monkeypatch):
     import builtins
-    import importlib
-    import types
     import sys
+    import types
 
     fake_pd = types.ModuleType("pandas")
 
@@ -221,8 +220,8 @@ def test_reports_to_excel_engine_fallback(monkeypatch):
 
 def test_reports_to_excel_openpyxl_engine(monkeypatch):
     import builtins
-    import types
     import sys
+    import types
 
     fake_pd = types.ModuleType("pandas")
 
@@ -269,8 +268,8 @@ def test_reports_to_excel_openpyxl_engine(monkeypatch):
 
 def test_reports_to_excel_writer_failure(monkeypatch):
     import builtins
-    import types
     import sys
+    import types
 
     fake_pd = types.ModuleType("pandas")
 

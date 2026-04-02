@@ -1,10 +1,9 @@
-import concurrent.futures
 from unittest.mock import MagicMock, patch
 
 import pytest
 from gitlab import GitlabGetError
 
-from modes import compliance_mode
+from gitlab_compliance_checker.ui import compliance as compliance_mode
 
 
 @pytest.fixture
@@ -56,9 +55,9 @@ def test_get_project_with_retries_fail(mock_gl_client):
         compliance_mode.get_project_with_retries(mock_gl_client, "bad/repo")
 
 
-@patch("modes.compliance_mode.st")
-@patch("modes.compliance_mode.get_project_with_retries")
-@patch("modes.compliance_mode.run_project_compliance_checks")
+@patch("gitlab_compliance_checker.ui.compliance.st")
+@patch("gitlab_compliance_checker.ui.compliance.get_project_with_retries")
+@patch("gitlab_compliance_checker.ui.compliance.run_project_compliance_checks")
 def test_render_compliance_mode_single_project(mock_run, mock_get, mock_st, mock_gl_client, mock_project):
     # Mock tabs
     tab1, tab2 = MagicMock(), MagicMock()
@@ -81,9 +80,9 @@ def test_render_compliance_mode_single_project(mock_run, mock_get, mock_st, mock
     mock_get.assert_called()
 
 
-@patch("modes.compliance_mode.st")
-@patch("modes.compliance_mode.get_project_with_retries")
-@patch("modes.compliance_mode.run_project_compliance_checks")
+@patch("gitlab_compliance_checker.ui.compliance.st")
+@patch("gitlab_compliance_checker.ui.compliance.get_project_with_retries")
+@patch("gitlab_compliance_checker.ui.compliance.run_project_compliance_checks")
 def test_render_batch_project_compliance_internal(mock_run, mock_get, mock_st, mock_gl_client, mock_project):
     mock_st.text_area.return_value = "gp/p1\ngp/p2"
     mock_st.button.return_value = True

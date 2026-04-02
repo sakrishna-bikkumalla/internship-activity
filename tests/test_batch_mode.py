@@ -45,7 +45,7 @@ def _run_test_for_module(module):
 
 def test_run_batch_for_projects_batch_controller(monkeypatch):
     _setup_batch_depends(monkeypatch)
-    import batch_mode.batch_controller as module
+    import gitlab_compliance_checker.services.batch.batch_controller as module
 
     importlib.reload(module)
 
@@ -54,7 +54,7 @@ def test_run_batch_for_projects_batch_controller(monkeypatch):
 
 def test_generate_summary_edge_cases_batch_controller(monkeypatch):
     _setup_batch_depends(monkeypatch)
-    import batch_mode.batch_controller as module
+    import gitlab_compliance_checker.services.batch.batch_controller as module
 
     importlib.reload(module)
 

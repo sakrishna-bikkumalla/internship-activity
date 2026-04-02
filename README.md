@@ -45,7 +45,8 @@ gitlab-compliance-checker/
 ├── tests/
 ├── public/
 ├── assets/
-├── requirements.txt
+├── pyproject.toml
+├── uv.lock
 ├── Dockerfile
 └── entrypoint.sh
 ```
@@ -53,6 +54,7 @@ gitlab-compliance-checker/
 ## Requirements
 
 - Python **3.11+**
+- [uv](https://docs.astral.sh/uv/) (recommended) or `pip`
 - GitLab Personal Access Token (with at least API read access)
 
 ## Installation (Local)
@@ -64,17 +66,18 @@ gitlab-compliance-checker/
    cd gitlab-compliance-checker
    ```
 
-2. Create and activate a virtual environment:
+2. Install dependencies (using `uv`):
+
+   ```bash
+   uv sync
+   ```
+
+   *Alternatively, using `pip`:*
 
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
-   ```
-
-3. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
+   pip install .
    ```
 
 ## Configuration

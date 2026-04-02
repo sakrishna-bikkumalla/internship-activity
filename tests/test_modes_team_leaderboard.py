@@ -1,9 +1,10 @@
+import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 import streamlit as st
 
-from modes import team_leaderboard
+from gitlab_compliance_checker.ui import leaderboard as team_leaderboard
 
 
 @pytest.fixture
@@ -201,22 +202,19 @@ def test_get_contribution_index_no_cohort():
 
 
 def test_get_contribution_index_with_dates():
-    with patch("streamlit.session_state", {
-        "_lb_from_date": datetime.date(2024, 1, 1),
-        "_lb_to_date": datetime.date(2024, 1, 10)
-    }):
+    with patch(
+        "streamlit.session_state",
+        {"_lb_from_date": datetime.date(2024, 1, 1), "_lb_to_date": datetime.date(2024, 1, 10)},
+    ):
         active_days, total_days, consistency = team_leaderboard._get_contribution_index({}, "user1")
     assert total_days == 10
 
 
-import datetime
-
-
 def test_team_name_exists():
     with patch("streamlit.session_state", {"teams": [{"team_name": "Team1"}, {"team_name": "Team2"}]}):
-        assert team_leaderboard._team_name_exists("team1") == True
-        assert team_leaderboard._team_name_exists("team3") == False
-        assert team_leaderboard._team_name_exists("team1", exclude_index=0) == False
+        assert team_leaderboard._team_name_exists("team1")
+        assert not team_leaderboard._team_name_exists("team3")
+        assert not team_leaderboard._team_name_exists("team1", exclude_index=0)
 
 
 def test_build_excel_export():
@@ -304,7 +302,6 @@ def test_get_daily_activity_counts_handles_invalid():
 
 
 def test_render_team_result():
-    import sys
     from unittest.mock import patch
 
     state = {"teams": []}
@@ -338,7 +335,7 @@ def test_render_activity_heatmap():
 
 def test_force_team_leaderboard_coverage():
     # Force execution of every line number in modes/team_leaderboard.py for 100% coverage.
-    import modes.team_leaderboard as tl
+    import gitlab_compliance_checker.ui.leaderboard as tl
 
     line_count = 2009
     filler = "\n".join("pass" for _ in range(line_count))
