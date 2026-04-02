@@ -1,4 +1,5 @@
 import os
+
 import gitlab
 from dotenv import load_dotenv
 
