@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
-from batch_mode.batch_service import process_single_project
-from batch_mode.export_service import prepare_export_data
+from gitlab_compliance_checker.services.batch.batch_service import process_single_project
+from gitlab_compliance_checker.services.batch.export_service import prepare_export_data
 
 
 def run_batch_for_projects(

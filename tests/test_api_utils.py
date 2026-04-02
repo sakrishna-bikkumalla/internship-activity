@@ -3,7 +3,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 from gitlab import GitlabGetError
 
-from gitlab_utils import api_helper, files_reader, network, parse_uvlock, retry_helper
+from gitlab_compliance_checker.infrastructure.gitlab import (
+    api_helper,
+    files_reader,
+    network,
+    parse_uvlock,
+    retry_helper,
+)
 
 # ---------------- API HELPER TESTS ----------------
 
@@ -108,7 +114,7 @@ def test_network_make_request(mock_req):
     mock_response.raise_for_status.assert_called_once()
 
 
-@patch("gitlab_utils.network.make_request")
+@patch("gitlab_compliance_checker.infrastructure.gitlab.network.make_request")
 def test_network_get_user_from_token(mock_make):
     # network.make_request now returns the json directly, not a response object
     mock_make.return_value = {"id": 1}
@@ -119,7 +125,7 @@ def test_network_get_user_from_token(mock_make):
     assert network.validate_token("http://gl.com", "tok") is False
 
 
-@patch("gitlab_utils.network.make_request")
+@patch("gitlab_compliance_checker.infrastructure.gitlab.network.make_request")
 def test_network_get_user_groups(mock_make):
     mock_make.return_value = []
 

@@ -1,4 +1,4 @@
-from user_profile.profile_utils import (
+from gitlab_compliance_checker.services.profile.profile_utils import (
     LOCAL_TZ,
     classify_time_slot,
     format_date_time,

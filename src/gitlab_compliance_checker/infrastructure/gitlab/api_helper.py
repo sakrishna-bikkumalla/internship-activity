@@ -1,4 +1,4 @@
-# gitlab_utils/api_helpers.py
+# gitlab_compliance_checker/infrastructure/gitlab/api_helper.py
 
 import asyncio
 from urllib.parse import urlparse

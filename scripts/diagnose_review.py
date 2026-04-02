@@ -4,7 +4,6 @@ import re
 
 import aiohttp
 from dotenv import load_dotenv
-
 from gitlab_utils.client import GitLabClient
 
 load_dotenv()

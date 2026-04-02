@@ -30,8 +30,8 @@ import dateutil.parser
 import pandas as pd
 import streamlit as st
 
-from gitlab_utils.batch import process_batch_users
-from gitlab_utils.config import DATA_DIR
+from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
+from gitlab_compliance_checker.infrastructure.gitlab.config import DATA_DIR
 
 # ---------------------------------------------------------------------------
 # Default Teams (loaded from data/teams.json)

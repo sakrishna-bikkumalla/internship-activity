@@ -35,7 +35,7 @@ dev = [
 ]
 
 [tool.hatch.build]
-packages = ["gitlab_utils", "modes", "batch_mode", "user_profile", "views", "issues"]
+packages = ["src/gitlab_compliance_checker"]
 include = [
   "README.md",
   "LICENSE",
@@ -59,7 +59,7 @@ ignore = ["E501", "C901", "E701", "N806", "B904", "N999"]
 minversion = "7.0"
 addopts = "-ra -q"
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "src"]
 asyncio_mode = "auto"
 
 [project.urls]

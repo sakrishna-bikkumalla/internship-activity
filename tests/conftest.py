@@ -152,4 +152,22 @@ def patch_streamlit_module(monkeypatch):
     # Keep a stable module object across tests so st alias in imported modules stays valid.
     fake_st.session_state = {}
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
+
+    # Globally mock get_single_user_live_mr_compliance to avoid un-awaited coroutine warnings
+    # from its inner function evaluate_all() if it's ever called by accident or through imports.
+    from gitlab_compliance_checker.infrastructure.gitlab import merge_requests
+
+    def global_mock_compliance(*a, **k):
+        return {
+            "No Description": 0,
+            "Failed Pipelines": 0,
+            "No Issues Linked": 0,
+            "No Time Spent": 0,
+            "No Unit Tests": 0,
+            "Total Desc Score": 0,
+            "Total MRs Evaluated": 0,
+        }, []
+
+    monkeypatch.setattr(merge_requests, "get_single_user_live_mr_compliance", global_mock_compliance)
+
     yield

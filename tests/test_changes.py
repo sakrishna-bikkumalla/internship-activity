@@ -26,7 +26,7 @@ def test_file_categories_removed():
 
 def test_suggestions_for_all_projects():
     """Test that suggestions appear for all projects."""
-    with open("Projects/compliance_service.py", "r") as f:
+    with open("src/gitlab_compliance_checker/services/compliance/compliance_service.py", "r") as f:
         content = f.read()
 
     # Check that the suggestion logic doesn't have any project-specific filters
@@ -41,7 +41,7 @@ def test_suggestions_for_all_projects():
 
 def test_readme_scores_for_all_projects():
     """Test that README scores are calculated."""
-    with open("Projects/readme_checker.py", "r") as f:
+    with open("src/gitlab_compliance_checker/services/compliance/readme_checker.py", "r") as f:
         content = f.read()
 
     # Check for needs_improvement logic
@@ -50,7 +50,7 @@ def test_readme_scores_for_all_projects():
 
 def test_suggestions_called_for_all_projects():
     """Test that suggestions are generated in compliance flow."""
-    with open("modes/compliance_mode.py", "r") as f:
+    with open("src/gitlab_compliance_checker/ui/compliance.py", "r") as f:
         content = f.read()
 
     # Check that get_dx_suggestions is called
@@ -105,73 +105,68 @@ class TestMainFunction:
 
     def test_main_passes(self):
         """Test that main() passes when all tests pass."""
-        from tests import test_changes
-
-        result = test_changes.main()
+        result = main()
         assert result == 0
 
     def test_main_returns_zero_on_success(self):
         """Test that main returns 0 when all tests pass."""
-        import tests.test_changes as tc
-
-        assert tc.main() == 0
+        assert main() == 0
 
     def test_main_prints_results(self, capsys):
         """Test that main prints results."""
-        import tests.test_changes as tc
-
-        tc.main()
+        main()
         captured = capsys.readouterr()
         assert "Test Results:" in captured.out
 
     def test_main_prints_passed_tests(self, capsys):
         """Test that main prints passed tests."""
-        import tests.test_changes as tc
-
-        tc.main()
+        main()
         captured = capsys.readouterr()
         assert "PASS" in captured.out
 
     def test_main_success_message(self, capsys):
         """Test that main prints success message when all tests pass."""
-        import tests.test_changes as tc
-
-        tc.main()
+        main()
         captured = capsys.readouterr()
         assert "All tests passed" in captured.out or "passed" in captured.out
 
     def test_exception_handling_in_main(self):
         """Test that main handles exceptions gracefully."""
-        import tests.test_changes as tc
-
-        original_test = tc.test_file_categories_removed
+        global test_file_categories_removed
+        original_test = test_file_categories_removed
 
         def failing_test():
             raise RuntimeError("Test error")
 
-        tc.test_file_categories_removed = failing_test
+        # We need to temporarily replace the global function
+        import sys
+
+        this_module = sys.modules[__name__]
+        this_module.test_file_categories_removed = failing_test
         try:
-            result = tc.main()
+            result = main()
             assert result == 1
         finally:
-            tc.test_file_categories_removed = original_test
+            this_module.test_file_categories_removed = original_test
 
     def test_main_handles_non_assertion_errors(self, capsys):
         """Test that main handles non-AssertionError exceptions and prints error."""
-        import tests.test_changes as tc
-
-        original_test = tc.test_file_categories_removed
+        global test_file_categories_removed
+        original_test = test_file_categories_removed
 
         def failing_test():
             raise ValueError("Non-assertion error")
 
-        tc.test_file_categories_removed = failing_test
+        import sys
+
+        this_module = sys.modules[__name__]
+        this_module.test_file_categories_removed = failing_test
         try:
-            tc.main()
+            main()
             captured = capsys.readouterr()
             assert "ERROR" in captured.out or "ValueError" in captured.out
         finally:
-            tc.test_file_categories_removed = original_test
+            this_module.test_file_categories_removed = original_test
 
     def test_name_main_block(self, tmp_path):
         """Test that the if __name__ == '__main__' block executes."""
@@ -189,17 +184,19 @@ class TestMainFunction:
 
     def test_main_handles_assertion_error(self, capsys):
         """Test that main handles AssertionError and prints fail message."""
-        import tests.test_changes as tc
-
-        original_test = tc.test_file_categories_removed
+        global test_file_categories_removed
+        original_test = test_file_categories_removed
 
         def failing_test():
             raise AssertionError("Expected failure")
 
-        tc.test_file_categories_removed = failing_test
+        import sys
+
+        this_module = sys.modules[__name__]
+        this_module.test_file_categories_removed = failing_test
         try:
-            tc.main()
+            main()
             captured = capsys.readouterr()
             assert "FAIL" in captured.out or "AssertionError" in captured.out
         finally:
-            tc.test_file_categories_removed = original_test
+            this_module.test_file_categories_removed = original_test

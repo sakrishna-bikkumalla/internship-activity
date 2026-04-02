@@ -201,7 +201,11 @@ class GitLabClient:
                         flags["failed_pipe"] = True
 
             # 2. Time Spent Check
-            ts = mr.get("time_stats", {})
+            ts = mr.get("time_stats")
+            if ts is None or (isinstance(ts, dict) and not ts):
+                # Fetch time stats if not in the MR dict
+                ts = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/time_stats")
+
             if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
                 flags["no_time"] = True
 
@@ -240,7 +244,13 @@ class GitLabClient:
             else:
                 iss = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/issues")
                 if not iss:
-                    flags["no_issues"] = True
+                    # Final check: look for links in notes
+                    has_issue_link_in_notes = any(
+                        re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", n.get("body", ""), re.IGNORECASE)
+                        for n in (m_notes or [])
+                    )
+                    if not has_issue_link_in_notes:
+                        flags["no_issues"] = True
 
             # 6. Unit Tests check
             title_l = str(mr.get("title") or "").lower()
@@ -320,7 +330,7 @@ class GitLabClient:
         all_mrs = [mr for sublist in all_users_mrs for mr in sublist]
         eval_results = await asyncio.gather(*[self._evaluate_single_mr(mr) for mr in all_mrs])
         for uname, f in eval_results:
-            if uname in result_map and f.get("is_closed_rejected"):
+            if uname in result_map and f.get("is_terminal"):
                 row = result_map[uname]
                 row["Closed MRs"] += 1
                 if f.get("failed_pipe"):
@@ -377,7 +387,16 @@ class GitLabClient:
                 flags["no_milestone"] = True
 
             # 4. Time Spent Check
-            ts = issue.get("time_stats", {})
+            ts = issue.get("time_stats")
+            if ts is None or (isinstance(ts, dict) and not ts):
+                try:
+                    pid = issue.get("project_id")
+                    iid = issue.get("iid")
+                    if pid and iid:
+                        ts = await self._async_request("GET", f"/projects/{pid}/issues/{iid}/time_stats")
+                except Exception:
+                    ts = {}
+
             if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
                 flags["no_time"] = True
 
@@ -481,7 +500,7 @@ class GitLabClient:
         """Public method to batch evaluate issues for multiple users."""
         return self._run_sync(self._batch_evaluate_issues_async(usernames, project_id, group_id, issue_scope))
 
-    async def _evaluate_single_mr_efficiently(self, mr: dict) -> tuple[str, dict]:
+    def _evaluate_single_mr_efficiently(self, mr: dict) -> tuple[str, dict]:
         """
         Evaluate a single MR for quality metrics using ONLY data already present in the list response.
         ZERO additional API calls.
@@ -514,10 +533,14 @@ class GitLabClient:
                 if pipeline.get("status") == "failed":
                     flags["failed_pipe"] = True
 
-            # 3. Time Spent Check (time_stats is usually in list response)
-            ts = mr.get("time_stats", {})
-            if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
-                flags["no_time"] = True
+            # 3. Time Spent Check (Only if present in list response)
+            if "time_stats" in mr:
+                ts = mr.get("time_stats", {})
+                if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
+                    flags["no_time"] = True
+            else:
+                # If missing, we don't know, so we don't flag it as "no time"
+                flags["no_time"] = False
 
             # 4. Semantic Title Check (Heuristic for semantic commits)
             title_lower = str(mr.get("title") or "").lower()
@@ -552,7 +575,7 @@ class GitLabClient:
             pass
         return uname, flags
 
-    async def _evaluate_single_issue_efficiently(self, issue: dict) -> tuple[str, dict]:
+    def _evaluate_single_issue_efficiently(self, issue: dict) -> tuple[str, dict]:
         """
         Evaluate a single issue for quality metrics using ONLY data already present in the list response.
         ZERO additional API calls.
@@ -584,10 +607,13 @@ class GitLabClient:
             if not issue.get("milestone"):
                 flags["no_milestone"] = True
 
-            # 4. Time Spent Check
-            ts = issue.get("time_stats", {})
-            if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
-                flags["no_time"] = True
+            # 4. Time Spent Check (Only if present)
+            if "time_stats" in issue:
+                ts = issue.get("time_stats", {})
+                if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
+                    flags["no_time"] = True
+            else:
+                flags["no_time"] = False
 
             # 5. Semantic Title Check
             title_lower = str(issue.get("title") or "").lower()
@@ -634,7 +660,7 @@ class GitLabClient:
         closed_mrs = [mr for mr in mrs if mr.get("state") in ("merged", "closed")]
 
         for mr in closed_mrs:
-            _, f = self._run_sync(self._evaluate_single_mr_efficiently(mr))
+            _, f = self._evaluate_single_mr_efficiently(mr)
             stats["Closed MRs"] += 1
             if f.get("no_desc"):
                 stats["No Desc"] += 1
@@ -675,7 +701,7 @@ class GitLabClient:
         closed_issues = [i for i in issues if i.get("state") == "closed"]
 
         for issue in closed_issues:
-            _, f = self._run_sync(self._evaluate_single_issue_efficiently(issue))
+            _, f = self._evaluate_single_issue_efficiently(issue)
             stats["Closed Issues"] += 1
             if f.get("no_desc"):
                 stats["No Desc"] += 1
@@ -698,17 +724,61 @@ class GitLabClient:
     def _get(self, endpoint, params=None):
         return self._request("GET", endpoint, params=params)
 
-    def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
+    async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
+        url = endpoint if endpoint.startswith("http") else f"{self.api_base}{endpoint}"
+        session = await self._get_session()
+
+        # aiohttp requires params to be str/int/float, not bool
+        if params:
+            params = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in params.items()}
+
         all_items = []
-        for page in range(1, max_pages + 1):
-            p_params = {**(params or {}), "per_page": per_page, "page": page}
-            batch = self._get(endpoint, params=p_params)
-            if not isinstance(batch, list) or not batch:
-                break
-            all_items.extend(batch)
-            if len(batch) < per_page:
-                break
+
+        # 1. Fetch first page to get total pages from header
+        p_params = {**(params or {}), "per_page": per_page, "page": 1}
+
+        async def fetch_page(p_no):
+            curr_params = {**p_params, "page": p_no}
+            async with self._sem:
+                async with session.get(url, params=curr_params, timeout=30) as response:
+                    response.raise_for_status()
+                    return await response.json(), response.headers
+
+        try:
+            res = await safe_api_call_async(fetch_page, 1)
+            if not res or not isinstance(res, tuple):
+                return []
+
+            first_page_data, headers = res
+            if not first_page_data or not isinstance(first_page_data, list):
+                return []
+
+            all_items.extend(first_page_data)
+
+            if len(first_page_data) < per_page:
+                return all_items
+
+            total_pages_header = headers.get("X-Total-Pages")
+            if total_pages_header:
+                total_pages = min(int(total_pages_header), max_pages)
+            else:
+                total_pages = max_pages
+
+            if total_pages > 1:
+                tasks = [safe_api_call_async(fetch_page, p) for p in range(2, total_pages + 1)]
+                results = await asyncio.gather(*tasks)
+                for res in results:
+                    if res and isinstance(res, tuple):
+                        page_data, _ = res
+                        if page_data and isinstance(page_data, list):
+                            all_items.extend(page_data)
+        except Exception as e:
+            logger.error(f"Error in async paginated request: {e}")
+
         return all_items
+
+    def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
+        return self._run_sync(self._async_get_paginated(endpoint, params, per_page, max_pages))
 
     def __del__(self):
         if self._session and not self._session.closed:

@@ -193,7 +193,7 @@ def check_extensions_json_for_ruff(project, branch="main", read_file_fn=None):
     """
     if read_file_fn is None:
         # Import here to avoid circular dependencies
-        from gitlab_utils.files_reader import read_file_content
+        from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
 
         read_file_fn = read_file_content
 
@@ -275,7 +275,7 @@ def check_license_content(project, branch="main", read_file_fn=None):
         String indicating license status: 'valid', 'gnu_other', or 'invalid'
     """
     if read_file_fn is None:
-        from gitlab_utils.files_reader import read_file_content
+        from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
 
         read_file_fn = read_file_content
 
@@ -360,7 +360,7 @@ def check_project_compliance(project, branch=None, read_file_fn=None):
         Dict with compliance report
     """
     if read_file_fn is None:
-        from gitlab_utils.files_reader import read_file_content
+        from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
 
         read_file_fn = read_file_content
 

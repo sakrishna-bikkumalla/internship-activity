@@ -1,4 +1,4 @@
-# gitlab_utils/retry_helper.py
+# gitlab_compliance_checker/infrastructure/gitlab/retry_helper.py
 
 import http.client
 import time

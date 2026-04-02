@@ -69,7 +69,7 @@ repos:
         name: Vulture dead code detection
         entry: |
           bash -c '
-          uv run vulture gitlab_utils issues modes Projects scripts batch_mode user_profile app.py --min-confidence 100
+          uv run vulture src scripts app.py --min-confidence 100
           '
         language: system
         pass_filenames: false

@@ -1,7 +1,10 @@
+from io import BytesIO
+
 import pandas as pd
 import streamlit as st
 
-from gitlab_utils import batch
+from gitlab_compliance_checker.infrastructure.gitlab import batch
+from gitlab_compliance_checker.services.profile.profile_service import check_profile_readme
 
 
 def render_user_profile(client, simple_user_info):
@@ -124,3 +127,50 @@ def render_user_profile(client, simple_user_info):
         with st.expander("View Issue Details"):
             df_issues = pd.DataFrame(user_issues)
             st.dataframe(df_issues[["title", "state", "created_at"]], width="stretch")
+
+    # ---------------- Profile README Status ----------------
+    st.markdown("---")
+    st.subheader("📄 Profile README Status")
+
+    # Using the underlying python-gitlab client from our custom client
+    readme_status = check_profile_readme(client.client, username)
+
+    if readme_status["exists"]:
+        st.success("✅ Profile README is set up correctly!")
+        if readme_status.get("url"):
+            st.markdown(f"[View README]({readme_status['url']})")
+    else:
+        st.error("❌ No profile project found (i.e., <username>/<username>).")
+        st.info(
+            "💡 Suggestion: Create a README for your profile by following these steps:\n\n"
+            "1. Create a new project with the **exact same name as your username**\n"
+            "2. Add a **README.md** file in that project\n"
+            "3. This README will appear on your GitLab profile page"
+        )
+
+    # Excel Export
+    try:
+        export_payload = {
+            "Personal_Projects": personal_projects,
+            "Contributed_Projects": verified_contributed,
+            "Commits": all_commits,
+            "Groups": user_groups,
+            "MergeRequests": user_mrs,
+            "Issues": user_issues,
+        }
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            for sheet_name, sheet_rows in export_payload.items():
+                if sheet_rows:
+                    pd.DataFrame(sheet_rows).to_excel(writer, index=False, sheet_name=sheet_name[:31])
+
+        st.markdown("---")
+        st.download_button(
+            label="Download Full User Report (Excel)",
+            data=output.getvalue(),
+            file_name=f"{username}_profile_report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        st.info(f"Excel export unavailable: {e}")

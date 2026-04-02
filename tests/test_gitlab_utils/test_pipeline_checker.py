@@ -1,23 +1,25 @@
-import pytest
-from gitlab_utils.pipeline_checker import check_ci_pipeline
+from gitlab_compliance_checker.infrastructure.gitlab.pipeline_checker import check_ci_pipeline
+
 
 def test_invalid_ci_pipeline():
     """Test with invalid YAML content."""
     invalid_content = "invalid: yaml: : content"
     result = check_ci_pipeline(invalid_content)
-    
+
     # In the current implementation, invalid non-empty YAML returns a full result dict
     # with an error issue, but not a top-level "error" key unless it's empty.
     assert any("Invalid" in issue["message"] for issue in result["issues"])
     assert result["dx_score"] == 0
 
+
 def test_empty_yaml():
     """Test with empty YAML content."""
     empty_content = ""
     result = check_ci_pipeline(empty_content)
-    
+
     assert result["error"] == "Empty .gitlab-ci.yml content"
     assert result["dx_score"] == 0
+
 
 def test_missing_stages():
     """Test when stages are missing."""
@@ -27,10 +29,11 @@ def test_missing_stages():
         - echo "hello"
     """
     result = check_ci_pipeline(content)
-    
+
     assert "No explicit 'stages:' defined in CI" in [i["message"] for i in result["issues"]]
     # It should still find the test_job and assume stage 'test'
     assert result["jobs"]["test"]["job_present"] is True
+
 
 def test_full_valid_pipeline():
     """Test a full valid pipeline."""
@@ -68,7 +71,7 @@ def test_full_valid_pipeline():
         - pytest --cov
     """
     result = check_ci_pipeline(content)
-    
+
     assert result["dx_score"] == 10.0
     assert not any(i["severity"] == "error" for i in result["issues"])
     for stage in ["test", "lint", "format", "type_check", "coverage"]:

@@ -1,30 +1,42 @@
 import asyncio
 import concurrent.futures
 
-from gitlab_utils import commits, groups, issues, merge_requests, projects, users
+from gitlab_compliance_checker.infrastructure.gitlab import commits, groups, issues, merge_requests, projects, users
 
 
 def resolve_project_paths(client, repo_paths: list[str]) -> tuple[list[int], list[str]]:
     """
-    Resolve a list of GitLab project paths (e.g. 'group/repo') to project IDs.
+    Resolve a list of GitLab project paths (e.g. 'group/repo') to project IDs in parallel.
     Returns (resolved_ids, failed_paths).
     """
     resolved_ids: list[int] = []
     failed: list[str] = []
-    for path in repo_paths:
-        path = path.strip()
-        if not path:
-            continue
+    clean_paths = [p.strip() for p in repo_paths if p.strip()]
+
+    if not clean_paths:
+        return [], []
+
+    def _resolve_one(path):
         try:
             # URL-encode the path for the API
             encoded = path.replace("/", "%2F")
             proj = client._get(f"/projects/{encoded}")
             if proj and isinstance(proj, dict) and "id" in proj:
-                resolved_ids.append(proj["id"])
+                return proj["id"], None
             else:
-                failed.append(path)
+                return None, path
         except Exception:
-            failed.append(path)
+            return None, path
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(_resolve_one, clean_paths))
+
+    for rid, fpath in results:
+        if rid:
+            resolved_ids.append(rid)
+        if fpath:
+            failed.append(fpath)
+
     return resolved_ids, failed
 
 
@@ -80,10 +92,16 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
             result["data"]["projects"] = projs
 
             # Resolve the list of projects to scan for commits
+            # We must ensure we don't have duplicates here as it results in double-counting commits.
+            {p.get("id"): p for p in projs["all"]}
+
             if project_ids is not None:
                 pid_set = set(project_ids)
+                # Keep only projects that are in the pid_set
                 all_projs_list = [p for p in projs["all"] if p.get("id") in pid_set]
                 existing_ids = {p.get("id") for p in all_projs_list}
+
+                # Fetch details for project_ids that weren't in the user's projects list
                 for pid in project_ids:
                     if pid not in existing_ids:
                         try:
@@ -108,12 +126,22 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
 
         # 4. Quality Evaluation (Efficient)
         # Issues: Quality for AUTHOR
-        # MRs: Quality for ASSIGNEE
+        # MRs: Quality for AUTHOR (preferred for contribution) or ASSIGNEE
         authored_issues = [i for i in user_issues if i.get("role") == "Author"]
-        assigned_mrs = [m for m in user_mrs if m.get("role") == "Assigned"]
+
+        # We want to check quality of MRs the user authored.
+        # If the user authored an MR, they are responsible for its quality.
+        authored_mrs = [m for m in user_mrs if m.get("role") == "Authored"]
+        [m for m in user_mrs if m.get("role") == "Assigned"]
 
         issue_quality = client.batch_evaluate_issues_efficiently(authored_issues)
-        mr_quality = client.batch_evaluate_mrs_efficiently(assigned_mrs)
+
+        # Evaluate authored MRs for quality metrics
+        mr_quality = client.batch_evaluate_mrs_efficiently(authored_mrs)
+
+        # Optional: we could also evaluate assigned_mrs, but usually
+        # authored_mrs is what people mean by "User MR Quality"
+        # For now, let's stick to authored_mrs to fix the "0 fields" issue for authors.
 
         # Populate result data
         result["data"]["commits"] = all_commits

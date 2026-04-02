@@ -4,7 +4,7 @@ import io
 import pandas as pd
 import streamlit as st
 
-from gitlab_utils import batch
+from gitlab_compliance_checker.infrastructure.gitlab import batch
 
 
 @st.cache_data(ttl=3600)
@@ -114,9 +114,9 @@ def render_batch_analytics_ui(client):
                 row["Projects (Contr)"] = len(projects_info.get("contributed", []))
                 row["Groups Count"] = len(data.get("groups", []))
 
-                # 3. MR Quality (Assigned)
+                # 3. MR Quality (Authored)
                 mr_q = data.get("mr_quality", {})
-                row["MR Total (Assigned)"] = mr_q.get("Closed MRs", 0)
+                row["MR Total (Authored)"] = mr_q.get("Closed MRs", 0)
                 row["MR No Desc"] = mr_q.get("No Desc", 0)
                 row["MR No Issues"] = mr_q.get("No Issues", 0)
                 row["MR No Time"] = mr_q.get("No Time Spent", 0)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from gitlab_utils import merge_requests
+from gitlab_compliance_checker.infrastructure.gitlab import merge_requests
 
 # ---------------------------------------------------------------------------
 # Tests for get_user_mrs
@@ -69,35 +69,49 @@ def test_get_user_mrs_exception_in_subcall():
 
 
 def test_get_single_user_live_mr_compliance_no_client():
-    """Should return empty stats if client is not initialized."""
-    mock_client = MagicMock()
-    mock_client.client = None
-    stats, problematic = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "user")
+    """Should return empty stats if client is not provided."""
+    stats, problematic = merge_requests.get_single_user_live_mr_compliance(None, [1], "user")
     assert stats["Total MRs Evaluated"] == 0
     assert problematic == []
 
 
-@patch("gitlab_utils.merge_requests.analyze_description")
-def test_get_single_user_live_mr_compliance_full_flow(mock_analyze):
+@patch("gitlab_compliance_checker.infrastructure.gitlab.merge_requests.analyze_description")
+def test_get_single_user_live_mr_compliance_full_flow(mock_analyze, monkeypatch):
     """Test the full compliance logic with successful and failing markers."""
+    # Undo the global mock from conftest.py
+    monkeypatch.undo()
+
     mock_client = MagicMock()
-    mock_project = MagicMock()
-    mock_mr_cached = MagicMock()
-    mock_mr_cached.author = {"name": "target_user"}
-    mock_mr_cached.iid = 123
 
-    mock_mr_full = MagicMock()
-    mock_mr_full.title = "Test MR"
-    mock_mr_full.state = "opened"
-    mock_mr_full.description = "Some description"
-    mock_mr_full.head_pipeline = {"status": "failed"}
-    mock_mr_full.time_stats.return_value = {"total_time_spent": 0}
-    mock_mr_full.references = {"full": None}
-    mock_mr_full.changes.return_value = {"changes": [{"new_path": "src/main.py"}]}
+    # Mock user resolution
+    mock_client._get.return_value = [{"id": 123, "username": "target_user"}]
 
-    mock_client.client.projects.get.return_value = mock_project
-    mock_project.mergerequests.list.return_value = [mock_mr_cached]
-    mock_project.mergerequests.get.return_value = mock_mr_full
+    # Mock MR list
+    mr_dict = {
+        "id": 1,
+        "project_id": 1,
+        "iid": 1,
+        "title": "Test MR",
+        "state": "opened",
+        "description": "Some description",
+    }
+    mock_client._get_paginated.return_value = [mr_dict]
+
+    # Mock evaluation results
+    evaluation_flags = {
+        "no_desc": False,
+        "failed_pipe": True,
+        "no_issues": True,
+        "no_time": True,
+        "no_unit_tests": True,
+    }
+
+    def mock_run_sync(coro):
+        if hasattr(coro, "close"):
+            coro.close()
+        return [("target_user", evaluation_flags)]
+
+    mock_client._run_sync.side_effect = mock_run_sync
 
     mock_analyze.return_value = {"description_score": 5, "quality_label": "Good", "feedback": []}
 
@@ -112,23 +126,34 @@ def test_get_single_user_live_mr_compliance_full_flow(mock_analyze):
     assert problematic[0]["No Unit Tests"] is True
 
 
-def test_get_single_user_live_mr_compliance_edge_cases():
+def test_get_single_user_live_mr_compliance_edge_cases(monkeypatch):
     """Test exceptions and missing attributes in compliance checks."""
+    monkeypatch.undo()
     mock_client = MagicMock()
-    mock_project = MagicMock()
-    mock_mr_cached = MagicMock()
-    mock_mr_cached.author = {"name": "user"}
+    mock_client._get.return_value = [{"id": 123, "username": "user"}]
 
-    mock_mr_full = MagicMock()
-    mock_mr_full.description = ""  # No description
-    del mock_mr_full.head_pipeline  # Attribute missing
-    mock_mr_full.time_stats.side_effect = Exception("error")
-    mock_mr_full.references = None
-    mock_mr_full.changes.side_effect = Exception("error")
+    mr_dict = {
+        "id": 1,
+        "project_id": 1,
+        "iid": 1,
+        "description": "",
+    }
+    mock_client._get_paginated.return_value = [mr_dict]
 
-    mock_client.client.projects.get.return_value = mock_project
-    mock_project.mergerequests.list.return_value = [mock_mr_cached]
-    mock_project.mergerequests.get.return_value = mock_mr_full
+    evaluation_flags = {
+        "no_desc": True,
+        "failed_pipe": False,
+        "no_issues": True,
+        "no_time": True,
+        "no_unit_tests": True,
+    }
+
+    def mock_run_sync(coro):
+        if hasattr(coro, "close"):
+            coro.close()
+        return [("user", evaluation_flags)]
+
+    mock_client._run_sync.side_effect = mock_run_sync
 
     stats, problematic = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "user")
 
@@ -136,29 +161,6 @@ def test_get_single_user_live_mr_compliance_edge_cases():
     assert stats["No Time Spent"] == 1
     assert stats["No Issues Linked"] == 1
     assert stats["No Unit Tests"] == 1
-
-
-def test_get_single_user_live_mr_compliance_various_unit_tests():
-    """Test unit test detection logic in changes."""
-    mock_client = MagicMock()
-    mock_project = MagicMock()
-    mock_mr_cached = MagicMock()
-    mock_mr_cached.author = {"name": "user"}
-    mock_mr_full = MagicMock()
-
-    mock_client.client.projects.get.return_value = mock_project
-    mock_project.mergerequests.list.return_value = [mock_mr_cached]
-    mock_project.mergerequests.get.return_value = mock_mr_full
-
-    # Case 1: Has "spec" file
-    mock_mr_full.changes.return_value = {"changes": [{"new_path": "tests/my_spec.rb"}]}
-    stats, _ = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "user")
-    assert stats["No Unit Tests"] == 0
-
-    # Case 2: Has "test" file
-    mock_mr_full.changes.return_value = {"changes": [{"new_path": "tests/test_api.py"}]}
-    stats, _ = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "user")
-    assert stats["No Unit Tests"] == 0
 
 
 def test_get_user_mrs_closed_state():
@@ -169,39 +171,41 @@ def test_get_user_mrs_closed_state():
     assert stats["closed"] == 1
 
 
-def test_get_single_user_live_mr_compliance_different_author():
-    """MRs from other authors should be skipped."""
+def test_get_single_user_live_mr_compliance_different_author(monkeypatch):
+    """MRs from other authors should be skipped (handled by API filter in new version)."""
+    monkeypatch.undo()
     mock_client = MagicMock()
-    mock_project = MagicMock()
-    mock_mr_other = MagicMock()
-    mock_mr_other.author = {"name": "other_user"}
-
-    mock_client.client.projects.get.return_value = mock_project
-    mock_project.mergerequests.list.return_value = [mock_mr_other]
+    # Mock user resolution
+    mock_client._get.return_value = [{"id": 123, "username": "target_user"}]
+    # API returns nothing for this author
+    mock_client._get_paginated.return_value = []
 
     stats, _ = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "target_user")
     assert stats["Total MRs Evaluated"] == 0
 
 
-def test_get_single_user_live_mr_compliance_exceptions():
+def test_get_single_user_live_mr_compliance_exceptions(monkeypatch):
     """Trigger explicit exception blocks."""
+    monkeypatch.undo()
     mock_client = MagicMock()
-    mock_project = MagicMock()
-    mock_mr_cached = MagicMock()
-    mock_mr_cached.author = {"name": "user"}
-    mock_mr_full = MagicMock()
-    mock_mr_full.description = "Valid description"
+    mock_client._get.return_value = [{"id": 123, "username": "user"}]
 
-    mock_client.client.projects.get.return_value = mock_project
-    mock_project.mergerequests.list.return_value = [mock_mr_cached]
-    mock_project.mergerequests.get.return_value = mock_mr_full
+    mr_dict = {
+        "id": 1,
+        "project_id": 1,
+        "iid": 1,
+        "description": "Valid description",
+    }
+    mock_client._get_paginated.return_value = [mr_dict]
 
-    # Trigger exception in references block (line 157)
-    # A string doesn't have .get(), so this will raise AttributeError
-    mock_mr_full.references = "not-a-dict"
+    # Trigger exception by returning something that ZIP logic can't handle well or evaluate_all fails
+    def mock_run_sync_error(coro):
+        if hasattr(coro, "close"):
+            coro.close()
+        raise Exception("Eval error")
 
-    # Trigger outer exception (line 194) by making projects.get fail for the SECOND project
-    mock_client.client.projects.get.side_effect = [mock_project, Exception("Outer error")]
+    mock_client._run_sync.side_effect = mock_run_sync_error
 
-    stats, _ = merge_requests.get_single_user_live_mr_compliance(mock_client, [1, 2], "user")
-    assert stats["No Issues Linked"] >= 1
+    stats, _ = merge_requests.get_single_user_live_mr_compliance(mock_client, [1], "user")
+    # Should handle exception gracefully
+    assert stats["Total MRs Evaluated"] == 0

@@ -1,18 +1,20 @@
-from gitlab_utils.pipeline_checker import check_ci_pipeline
+from gitlab_compliance_checker.infrastructure.gitlab.pipeline_checker import check_ci_pipeline
+
 
 def test_structured_recommendations():
     """Test that recommendations are returned correctly."""
     # Invalid but non-empty content should not return early with dx_score 0
     # and should trigger recommendations for a Python project
     result = check_ci_pipeline("not: a: valid: ci", project_type="Python")
-    
+
     recs = result.get("recommendations", [])
     assert len(recs) > 0
-    
+
     # Check for specific Python recommendations
     messages = [r["message"] for r in recs]
     assert "Add Ruff for linting" in messages
     assert "Add Ruff for formatting" in messages
+
 
 def test_coverage_fallback():
     """Test that coverage tool in test stage is detected."""
@@ -26,9 +28,10 @@ def test_coverage_fallback():
         - pytest --cov=app
     """
     result = check_ci_pipeline(content)
-    
+
     assert result["jobs"]["coverage"]["tool_detected"] is True
     assert result["jobs"]["coverage"]["note"] == "Coverage detected in test stage"
+
 
 def test_unconditional_when_never():
     """Test that unconditional 'when: never' jobs are ignored."""
@@ -46,6 +49,7 @@ def test_unconditional_when_never():
     result = check_ci_pipeline(content)
     assert result["jobs"]["test"]["job_present"] is False
 
+
 def test_manual_jobs_ignored():
     """Test that manual jobs are ignored."""
     content = """
@@ -57,6 +61,7 @@ def test_manual_jobs_ignored():
     """
     result = check_ci_pipeline(content)
     assert result["jobs"]["test"]["job_present"] is False
+
 
 def test_dx_score_calculation():
     """Test the weighted DX score calculation."""

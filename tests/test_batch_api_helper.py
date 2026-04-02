@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from batch_mode import api_helper
+from gitlab_compliance_checker.services.batch import api_helper
 
 
 def test_extract_path_from_url():
@@ -207,7 +207,9 @@ def test_internal_import_coverage():
     project.default_branch = "main"
     project.repository_tree.return_value = [{"name": "README.md"}, {"name": "LICENSE"}]
     project.tags.list.return_value = []
-    with patch("gitlab_utils.files_reader.read_file_content", return_value="some content"):
+    with patch(
+        "gitlab_compliance_checker.infrastructure.gitlab.files_reader.read_file_content", return_value="some content"
+    ):
         api_helper.check_extensions_json_for_ruff(project)
         api_helper.check_license_content(project)
         api_helper.check_project_compliance(project)

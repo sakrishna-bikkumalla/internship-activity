@@ -1,7 +1,7 @@
 import base64
 from typing import Any, Dict, Optional
 
-from gitlab_utils.parsers import parse_json, parse_yaml
+from gitlab_compliance_checker.infrastructure.gitlab.parsers import parse_json, parse_yaml
 
 from .project_detector import detect_project_type
 

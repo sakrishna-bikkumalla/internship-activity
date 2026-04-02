@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from batch_mode.batch_ui import BatchProcessingService
+from gitlab_compliance_checker.services.batch.legacy_batch_service import BatchProcessingService
 
 
 @pytest.fixture
@@ -17,14 +17,16 @@ def service(mock_gl):
 
 def test_process_project_success(service, mock_gl):
     # Mock dependencies
-    with patch("batch_mode.batch_ui.get_project_with_retries") as mock_get:
+    with patch("gitlab_compliance_checker.services.batch.legacy_batch_service.get_project_with_retries") as mock_get:
         proj = MagicMock()
         proj.id = 123
         proj.path_with_namespace = "gp/p1"
         proj.default_branch = "main"
         mock_get.return_value = proj
 
-        with patch("batch_mode.batch_ui.check_project_compliance") as mock_comp:
+        with patch(
+            "gitlab_compliance_checker.services.batch.legacy_batch_service.check_project_compliance"
+        ) as mock_comp:
             mock_comp.return_value = {
                 "license_status": "valid",
                 "license_valid": True,
@@ -32,10 +34,12 @@ def test_process_project_success(service, mock_gl):
                 "readme_sections": ["s1"],
             }
 
-            with patch("batch_mode.batch_ui.list_all_files") as mock_list:
+            with patch("gitlab_compliance_checker.services.batch.legacy_batch_service.list_all_files") as mock_list:
                 mock_list.return_value = ["f1.py", "README.md"]
 
-                with patch("batch_mode.batch_ui.classify_repository_files") as mock_class:
+                with patch(
+                    "gitlab_compliance_checker.services.batch.legacy_batch_service.classify_repository_files"
+                ) as mock_class:
                     mock_class.return_value = {"python_files": ["f1.py"], "common_requirements": ["r1.txt"]}
 
                     res = service.process_project("gp/p1")
@@ -50,7 +54,10 @@ def test_process_project_success(service, mock_gl):
 
 
 def test_process_project_failure(service, mock_gl):
-    with patch("batch_mode.batch_ui.get_project_with_retries", side_effect=Exception("API Error")):
+    with patch(
+        "gitlab_compliance_checker.services.batch.legacy_batch_service.get_project_with_retries",
+        side_effect=Exception("API Error"),
+    ):
         res = service.process_project("bad")
         assert res["error"] == "API Error"
 

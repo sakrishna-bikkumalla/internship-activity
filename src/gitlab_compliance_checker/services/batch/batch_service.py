@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from Projects.compliance_service import run_project_compliance_checks
+from gitlab_compliance_checker.services.compliance.compliance_service import run_project_compliance_checks
 
 
 def process_single_project(gl_client, project_id: Any, include_details: bool = True) -> Dict[str, Any]:
@@ -20,7 +20,7 @@ def process_single_project(gl_client, project_id: Any, include_details: bool = T
         # We handle both if possible, but standard is the raw client for compliance_service
         raw_client = getattr(gl_client, "client", gl_client)
 
-        report = run_project_compliance_checks(raw_client, project_id)
+        report: Dict[str, Any] = run_project_compliance_checks(raw_client, project_id)
 
         if not include_details:
             # Return only high-level score

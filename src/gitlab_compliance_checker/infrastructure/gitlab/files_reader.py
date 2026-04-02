@@ -1,4 +1,4 @@
-# gitlab_utils/file_reader.py
+# gitlab_compliance_checker/infrastructure/gitlab/files_reader.py
 
 from typing import List, Optional
 

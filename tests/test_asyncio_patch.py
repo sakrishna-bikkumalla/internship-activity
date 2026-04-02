@@ -1,10 +1,8 @@
 import asyncio
-import sys
-from unittest.mock import patch, MagicMock
 from io import StringIO
+from unittest.mock import MagicMock, patch
 
 import nest_asyncio
-import pytest
 
 
 def target_func():
@@ -31,7 +29,7 @@ class TestAsyncioPatch:
             mock_get.side_effect = RuntimeError("no running event loop")
             with patch("asyncio.new_event_loop", return_value=MagicMock()) as mock_new:
                 with patch("nest_asyncio.apply"):
-                    result = target_func()
+                    target_func()
                     assert mock_get.called
                     assert mock_new.called
 
@@ -86,7 +84,7 @@ class TestAsyncioPatch:
         with patch("asyncio.get_event_loop", return_value=MagicMock()):
             with patch("nest_asyncio.apply", side_effect=Exception("apply failed")):
                 try:
-                    result = target_func()
+                    target_func()
                 except Exception:
                     pass
 

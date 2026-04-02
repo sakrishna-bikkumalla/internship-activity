@@ -1,8 +1,6 @@
 """Tests for project type detection."""
 
-import pytest
-
-from Projects.project_detector import detect_project_type
+from gitlab_compliance_checker.services.compliance.project_detector import detect_project_type
 
 
 class TestDetectProjectType:

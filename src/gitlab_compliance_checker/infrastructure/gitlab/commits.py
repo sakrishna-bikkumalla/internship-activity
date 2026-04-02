@@ -43,70 +43,75 @@ def get_user_commits(client, user, projects, since=None, until=None):
             pid = project.get("id")
             pname = project.get("name_with_namespace")
 
-            author_search_terms = []
-            if author_name:
-                author_search_terms.append(author_name)
-            if username and username not in author_search_terms:
-                author_search_terms.append(username)
-            if not author_search_terms and author_email:
-                author_search_terms.append(author_email)
+            # Use the most specific search term for the API
+            # If email is available, it's usually the best for filtering in GitLab
+            search_term = author_email or author_name or username
+
+            if not search_term:
+                return p_res
 
             project_seen_shas = set()
             valid_project_commits = 0
 
-            for search_term in author_search_terms:
-                api_params = {"author": search_term, "all": True}
-                if since:
-                    api_params["since"] = since
-                if until:
-                    api_params["until"] = until
+            api_params = {"author": search_term, "all": True, "with_stats": "false"}
+            if since:
+                api_params["since"] = since
+            if until:
+                api_params["until"] = until
 
-                commits_data = client._get_paginated(
-                    f"/projects/{pid}/repository/commits",
-                    params=api_params,
-                    per_page=100,
-                    max_pages=20,
-                )
+            commits_data = client._get_paginated(
+                f"/projects/{pid}/repository/commits",
+                params=api_params,
+                per_page=100,
+                max_pages=20,
+            )
 
-                if not commits_data:
+            if not commits_data:
+                return p_res
+
+            for c in commits_data:
+                sha = c.get("id")
+                if not sha or sha in project_seen_shas:
                     continue
 
-                for c in commits_data:
-                    sha = c.get("id")
-                    if not sha or sha in project_seen_shas:
-                        continue
+                # EXCLUDE MERGE COMMITS: These are often not "authored" by the user
+                # but just result from merging branches.
+                parent_ids = c.get("parent_ids", [])
+                if len(parent_ids) > 1:
+                    continue
 
-                    c_author_name = c.get("author_name", "") or ""
-                    c_author_email = c.get("author_email", "") or ""
+                c_author_name = (c.get("author_name", "") or "").lower()
+                c_author_email = (c.get("author_email", "") or "").lower()
 
-                    is_match = False
-                    if author_name and c_author_name.lower() == author_name.lower():
-                        is_match = True
-                    elif author_email and c_author_email.lower() == author_email.lower():
-                        is_match = True
-                    elif username and (
-                        username.lower() in c_author_name.lower() or username.lower() in c_author_email.lower()
-                    ):
-                        is_match = True
+                # Stricter identity matching
+                is_match = False
+                if author_email and c_author_email == author_email.lower():
+                    is_match = True
+                elif author_name and c_author_name == author_name.lower():
+                    is_match = True
+                elif username and (
+                    username.lower() in c_author_name.lower() or c_author_email.startswith(f"{username.lower()}@")
+                ):
+                    is_match = True
 
-                    if not is_match:
-                        continue
+                if not is_match:
+                    continue
 
-                    project_seen_shas.add(sha)
-                    valid_project_commits += 1
+                project_seen_shas.add(sha)
+                valid_project_commits += 1
 
-                    # Store for processing (time parsing is done in main thread to avoid dict sync issues)
-                    p_res["commits"].append(
-                        {
-                            "sha": sha,
-                            "pname": pname,
-                            "title": c.get("title"),
-                            "created_at": c.get("created_at"),
-                            "author_name": c_author_name,
-                            "short_id": c.get("short_id"),
-                            "web_url": c.get("web_url"),
-                        }
-                    )
+                # Store for processing
+                p_res["commits"].append(
+                    {
+                        "sha": sha,
+                        "pname": pname,
+                        "title": c.get("title"),
+                        "created_at": c.get("created_at"),
+                        "author_name": c.get("author_name"),
+                        "short_id": c.get("short_id"),
+                        "web_url": c.get("web_url"),
+                    }
+                )
 
             p_res["count"] = valid_project_commits
 

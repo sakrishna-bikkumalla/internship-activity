@@ -1,7 +1,7 @@
 import base64
 from typing import Any, Dict, List, Optional
 
-from gitlab_utils.pipeline_checker import check_ci_pipeline
+from gitlab_compliance_checker.infrastructure.gitlab.pipeline_checker import check_ci_pipeline
 
 from .file_classifier import classify_files
 from .license_checker import check_license
