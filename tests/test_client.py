@@ -26,7 +26,7 @@ async def test_safe_api_call_429_retry(mock_sleep):
     # Create a mock for the exception
     err_429 = gitlab.exceptions.GitlabHttpError("Rate limited", response_code=429)
     mock_func.side_effect = [err_429, "success"]
-    
+
     result = await safe_api_call_async(mock_func)
     assert result == "success"
     assert mock_sleep.call_count == 1
