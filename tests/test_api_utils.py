@@ -49,11 +49,11 @@ def test_get_user_from_token(mock_gitlab):
 @patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.gitlab.Gitlab")
 def test_get_user_groups_by_token(mock_gitlab):
     mock_gl_instance = MagicMock()
-    
+
     mock_group = MagicMock()
     mock_group.as_dict.return_value = {"name": "g1"}
     mock_gl_instance.groups.list.return_value = [mock_group]
-    
+
     mock_gitlab.return_value = mock_gl_instance
 
     res = api_helper.get_user_groups_by_token("http://gl.com/api/v4", "token")
@@ -122,7 +122,7 @@ def test_network_get_user_groups(mock_gitlab):
     res1 = network.get_user_groups("http://gl.com/api/v4", "tok")
     # Base url without /api/v4
     res2 = network.get_user_groups("http://gl.com", "tok")
-    
+
     assert res1 == [{"name": "group"}]
     assert res2 == [{"name": "group"}]
     assert mock_gitlab.call_count == 2
