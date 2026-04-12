@@ -1,4 +1,22 @@
-import gitlab
+import asyncio
+import threading
+
+import glabflow
+import msgspec
+
+_JSON_DECODER = msgspec.json.Decoder()
+
+
+def _decode(raw) -> dict | list:
+    """Decode raw bytes or pass through already-parsed data from glabflow."""
+    if isinstance(raw, (dict, list)):
+        return raw
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            return _JSON_DECODER.decode(raw)
+        except Exception:
+            return []
+    return []
 
 
 class GitLabClient:
@@ -6,61 +24,107 @@ class GitLabClient:
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v4"
         self.private_token = private_token
-        self._client = None
+        self._gl: glabflow.Client | None = None
+
+        # Background event loop — same pattern as infrastructure/gitlab/client.py
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._thread.start()
+
+        self._init_gl_client()
         self.users = GitLabUsersAPI(self)
 
-    @property
-    def client(self):
-        """Lazy-loaded python-gitlab client."""
-        if self._client is None:
-            self._client = gitlab.Gitlab(
-                url=self.base_url, private_token=self.private_token, timeout=30, ssl_verify=False
+    def _run_sync(self, coro):
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+
+    def _init_gl_client(self):
+        async def _enter():
+            gl = glabflow.Client(
+                base_url=self.api_base,
+                token=self.private_token,
+                ssl=False,
+                concurrency=25,
+                timeout=30.0,
             )
-        return self._client
+            await gl.__aenter__()
+            return gl
+
+        try:
+            fut = asyncio.run_coroutine_threadsafe(_enter(), self._loop)
+            self._gl = fut.result(timeout=30)
+        except Exception as e:
+            self._gl = None
 
     def _request(self, method, endpoint, params=None):
-        gl = self.client
-        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
-        if not path.startswith("/"):
-            path = f"/{path}"
+        return self._run_sync(self._async_request(method, endpoint, params))
 
-        if method.upper() == "GET":
-            return gl.http_get(path, query_data=params or {})
-        elif method.upper() == "POST":
-            return gl.http_post(path, post_data=params or {})
-        elif method.upper() == "PUT":
-            return gl.http_put(path, post_data=params or {})
-        elif method.upper() == "DELETE":
-            return gl.http_delete(path)
-        return None
+    async def _async_request(self, method, endpoint, params=None):
+        gl = self._gl
+        if not gl or not gl._session:
+            return []
+
+        path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        if path.startswith("/api/v4"):
+            path = path[len("/api/v4"):]
+
+        try:
+            if method.upper() == "GET":
+                raw = await gl.get(path, **(params or {}))
+            elif method.upper() == "POST":
+                raw = await gl.post(path, json=params or {})
+            else:
+                raw = await gl.get(path, **(params or {}))
+            return _decode(raw)
+        except glabflow.NotFoundError:
+            return []
+        except Exception:
+            return []
 
     def _get(self, endpoint, params=None):
         return self._request("GET", endpoint, params=params)
 
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
-        gl = self.client
-        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
-        if not path.startswith("/"):
-            path = f"/{path}"
+        return self._run_sync(self._async_get_paginated(endpoint, params, per_page, max_pages))
 
-        all_items = []
-        base_params = {**(params or {}), "per_page": per_page}
+    async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
+        gl = self._gl
+        if not gl or not gl._session:
+            return []
+
+        path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        if path.startswith("/api/v4"):
+            path = path[len("/api/v4"):]
+
+        all_items: list = []
+        p_params = {**(params or {}), "per_page": per_page}
+        page_count = 0
 
         try:
-            # Using as_list=True to get total_pages if needed,
-            # but here we just loop manually to respect max_pages
-            for page in range(1, max_pages + 1):
-                page_params = {**base_params, "page": page}
-                batch = gl.http_get(path, query_data=page_params)
-                if not isinstance(batch, list) or not batch:
-                    break
-                all_items.extend(batch)
-                if len(batch) < per_page:
+            async for raw_page in gl.paginate(path, **p_params):
+                page_count += 1
+                page_data = _decode(raw_page)
+                if isinstance(page_data, list):
+                    all_items.extend(page_data)
+                    if len(page_data) < per_page:
+                        break
+                elif isinstance(page_data, dict):
+                    all_items.append(page_data)
+                if page_count >= max_pages:
                     break
         except Exception:
             pass
 
         return all_items
+
+    def __del__(self):
+        try:
+            if self._gl is not None:
+                asyncio.run_coroutine_threadsafe(
+                    self._gl.__aexit__(None, None, None), self._loop
+                )
+            self._loop.stop()
+        except Exception:
+            pass
 
 
 class GitLabUsersAPI:
@@ -128,7 +192,6 @@ class GitLabUsersAPI:
                 )
             )
         except Exception:
-            # Some GitLab instances may not expose this endpoint for all tokens.
             pass
 
         return list(project_map.values())
@@ -267,8 +330,6 @@ class GitLabUsersAPI:
                             )
                         )
 
-                # Fallback: if author-filtered fetch returns nothing, query all commits and
-                # filter locally by author identity.
                 if not any(commit_batches):
                     commit_batches.append(
                         self.client._get_paginated(

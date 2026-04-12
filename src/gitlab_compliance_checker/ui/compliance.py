@@ -17,10 +17,11 @@ def cached_get_project(_gl_client, path_or_id):
     return get_project_with_retries(_gl_client, path_or_id)
 
 
-def get_project_branches(project):
+from gitlab_compliance_checker.infrastructure.gitlab.api_helper import get_project_branches as api_get_branches
+
+def get_project_branches(gl_client, project_id):
     try:
-        branches = project.branches.list(all=True)
-        return sorted([b.name for b in branches])
+        return api_get_branches(gl_client, project_id)
     except Exception:
         return []
 
@@ -150,15 +151,15 @@ def render_compliance_mode(gl_client):
                         project = cached_get_project(gl_client, pid)
                         st.session_state["current_project_obj"] = project
                         st.session_state["current_project_id"] = project_input
-                        st.session_state["project_branches"] = get_project_branches(project)
+                        st.session_state["project_branches"] = get_project_branches(gl_client, project["id"])
 
                 project = st.session_state.get("current_project_obj")
                 branches = st.session_state.get("project_branches", [])
 
                 if project:
-                    st.success(f"Project found: **{project.name_with_namespace}**")
+                    st.success(f"Project found: **{project.get('name_with_namespace')}**")
 
-                    default_branch = getattr(project, "default_branch", "main")
+                    default_branch = project.get("default_branch", "main")
                     default_idx = branches.index(default_branch) if default_branch in branches else 0
 
                     selected_branch = st.selectbox(
@@ -170,7 +171,7 @@ def render_compliance_mode(gl_client):
 
                     if st.button("Run Compliance Analysis", key="run_analysis_single"):
                         with st.spinner(f"Analyzing branch '{selected_branch}'..."):
-                            report = run_project_compliance_checks(gl_client, project.id, ref=selected_branch)
+                            report = run_project_compliance_checks(gl_client, project["id"], ref=selected_branch)
                             render_project_compliance_details(report)
 
             except Exception as e:
@@ -203,10 +204,10 @@ def render_batch_project_compliance_internal(gl_client):
             try:
                 pid = extract_path_from_url(line)
                 project = cached_get_project(gl_client, pid)
-                report = run_project_compliance_checks(gl_client, project.id)
+                report = run_project_compliance_checks(gl_client, project["id"])
 
                 return {
-                    "Project": project.name_with_namespace,
+                    "Project": project.get("name_with_namespace", str(line)),
                     "Compliance Score": f"{report.get('dx_score', 0)}%",
                     "Stack": report.get("tools", {}).get("project_type", "Unknown"),
                     "AGPLv3": "✅" if report["license"].get("valid") else "❌",

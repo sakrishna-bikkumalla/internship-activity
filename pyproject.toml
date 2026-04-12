@@ -7,11 +7,11 @@ authors = [
 ]
 readme = "README.md"
 license = { text = "GNU Affero General Public License v3.0" }
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
   "streamlit>=1.33.0",
   "xlsxwriter",
-  "python-gitlab",
+  "glabflow>=0.1.0a4",
   "python-dotenv",
   "plotly",
   "pyyaml>=6.0.3",

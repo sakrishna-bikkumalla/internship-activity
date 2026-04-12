@@ -1,6 +1,10 @@
+import asyncio
 from urllib.parse import urlparse
 
-import gitlab
+import glabflow
+import msgspec
+
+_JSON_DECODER = msgspec.json.Decoder()
 
 
 def extract_path_from_url(input_str):
@@ -11,29 +15,71 @@ def extract_path_from_url(input_str):
         return str(input_str).strip()
 
 
-def get_project_branches(project):
+def _decode(raw) -> dict | list:
+    if isinstance(raw, (dict, list)):
+        return raw
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            return _JSON_DECODER.decode(raw)
+        except Exception:
+            return {}
+    return {}
+
+
+def get_project_branches(client, project_id: int) -> list[str]:
+    """
+    Fetch all branch names for a project.
+    `client` is the GitLabClient wrapper (infrastructure/gitlab/client.py).
+    """
     try:
-        branches = project.branches.list(all=True)
-        return sorted([b.name for b in branches])
+        branches = client._get_paginated(
+            f"/projects/{project_id}/repository/branches",
+            per_page=100,
+            max_pages=10,
+        )
+        return sorted(b.get("name", "") for b in (branches or []) if b.get("name"))
     except Exception:
         return []
 
 
 def get_user_from_token(base_url, token):
+    async def _fetch():
+        api_base = base_url.rstrip("/") + "/api/v4"
+        async with glabflow.Client(
+            base_url=api_base,
+            token=token,
+            timeout=15,
+            ssl=False,
+        ) as gl:
+            raw = await gl.get("/user")
+            user = _decode(raw)
+            if user and isinstance(user, dict):
+                return user
+            return "Error validating token: User is None"
+
     try:
-        gl = gitlab.Gitlab(url=base_url, private_token=token, timeout=15, ssl_verify=False)
-        gl.auth()
-        if gl.user:
-            return gl.user.as_dict()
-        return "Error validating token: User is None"
+        return asyncio.run(_fetch())
     except Exception as e:
         return f"Error validating token: {e}"
 
 
 def get_user_groups_by_token(base_url, token):
+    async def _fetch():
+        api_base = base_url.rstrip("/") + "/api/v4"
+        result = []
+        async with glabflow.Client(
+            base_url=api_base,
+            token=token,
+            timeout=15,
+            ssl=False,
+        ) as gl:
+            async for raw_page in gl.paginate("/groups", membership="true", per_page=100):
+                page = _decode(raw_page)
+                if isinstance(page, list):
+                    result.extend(page)
+        return result
+
     try:
-        gl = gitlab.Gitlab(url=base_url, private_token=token, timeout=15, ssl_verify=False)
-        groups = gl.groups.list(membership=True, all=True)
-        return [g.as_dict() for g in groups]
+        return asyncio.run(_fetch())
     except Exception as e:
         return f"Error fetching groups: {e}"

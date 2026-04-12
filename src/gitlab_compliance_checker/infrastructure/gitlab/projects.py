@@ -14,11 +14,12 @@ def extract_path_from_url(input_str: str) -> str:
 
 
 def get_project_with_retries(gl_client, path_or_id):
-    """Fetch project by ID or path from python-gitlab client."""
+    """Fetch project by ID or path from gitlab client wrapper."""
+    from urllib.parse import quote
     try:
-        # Note: gl_client here should be the raw python-gitlab client
         pid = int(path_or_id) if str(path_or_id).isdigit() else path_or_id
-        return gl_client.projects.get(pid)
+        encoded_path = quote(str(pid), safe="")
+        return gl_client._get(f"/projects/{encoded_path}")
     except Exception:
         raise
 

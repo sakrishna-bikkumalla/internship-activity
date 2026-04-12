@@ -51,8 +51,8 @@ def main():
 
     # Routing
     if mode == "Check Project Compliance":
-        # Compliance mode expects the python-gitlab object for now (legacy compatibility)
-        render_compliance_mode(client.client)
+        # Compliance mode expects the client wrapper
+        render_compliance_mode(client)
 
     elif mode == "User Profile Overview":
         st.subheader("👤 User Profile Overview")

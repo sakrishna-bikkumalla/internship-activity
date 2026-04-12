@@ -1,14 +1,15 @@
 import base64
 from typing import Any, Dict, Optional
-
+from urllib.parse import quote
 
 def check_readme(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Detailed README checker: existence, size, and essential sections.
     """
     try:
-        project = gl.projects.get(project_id)
-        branch = ref or getattr(project, "default_branch", "main")
+        if not ref:
+            project_info = gl._get(f"/projects/{project_id}")
+            ref = project_info.get("default_branch", "main")
 
         readme_variants = ["README.md", "README", "README.txt"]
         content = ""
@@ -16,10 +17,12 @@ def check_readme(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, An
 
         for variant in readme_variants:
             try:
-                f = project.files.get(file_path=variant, ref=branch)
-                content = base64.b64decode(f.content).decode("utf-8")
-                found_file = variant
-                break
+                encoded_path = quote(variant, safe="")
+                f = gl._get(f"/projects/{project_id}/repository/files/{encoded_path}", params={"ref": ref})
+                if f and isinstance(f, dict) and "content" in f:
+                    content = base64.b64decode(f["content"]).decode("utf-8")
+                    found_file = variant
+                    break
             except Exception:
                 continue
 
@@ -28,15 +31,8 @@ def check_readme(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, An
 
         lc = content.lower()
         expected_sections = [
-            "installation",
-            "usage",
-            "getting started",
-            "setup",
-            "license",
-            "contributing",
-            "example",
-            "quick start",
-            "features",
+            "installation", "usage", "getting started", "setup",
+            "license", "contributing", "example", "quick start", "features"
         ]
         found_sections = [s for s in expected_sections if s in lc]
 
@@ -50,6 +46,5 @@ def check_readme(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, An
             "needs_improvement": needs_improvement,
             "content_length": len(content.strip()),
         }
-
     except Exception as e:
         return {"exists": False, "status": f"Error: {e}", "needs_improvement": True}
