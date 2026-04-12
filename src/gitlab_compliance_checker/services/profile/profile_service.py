@@ -24,75 +24,67 @@ def _safe_getattr_dict_id(obj, attr_name):
 
 def _get_issue_assignee_ids(issue):
     ids = set()
-
-    if isinstance(getattr(issue, "assignee", None), dict):
-        ids.add(issue.assignee.get("id"))
-
-    if isinstance(getattr(issue, "assignees", None), list):
-        for item in issue.assignees:
+    assignee = issue.get("assignee")
+    if isinstance(assignee, dict):
+        ids.add(assignee.get("id"))
+    assignees = issue.get("assignees")
+    if isinstance(assignees, list):
+        for item in assignees:
             if isinstance(item, dict) and item.get("id") is not None:
-                ids.add(item["id"])
-
+                ids.add(item.get("id"))
     return {i for i in ids if i is not None}
 
 
 def _issue_is_related_to_user(issue, user_id):
-    author_id = _safe_getattr_dict_id(issue, "author")
+    author = issue.get("author")
+    author_id = author.get("id") if isinstance(author, dict) else None
     return author_id == user_id or user_id in _get_issue_assignee_ids(issue)
 
 
-# ---------------- ISSUE FETCHING ----------------
-
-
-def _fetch_user_related_issues_by_state(gl, user_id, state=None, limit=200):
+def _fetch_user_related_issues_by_state(gl_client, user_id, state=None, limit=200):
     all_issues = {}
-
-    params = {
-        "scope": "all",
-        "order_by": "created_at",
-        "sort": "desc",
-        "per_page": 100,
-    }
-
+    params = {"per_page": 100}
     if state and state != "all":
         params["state"] = state
 
-    # Try ID-based filters
+    # author_id/assignee_id scope
     for key in ("author_id", "assignee_id"):
         try:
-            issues = gl.issues.list(**params, **{key: user_id})
-            for issue in issues:
-                all_issues[issue.id] = issue
+            issues = gl_client._get_paginated("/issues", params={**params, "scope": "all", key: user_id}, all=True)
+            for issue in issues or []:
+                all_issues[issue.get("id")] = issue
         except Exception:
             pass
 
-    # Fallback to username-based filters
+    # Fallback to username if no issues found
     if not all_issues:
         try:
-            user = gl.users.get(user_id)
-            username = user.username
-            for key in ("author_username", "assignee_username"):
-                try:
-                    issues = gl.issues.list(**params, **{key: username})
-                    for issue in issues:
-                        all_issues[issue.id] = issue
-                except Exception:
-                    pass
+            user = gl_client._get(f"/users/{user_id}")
+            username = user.get("username")
+            if username:
+                for key in ("author_username", "assignee_username"):
+                    try:
+                        issues = gl_client._get_paginated(
+                            "/issues", params={**params, "scope": "all", key: username}, all=True
+                        )
+                        for issue in issues or []:
+                            all_issues[issue.get("id")] = issue
+                    except Exception:
+                        pass
         except Exception:
             pass
 
     issues = list(all_issues.values())
-    issues.sort(key=lambda i: getattr(i, "created_at", "") or "", reverse=True)
-
+    issues.sort(key=lambda i: i.get("created_at") or "", reverse=True)
     return issues[:limit]
 
 
-def _get_total_count_from_api(gl, endpoint, query_data=None):
+def _get_total_count_from_api(gl_client, endpoint, query_data=None):
     try:
-        response = gl.http_get(
-            endpoint,
-            query_data={"per_page": 1, "page": 1, **(query_data or {})},
-            raw=True,
+        response = gl_client._session.get(
+            f"{gl_client.api_base}{endpoint}",
+            params={"per_page": 1, "page": 1, **(query_data or {})},
+            timeout=15,
         )
         total = response.headers.get("X-Total")
         return int(total) if total else None
@@ -100,63 +92,37 @@ def _get_total_count_from_api(gl, endpoint, query_data=None):
         return None
 
 
-# ---------------- USER PROFILE ----------------
-
-
-def get_user_profile(client, username_or_id):
+def get_user_profile(gl_client, username_or_id):
     try:
         cleaned = _extract_username_from_input(username_or_id)
-
         if cleaned.isdigit():
-            return client.users.get(int(cleaned))
-
-        users = client.users.list(username=cleaned)
-        return users[0] if users else None
+            return gl_client._get(f"/users/{cleaned}")
+        users = gl_client._get("/users", params={"username": cleaned})
+        return users[0] if isinstance(users, list) and users else None
     except Exception:
         return None
 
 
-# ---------------- USER COUNTS ----------------
+def get_user_projects_count(gl_client, user_id):
+    total = _get_total_count_from_api(gl_client, f"/users/{user_id}/projects")
+    return total if total is not None else 0
 
 
-def get_user_projects_count(gl, user_id):
-    total = _get_total_count_from_api(gl, f"/users/{user_id}/projects")
-    if total is not None:
-        return total
-    try:
-        return len(gl.users.get(user_id).projects.list(all=True))
-    except Exception:
-        return 0
+def get_user_groups_count(gl_client, user_id):
+    total = _get_total_count_from_api(gl_client, f"/users/{user_id}/groups")
+    return total if total is not None else 0
 
 
-def get_user_groups_count(gl, user_id):
-    total = _get_total_count_from_api(gl, f"/users/{user_id}/groups")
-    if total is not None:
-        return total
-    try:
-        return len(gl.users.get(user_id).groups.list(all=True))
-    except Exception:
-        return 0
-
-
-def get_user_open_mrs_count(gl, user_id):
+def get_user_open_mrs_count(gl_client, user_id):
     total = _get_total_count_from_api(
-        gl,
-        "/merge_requests",
-        query_data={"author_id": user_id, "state": "opened", "scope": "all"},
+        gl_client, "/merge_requests", query_data={"author_id": user_id, "state": "opened", "scope": "all"}
     )
-    if total is not None:
-        return total
+    return total if total is not None else 0
 
+
+def get_user_open_issues_count(gl_client, user_id):
     try:
-        return len(gl.mergerequests.list(author_id=user_id, state="opened", all=True))
-    except Exception:
-        return 0
-
-
-def get_user_open_issues_count(gl, user_id):
-    try:
-        issues = _fetch_user_related_issues_by_state(gl, user_id, state="opened")
+        issues = _fetch_user_related_issues_by_state(gl_client, user_id, state="opened")
         return len(issues)
     except Exception:
         return 0
@@ -165,28 +131,20 @@ def get_user_open_issues_count(gl, user_id):
 # ---------------- ISSUE DETAILS ----------------
 
 
-def get_user_issues_details(gl, user_id):
-    issues = _fetch_user_related_issues_by_state(gl, user_id, state="all")
-
+def get_user_issues_details(gl_client, user_id):
+    issues = _fetch_user_related_issues_by_state(gl_client, user_id, state="all")
     today = datetime.now().date()
     morning_end = time(12, 0, 0)
-
-    stats = {
-        "total": len(issues),
-        "open": 0,
-        "closed": 0,
-        "today_morning": 0,
-        "today_afternoon": 0,
-    }
+    stats = {"total": len(issues), "open": 0, "closed": 0, "today_morning": 0, "today_afternoon": 0}
 
     for issue in issues:
-        state = getattr(issue, "state", "")
+        state = issue.get("state", "")
         if state == "opened":
             stats["open"] += 1
         elif state == "closed":
             stats["closed"] += 1
 
-        created_at = getattr(issue, "created_at", "")
+        created_at = issue.get("created_at", "")
         try:
             created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
             if created.date() == today:
@@ -196,56 +154,49 @@ def get_user_issues_details(gl, user_id):
                     stats["today_afternoon"] += 1
         except Exception:
             pass
-
     return stats
 
 
-# ---------------- ISSUE LIST FOR UI ----------------
-
-
-def get_user_issues_list(gl, user_id, limit=100):
-    issues = _fetch_user_related_issues_by_state(gl, user_id, state="all")
-
+def get_user_issues_list(gl_client, user_id, limit=100):
+    issues = _fetch_user_related_issues_by_state(gl_client, user_id, state="all")
     rows = []
     for issue in issues[:limit]:
-        assignees = []
-        if isinstance(getattr(issue, "assignees", None), list):
-            assignees = [a.get("username") for a in issue.assignees if isinstance(a, dict)]
-
+        assignees_raw = issue.get("assignees", [])
+        assignees = (
+            [a.get("username") for a in assignees_raw if isinstance(a, dict)] if isinstance(assignees_raw, list) else []
+        )
         rows.append(
             {
-                "id": issue.id,
-                "iid": issue.iid,
-                "title": issue.title,
-                "state": issue.state,
-                "project_id": issue.project_id,
-                "created_at": issue.created_at,
-                "updated_at": issue.updated_at,
-                "web_url": issue.web_url,
+                "id": issue.get("id"),
+                "iid": issue.get("iid"),
+                "title": issue.get("title"),
+                "state": issue.get("state"),
+                "project_id": issue.get("project_id"),
+                "created_at": issue.get("created_at"),
+                "updated_at": issue.get("updated_at"),
+                "web_url": issue.get("web_url"),
                 "assignees": ", ".join([a for a in assignees if a]),
             }
         )
-
     return rows
 
 
 # ---------------- PROFILE README CHECK ----------------
 
 
-def check_profile_readme(gl, username):
+def check_profile_readme(gl_client, username):
     try:
-        project_path = f"{username}/{username}"
-        project = gl.projects.get(project_path)
+        project_path = str(f"{username}/{username}").replace("/", "%2F")
+        project = gl_client._get(f"/projects/{project_path}")
+        default_branch = project.get("default_branch") or "main"
 
-        project.files.get(
-            file_path="README.md",
-            ref=project.default_branch or "main",
-        )
+        # Check file existence via generic GET
+        # encoded path for README.md is README%2Emd
+        gl_client._get(f"/projects/{project_path}/repository/files/README%2Emd", params={"ref": default_branch})
 
         return {
             "exists": True,
-            "url": f"{project.web_url}/-/blob/{project.default_branch or 'main'}/README.md",
+            "url": f"{project.get('web_url')}/-/blob/{default_branch}/README.md",
         }
-
     except Exception:
         return {"exists": False}

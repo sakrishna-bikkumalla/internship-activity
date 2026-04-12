@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
 
+
 def check_templates(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Detailed GitLab templates checker for issues and MRs.
@@ -21,7 +22,7 @@ def check_templates(gl, project_id: int, ref: Optional[str] = None) -> Dict[str,
             items = gl._get_paginated(
                 f"/projects/{project_id}/repository/tree",
                 params={"path": ".gitlab/issue_templates", "ref": ref},
-                per_page=100
+                per_page=100,
             )
             md_files = [item.get("name") for item in (items or []) if str(item.get("name", "")).lower().endswith(".md")]
             if md_files:
@@ -35,7 +36,7 @@ def check_templates(gl, project_id: int, ref: Optional[str] = None) -> Dict[str,
             items = gl._get_paginated(
                 f"/projects/{project_id}/repository/tree",
                 params={"path": ".gitlab/merge_request_templates", "ref": ref},
-                per_page=100
+                per_page=100,
             )
             md_files = [item.get("name") for item in (items or []) if str(item.get("name", "")).lower().endswith(".md")]
             if md_files:

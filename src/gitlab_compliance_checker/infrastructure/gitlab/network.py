@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any, Dict, List, Union
 
 import glabflow
 import msgspec
@@ -8,12 +9,15 @@ DEFAULT_TIMEOUT = 15
 _JSON_DECODER = msgspec.json.Decoder()
 
 
-def _decode(raw) -> dict | list:
+def _decode(raw: Any) -> Union[Dict[Any, Any], List[Any]]:
     if isinstance(raw, (dict, list)):
         return raw
     if isinstance(raw, (bytes, bytearray)):
         try:
-            return _JSON_DECODER.decode(raw)
+            val = _JSON_DECODER.decode(raw)
+            if isinstance(val, (dict, list)):
+                return val
+            return {}
         except Exception:
             return {}
     return {}
@@ -23,6 +27,7 @@ def get_user_from_token(base_url: str, token: str):
     """
     Fetch authenticated user using PRIVATE-TOKEN.
     """
+
     async def _fetch():
         api_base = base_url.rstrip("/") + "/api/v4"
         async with glabflow.Client(
@@ -44,6 +49,7 @@ def get_user_groups(base_url: str, token: str):
     """
     Fetch groups where authenticated user has membership.
     """
+
     async def _fetch():
         api_base = base_url.rstrip("/") + "/api/v4"
         result = []

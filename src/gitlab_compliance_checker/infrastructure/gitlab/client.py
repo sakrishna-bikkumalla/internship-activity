@@ -104,7 +104,7 @@ class GitLabClient:
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
 
-        self._sem = None
+        self._sem: asyncio.Semaphore | None = None
         self._init_sem()
 
         # Enter glabflow client context in the background loop
@@ -127,6 +127,7 @@ class GitLabClient:
 
     def _init_gl_client(self):
         """Initialize and enter glabflow.Client as async context manager in background loop."""
+
         async def _enter():
             gl = glabflow.Client(
                 base_url=self.api_base,
@@ -162,17 +163,22 @@ class GitLabClient:
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
         if path.startswith("/api/v4"):
-            path = path[len("/api/v4"):]
+            path = path[len("/api/v4") :]
 
         # Robust handling of parameters via query string to avoid serialization issues
         if params:
             from urllib.parse import urlencode
+
             query = urlencode({k: v for k, v in params.items() if v is not None})
             connector = "&" if "?" in path else "?"
             path = f"{path}{connector}{query}"
 
+        sem = self._sem
+        if sem is None:
+            return []
+
         try:
-            async with self._sem:
+            async with sem:
                 raw = await gl.get(path)
             return _decode_json(raw)
         except glabflow.NotFoundError:
@@ -182,7 +188,8 @@ class GitLabClient:
             logger.warning(f"Rate limited on GET {path}. Waiting {wait}s...")
             await asyncio.sleep(wait)
             try:
-                async with self._sem:
+                # Use narrowed local 'sem'
+                async with sem:
                     raw = await gl.get(path)
                 return _decode_json(raw)
             except Exception as e:
@@ -200,13 +207,16 @@ class GitLabClient:
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
         if path.startswith("/api/v4"):
-            path = path[len("/api/v4"):]
+            path = path[len("/api/v4") :]
 
         try:
+            if self._sem is None:
+                return []
             async with self._sem:
                 if method.upper() == "GET":
                     if params:
                         from urllib.parse import urlencode
+
                         query = urlencode({k: v for k, v in params.items() if v is not None})
                         connector = "&" if "?" in path else "?"
                         path = f"{path}{connector}{query}"
@@ -230,7 +240,7 @@ class GitLabClient:
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
         if path.startswith("/api/v4"):
-            path = path[len("/api/v4"):]
+            path = path[len("/api/v4") :]
 
         all_items: list = []
         p_params = {**(params or {}), "per_page": per_page}
@@ -810,9 +820,7 @@ class GitLabClient:
         try:
             # Exit glabflow client context
             if self._gl is not None:
-                asyncio.run_coroutine_threadsafe(
-                    self._gl.__aexit__(None, None, None), self._loop
-                )
+                asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
             self._loop.stop()
         except Exception:
             pass

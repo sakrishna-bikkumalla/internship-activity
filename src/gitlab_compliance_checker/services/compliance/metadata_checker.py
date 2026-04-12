@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+
 def check_metadata(gl, project_id: int) -> Dict[str, Any]:
     """
     Checks for project description and tags in GitLab.

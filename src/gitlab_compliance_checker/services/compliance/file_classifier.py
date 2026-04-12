@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 def classify_files(gl, project_id: int, ref: Optional[str] = None) -> dict:
     """
     Classifies files by type.
@@ -8,11 +9,11 @@ def classify_files(gl, project_id: int, ref: Optional[str] = None) -> dict:
         if not ref:
             project_info = gl._get(f"/projects/{project_id}")
             ref = project_info.get("default_branch", "main")
-            
+
         files = gl._get_paginated(
-            f"/projects/{project_id}/repository/tree", 
+            f"/projects/{project_id}/repository/tree",
             params={"ref": ref, "recursive": True},
-            per_page=100, 
+            per_page=100,
             max_pages=50,
         )
 

@@ -11,6 +11,7 @@ from gitlab_compliance_checker.services.compliance.license_checker import check_
 from gitlab_compliance_checker.services.compliance.readme_checker import check_readme
 from gitlab_compliance_checker.services.compliance.templates_checker import check_templates
 
+
 @pytest.fixture
 def mock_gl():
     gl = MagicMock()
@@ -24,6 +25,7 @@ def mock_gl():
     ]
     gl._get.return_value = {"default_branch": "main"}
     return gl
+
 
 class TestClassifyFiles:
     def test_classify_files_with_extensions(self, mock_gl):
@@ -49,6 +51,7 @@ class TestClassifyFiles:
         assert "error" in result
         assert "API Error" in result["error"]
 
+
 class TestCheckLicense:
     def test_license_exists(self, mock_gl):
         encoded = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode("utf-8")
@@ -64,10 +67,12 @@ class TestCheckLicense:
             if "files" in endpoint:
                 raise Exception("Not Found")
             return {"default_branch": "main"}
+
         mock_gl._get.side_effect = side_effect
         result = check_license(mock_gl, 123)
         assert result["exists"] is False
         assert "missing" in result["status"].lower()
+
 
 class TestCheckReadme:
     def test_readme_exists(self, mock_gl):
@@ -83,10 +88,12 @@ class TestCheckReadme:
             if "files" in endpoint:
                 raise Exception("Not Found")
             return {"default_branch": "main"}
+
         mock_gl._get.side_effect = side_effect
         result = check_readme(mock_gl, 123)
         assert result["exists"] is False
         assert "Missing" in result["status"]
+
 
 class TestCheckTemplates:
     def test_templates_exist(self, mock_gl):
@@ -114,6 +121,7 @@ class TestCheckTemplates:
         mock_gl._get_paginated.side_effect = Exception("API Error")
         result = check_templates(mock_gl, 123)
         assert result["exists"] is False
+
 
 class TestComplianceService:
     @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_templates")
@@ -150,6 +158,7 @@ class TestComplianceService:
         assert result["license"]["exists"] is False
         assert result["templates"]["exists"] is False
 
+
 class TestClassification:
     @patch("gitlab_compliance_checker.services.compliance.classification.classify_files")
     def test_classification_delegates_to_classify_files(self, mock_classify, mock_gl):
@@ -157,6 +166,7 @@ class TestClassification:
         result = get_project_file_classification(mock_gl, 123)
         mock_classify.assert_called_once_with(mock_gl, 123)
         assert result == {"py": 10, "js": 5}
+
 
 class TestComplianceChecks:
     @patch("gitlab_compliance_checker.services.compliance.compliance_checks.run_project_compliance_checks")

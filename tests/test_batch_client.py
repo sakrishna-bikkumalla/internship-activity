@@ -1,7 +1,9 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from gitlab_compliance_checker.services.batch.client import GitLabClient, GitLabUsersAPI
+
 
 @pytest.fixture
 def mock_client():
@@ -10,8 +12,10 @@ def mock_client():
     client._gl = MagicMock()
     return client
 
+
 def test_client_request_success(mock_client):
-    assert True # Client requests tested functionally within API context
+    assert True  # Client requests tested functionally within API context
+
 
 def test_users_api_get_by_username(mock_client):
     with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
@@ -25,11 +29,13 @@ def test_users_api_get_by_username(mock_client):
         with pytest.raises(ValueError):
             mock_client.users.get_by_username("none")
 
+
 def test_users_api_get_by_userid(mock_client):
     with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
         mock_get.return_value = {"id": 1, "username": "user1"}
         res = mock_client.users.get_by_userid(1)
         assert res["id"] == 1
+
 
 def test_users_api_get_user_projects(mock_client):
     with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get_paginated") as mock_paginated:
@@ -43,6 +49,7 @@ def test_users_api_get_user_projects(mock_client):
         ids = {p["id"] for p in res}
         assert ids == {1, 2, 3}
 
+
 def test_users_api_counts(mock_client):
     with patch.object(GitLabUsersAPI, "get_user_projects", return_value=[{"id": 1}]):
         assert mock_client.users.get_user_project_count(1) == 1
@@ -55,6 +62,7 @@ def test_users_api_counts(mock_client):
 
     with patch.object(GitLabUsersAPI, "get_user_issues", return_value=[{"id": 1}]):
         assert mock_client.users.get_user_issue_count(1) == 1
+
 
 def test_users_api_get_user_commits(mock_client):
     user_info = {"id": 1, "username": "user1", "name": "User One", "email": "user@gl.com"}
@@ -85,6 +93,7 @@ def test_users_api_get_user_commits(mock_client):
 
             # Case 3: No user id
             assert mock_client.users.get_user_commits({}) == []
+
 
 def test_name_email_match_edge_cases(mock_client):
     user_info = {"id": 1, "username": "user.one", "name": "User One", "email": "user@gl.com"}

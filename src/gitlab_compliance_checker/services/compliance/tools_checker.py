@@ -6,6 +6,7 @@ from gitlab_compliance_checker.infrastructure.gitlab.parsers import parse_json, 
 
 from .project_detector import detect_project_type
 
+
 def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Ultimate DX-checker: Deep analysis of CLI tools and CI/CD pipelines.
@@ -22,7 +23,7 @@ def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any
                 f"/projects/{project_id}/repository/tree",
                 params={"ref": ref, "path": "", "all": True},
                 per_page=100,
-                max_pages=50
+                max_pages=50,
             )
             filenames = [item["name"] for item in (items or []) if item.get("type") == "blob"]
         except Exception:

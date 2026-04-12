@@ -2,6 +2,7 @@ import base64
 from typing import Any, Dict, Optional
 from urllib.parse import quote
 
+
 def check_readme(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Detailed README checker: existence, size, and essential sections.
@@ -31,8 +32,15 @@ def check_readme(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, An
 
         lc = content.lower()
         expected_sections = [
-            "installation", "usage", "getting started", "setup",
-            "license", "contributing", "example", "quick start", "features"
+            "installation",
+            "usage",
+            "getting started",
+            "setup",
+            "license",
+            "contributing",
+            "example",
+            "quick start",
+            "features",
         ]
         found_sections = [s for s in expected_sections if s in lc]
 

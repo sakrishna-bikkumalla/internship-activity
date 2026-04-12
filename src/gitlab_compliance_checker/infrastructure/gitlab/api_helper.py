@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any, Dict, List, Union, cast
 from urllib.parse import urlparse
 
 import glabflow
@@ -7,33 +8,36 @@ import msgspec
 _JSON_DECODER = msgspec.json.Decoder()
 
 
-def extract_path_from_url(input_str):
+def extract_path_from_url(input_str: Any) -> str:
     try:
-        path = urlparse(input_str).path.strip("/")
+        path = urlparse(str(input_str)).path.strip("/")
         return path[:-4] if path.endswith(".git") else path
     except Exception:
         return str(input_str).strip()
 
 
-def _decode(raw) -> dict | list:
+def _decode(raw: Any) -> Union[Dict[Any, Any], List[Any]]:
     if isinstance(raw, (dict, list)):
         return raw
     if isinstance(raw, (bytes, bytearray)):
         try:
-            return _JSON_DECODER.decode(raw)
+            val = _JSON_DECODER.decode(raw)
+            if isinstance(val, (dict, list)):
+                return val
+            return {}
         except Exception:
             return {}
     return {}
 
 
-def get_project_branches(client, project_id: int) -> list[str]:
+def get_project_branches(client, project_id: Union[int, str]) -> List[str]:
     """
     Fetch all branch names for a project.
     `client` is the GitLabClient wrapper (infrastructure/gitlab/client.py).
     """
     try:
         branches = client._get_paginated(
-            f"/projects/{project_id}/repository/branches",
+            f"/projects/{str(project_id).replace('/', '%2F')}/repository/branches",
             per_page=100,
             max_pages=10,
         )
@@ -42,7 +46,7 @@ def get_project_branches(client, project_id: int) -> list[str]:
         return []
 
 
-def get_user_from_token(base_url, token):
+def get_user_from_token(base_url: str, token: str) -> Union[Dict[str, Any], str]:
     async def _fetch():
         api_base = base_url.rstrip("/") + "/api/v4"
         async with glabflow.Client(
@@ -58,12 +62,13 @@ def get_user_from_token(base_url, token):
             return "Error validating token: User is None"
 
     try:
-        return asyncio.run(_fetch())
+        # Cast the result of asyncio.run to satisfy Mypy
+        return cast(Union[Dict[str, Any], str], asyncio.run(_fetch()))
     except Exception as e:
         return f"Error validating token: {e}"
 
 
-def get_user_groups_by_token(base_url, token):
+def get_user_groups_by_token(base_url: str, token: str) -> List[Dict[str, Any]]:
     async def _fetch():
         api_base = base_url.rstrip("/") + "/api/v4"
         result = []
@@ -80,6 +85,6 @@ def get_user_groups_by_token(base_url, token):
         return result
 
     try:
-        return asyncio.run(_fetch())
-    except Exception as e:
-        return f"Error fetching groups: {e}"
+        return cast(List[Dict[str, Any]], asyncio.run(_fetch()))
+    except Exception:
+        return []

@@ -1,23 +1,30 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from gitlab import GitlabGetError
 
+# GitlabGetError is replaced by generic Exception or glabflow exceptions in production.
+# In tests, we will use Exception or a mock if needed.
 from gitlab_compliance_checker.ui import compliance as compliance_mode
 
 
 @pytest.fixture
 def mock_project():
-    m = MagicMock()
-    m.id = 123
-    m.name_with_namespace = "Group / Project"
-    m.default_branch = "main"
-    return m
+    # project is now a dict
+    return {
+        "id": 123,
+        "name_with_namespace": "Group / Project",
+        "path_with_namespace": "gp/p1",
+        "default_branch": "main",
+    }
 
 
 @pytest.fixture
 def mock_gl_client():
-    return MagicMock()
+    m = MagicMock()
+    # Mocking the new wrapper methods
+    m._get.return_value = {}
+    m._get_paginated.return_value = []
+    return m
 
 
 def test_extract_path_from_url():
@@ -26,32 +33,30 @@ def test_extract_path_from_url():
     assert compliance_mode.extract_path_from_url("12345") == "12345"
 
 
-def test_get_project_branches(mock_project):
-    b1 = MagicMock()
-    b1.name = "main"
-    b2 = MagicMock()
-    b2.name = "develop"
-    mock_project.branches.list.return_value = [b1, b2]
+def test_get_project_branches(mock_gl_client):
+    # This now calls api_get_branches(gl_client, project_id)
+    # Which calls gl_client._get_paginated(f"/projects/{pid}/repository/branches", ...)
+    mock_gl_client._get_paginated.return_value = [{"name": "main"}, {"name": "develop"}]
 
-    branches = compliance_mode.get_project_branches(mock_project)
+    branches = compliance_mode.get_project_branches(mock_gl_client, 123)
     assert branches == ["develop", "main"]
 
 
-def test_get_project_branches_exception(mock_project):
-    mock_project.branches.list.side_effect = Exception("error")
-    assert compliance_mode.get_project_branches(mock_project) == []
+def test_get_project_branches_exception(mock_gl_client):
+    mock_gl_client._get_paginated.side_effect = Exception("error")
+    assert compliance_mode.get_project_branches(mock_gl_client, 123) == []
 
 
 def test_get_project_with_retries_success(mock_gl_client, mock_project):
-    mock_gl_client.projects.get.return_value = mock_project
+    mock_gl_client._get.return_value = mock_project
     res = compliance_mode.get_project_with_retries(mock_gl_client, "gp/p1")
     assert res == mock_project
-    mock_gl_client.projects.get.assert_called_with("gp/p1")
+    mock_gl_client._get.assert_called_with("/projects/gp%2Fp1")
 
 
 def test_get_project_with_retries_fail(mock_gl_client):
-    mock_gl_client.projects.get.side_effect = GitlabGetError()
-    with pytest.raises(GitlabGetError):
+    mock_gl_client._get.side_effect = Exception("404 Not Found")
+    with pytest.raises(Exception, match="404 Not Found"):
         compliance_mode.get_project_with_retries(mock_gl_client, "bad/repo")
 
 
@@ -72,10 +77,12 @@ def test_render_compliance_mode_single_project(mock_run, mock_get, mock_st, mock
     mock_st.button.side_effect = lambda label, key=None: label == "Fetch Project & Branches"
 
     mock_get.return_value = mock_project
-    mock_project.branches.list.return_value = [MagicMock(name="main")]
 
-    # First call to render
-    compliance_mode.render_compliance_mode(mock_gl_client)
+    # Mocking api_get_branches call
+    with patch("gitlab_compliance_checker.ui.compliance.api_get_branches") as mock_api:
+        mock_api.return_value = ["main"]
+        # First call to render
+        compliance_mode.render_compliance_mode(mock_gl_client)
 
     mock_get.assert_called()
 

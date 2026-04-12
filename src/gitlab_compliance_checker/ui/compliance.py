@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 import streamlit as st
 
+from gitlab_compliance_checker.infrastructure.gitlab.api_helper import get_project_branches as api_get_branches
 from gitlab_compliance_checker.infrastructure.gitlab.pipeline_checker import EXPECTED_STAGES
 from gitlab_compliance_checker.infrastructure.gitlab.projects import extract_path_from_url, get_project_with_retries
 from gitlab_compliance_checker.services.compliance.compliance_service import (
@@ -16,8 +17,6 @@ def cached_get_project(_gl_client, path_or_id):
     """Cached wrapper for get_project_with_retries."""
     return get_project_with_retries(_gl_client, path_or_id)
 
-
-from gitlab_compliance_checker.infrastructure.gitlab.api_helper import get_project_branches as api_get_branches
 
 def get_project_branches(gl_client, project_id):
     try:

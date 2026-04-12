@@ -1,9 +1,10 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import pytest
 import glabflow
+import pytest
 
 from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient, safe_api_call_async
+
 
 @pytest.mark.asyncio
 async def test_safe_api_call_success():

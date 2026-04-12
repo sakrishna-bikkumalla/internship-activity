@@ -32,9 +32,9 @@ def extract_dependencies_from_project(gl, project_id: int, branch="main"):
     Fetch uv.lock from GitLab project and parse it via REST API.
     """
     try:
-        from urllib.parse import quote
         import base64
-        
+        from urllib.parse import quote
+
         encoded_path = quote("uv.lock", safe="")
         file_obj = gl._get(f"/projects/{project_id}/repository/files/{encoded_path}", params={"ref": branch})
         if file_obj and isinstance(file_obj, dict) and "content" in file_obj:

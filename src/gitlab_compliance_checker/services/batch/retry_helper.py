@@ -3,53 +3,42 @@ Retry logic for GitLab API calls with exponential backoff.
 No Streamlit dependencies.
 """
 
-import http.client
+import logging
 import time
 
-from gitlab import GitlabGetError
+logger = logging.getLogger(__name__)
 
 
 def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
     """Attempt to fetch a project from GitLab with retries on transient network errors.
 
     Args:
-        gl_client: GitLab client instance
+        gl_client: GitLab client instance (glabflow wrapper)
         path_or_id: Project path (string) or ID (integer)
         retries: Number of retry attempts
         backoff: Base backoff in seconds (multiplied by 2^(attempt-1))
 
     Returns:
-        Project object on success
-
-    Raises:
-        Last exception if all retries fail
+        Project data (dict) on success
     """
     last_exc = None
     for attempt in range(1, retries + 1):
         try:
-            return gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
-        except GitlabGetError as e:
-            # If it's a 404-like error (project not found), re-raise immediately
+            # Use the wrapper's _get method
+            encoded = str(path_or_id).replace("/", "%2F")
+            return gl_client._get(f"/projects/{encoded}")
+        except Exception as e:
             last_exc = e
-            if getattr(e, "response", None) is not None and e.response.status_code == 404:
+            # Immediate fail on 404
+            if "404" in str(e) or "Not Found" in type(e).__name__:
                 raise
+
             if attempt == retries:
                 raise
-        except (
-            ConnectionResetError,
-            ConnectionAbortedError,
-            OSError,
-            http.client.RemoteDisconnected,
-            Exception,
-        ) as e:
-            last_exc = e
-            if type(e).__name__ not in ("RequestException", "ConnectionError", "Timeout"):
-                if not isinstance(e, (OSError, http.client.RemoteDisconnected)):
-                    raise
-            if attempt == retries:
-                raise
+
             sleep_for = backoff * (2 ** (attempt - 1))
+            logger.warning(f"Retry {attempt}/{retries} for {path_or_id} in {sleep_for}s: {e}")
             time.sleep(sleep_for)
-    # If loop exits without returning, raise the last exception
+
     if last_exc:
         raise last_exc

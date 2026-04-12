@@ -11,6 +11,7 @@ from .readme_checker import check_readme
 from .templates_checker import check_templates
 from .tools_checker import check_tools
 
+
 def run_project_compliance_checks(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Ultimate entry point: Runs all production-grade compliance checks for a project.
@@ -46,6 +47,7 @@ def run_project_compliance_checks(gl, project_id: int, ref: Optional[str] = None
     results["dx_score"] = results["tools"].get("dx_score", 0)
 
     return results
+
 
 def get_dx_suggestions(report: Dict[str, Any]) -> List[Dict[str, str]]:
     """

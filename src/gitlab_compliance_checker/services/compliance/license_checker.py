@@ -2,6 +2,7 @@ import base64
 from typing import Any, Dict, Optional
 from urllib.parse import quote
 
+
 def check_license(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any]:
     """
     Detailed AGPLv3 license checker.

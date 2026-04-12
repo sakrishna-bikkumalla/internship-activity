@@ -12,7 +12,7 @@ def read_file_content(gl, project_id: int, file_path: str, ref: str) -> Optional
         encoded_path = quote(file_path, safe="")
         endpoint = f"/projects/{project_id}/repository/files/{encoded_path}"
         file_obj = gl._get(endpoint, params={"ref": ref})
-        
+
         if file_obj and isinstance(file_obj, dict) and "content" in file_obj:
             content_bytes = base64.b64decode(file_obj["content"])
             return content_bytes.decode("utf-8")
@@ -33,6 +33,8 @@ def list_all_files(gl, project_id: int, branch: str = "main") -> List[str]:
             max_pages=50,
         )
 
-        return [item.get("path") for item in (items or []) if isinstance(item, dict) and item.get("type") == "blob"]
+        return [
+            str(item.get("path", "")) for item in (items or []) if isinstance(item, dict) and item.get("type") == "blob"
+        ]
     except Exception:
         return []
