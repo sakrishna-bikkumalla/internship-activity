@@ -296,12 +296,21 @@ class GitLabUsersAPI:
                     c_username = (author.get("username") or "").strip().lower()
                     c_auth_email = (commit.get("author_email") or "").strip().lower()
                     c_comm_email = (commit.get("committer_email") or "").strip().lower()
+                    c_author_name = (commit.get("author_name") or "").strip().lower()
 
                     is_match = False
                     if target_username and c_username == target_username:
                         is_match = True
                     elif target_email and (c_auth_email == target_email or c_comm_email == target_email):
                         is_match = True
+
+                    if not is_match:
+                        # 1. name match with normalized names (dots to spaces) e.g. user.one == user one
+                        if target_username and target_username.replace(".", " ") == c_author_name:
+                            is_match = True
+                        # 2. email match with local part
+                        elif target_email and target_email.split("@")[0] == c_auth_email.split("@")[0]:
+                            is_match = True
 
                     if not is_match:
                         continue

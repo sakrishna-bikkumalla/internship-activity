@@ -58,7 +58,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
             # Fetch ALL commits from ALL branches without API-side author filter
             # We'll do filtering on the client side to ensure we don't miss commits
             # due to API inconsistencies
-            api_params = {"all": True, "with_stats": "false"}
+            api_params = {"all": "true", "with_stats": "false"}
             if since:
                 api_params["since"] = since
             if until:
@@ -105,6 +105,22 @@ def get_user_commits(client, user, projects, since=None, until=None):
                     # Extract local part of email for comparison
                     email_local = author_email.split("@")[0].lower()
                     if email_local in c_author_email.lower() or email_local in c_author_name.lower():
+                        is_match = True
+
+                # Try fuzzy matching (ignore spaces/underscores/dots)
+                if not is_match:
+                    import re
+
+                    def _ns(s):
+                        return re.sub(r"[\s_\.\-]", "", (s or "").lower())
+
+                    ns_cname = _ns(c_author_name)
+                    ns_uname = _ns(username)
+                    ns_aname = _ns(author_name)
+
+                    if ns_cname and (ns_uname and (ns_uname in ns_cname or ns_cname in ns_uname)):
+                        is_match = True
+                    elif ns_cname and (ns_aname and (ns_aname in ns_cname or ns_cname in ns_aname)):
                         is_match = True
 
                 if not is_match:
