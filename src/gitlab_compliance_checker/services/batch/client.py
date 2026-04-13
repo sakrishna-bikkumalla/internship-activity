@@ -297,19 +297,44 @@ class GitLabUsersAPI:
                     c_auth_email = (commit.get("author_email") or "").strip().lower()
                     c_comm_email = (commit.get("committer_email") or "").strip().lower()
                     c_author_name = (commit.get("author_name") or "").strip().lower()
+                    c_email_local = c_auth_email.split("@")[0] if "@" in c_auth_email else c_auth_email
 
                     is_match = False
                     if target_username and c_username == target_username:
                         is_match = True
+                    elif target_username and c_email_local == target_username:
+                        is_match = True
                     elif target_email and (c_auth_email == target_email or c_comm_email == target_email):
                         is_match = True
+                    elif target_email and "@" in target_email:
+                        if target_email.split("@")[0] == c_email_local:
+                            is_match = True
 
                     if not is_match:
-                        # 1. name match with normalized names (dots to spaces) e.g. user.one == user one
-                        if target_username and target_username.replace(".", " ") == c_author_name:
+                        import re
+
+                        def _ns(s):
+                            return re.sub(r"[\s_\.\-]", "", (s or "").lower())
+
+                        ns_cname = _ns(c_author_name)
+                        ns_uname = _ns(target_username)
+                        ns_aname = _ns((user_info.get("name") if isinstance(user_info, dict) else ""))
+
+                        if ns_cname and (ns_cname == ns_uname or ns_cname == ns_aname):
                             is_match = True
-                        # 2. email match with local part
-                        elif target_email and target_email.split("@")[0] == c_auth_email.split("@")[0]:
+                        elif (
+                            ns_cname
+                            and ns_uname
+                            and len(ns_uname) >= 3
+                            and (ns_cname.startswith(ns_uname) or ns_cname.endswith(ns_uname))
+                        ):
+                            is_match = True
+                        elif (
+                            ns_cname
+                            and ns_aname
+                            and len(ns_aname) >= 3
+                            and (ns_cname.startswith(ns_aname) or ns_cname.endswith(ns_aname))
+                        ):
                             is_match = True
 
                     if not is_match:

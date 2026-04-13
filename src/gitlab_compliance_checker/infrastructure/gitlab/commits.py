@@ -85,42 +85,53 @@ def get_user_commits(client, user, projects, since=None, until=None):
                 c_author_name = (c.get("author_name", "") or "").lower()
                 c_author_email = (c.get("author_email", "") or "").lower()
 
-                # More flexible identity matching
+                # Strict identity matching - only match if we have strong evidence
                 is_match = False
+                c_email_local = c_author_email.split("@")[0] if "@" in c_author_email else c_author_email
 
-                # Try exact email match first
-                if author_email and c_author_email == author_email.lower():
+                # Normalized matching helper (strip spaces and punctuation)
+                import re
+
+                def _ns(s):
+                    return re.sub(r"[\s_\.\-]", "", (s or "").lower())
+
+                ns_cname = _ns(c_author_name)
+                ns_uname = _ns(username)
+                ns_aname = _ns(author_name)
+
+                # STRICT: Exact email match (most reliable)
+                if author_email and c_author_email and c_author_email == author_email.lower():
                     is_match = True
-                # Try exact name match
-                elif author_name and c_author_name == author_name.lower():
-                    is_match = True
-                # Try username in email (e.g., "username@...")
-                elif username and c_author_email.startswith(f"{username.lower()}@"):
-                    is_match = True
-                # Try username in author name (e.g., "John Doe" for "johndoe")
-                elif username and username.lower() in c_author_name.lower():
-                    is_match = True
-                # Try partial email match (e.g., "john.doe" matches "john.doe@...")
-                elif author_email:
-                    # Extract local part of email for comparison
+
+                # STRICT: Email local part match (user@example.com = username)
+                elif author_email and "@" in author_email:
                     email_local = author_email.split("@")[0].lower()
-                    if email_local in c_author_email.lower() or email_local in c_author_name.lower():
+                    if email_local == c_email_local:
                         is_match = True
 
-                # Try fuzzy matching (ignore spaces/underscores/dots)
-                if not is_match:
-                    import re
+                # MODERATE: Exact author_name match (full name must match)
+                elif author_name and c_author_name and c_author_name == author_name.lower():
+                    is_match = True
 
-                    def _ns(s):
-                        return re.sub(r"[\s_\.\-]", "", (s or "").lower())
+                # MODERATE: Normalized matching for author name (strip spaces and punctuation)
+                elif ns_cname and ns_aname and ns_cname == ns_aname:
+                    is_match = True
 
-                    ns_cname = _ns(c_author_name)
-                    ns_uname = _ns(username)
-                    ns_aname = _ns(author_name)
-
-                    if ns_cname and (ns_uname and (ns_uname in ns_cname or ns_cname in ns_uname)):
+                # Username matching (only when we have confirmation from email)
+                # Match username to email local part (only if user has an email set)
+                if not is_match and username and c_email_local:
+                    if c_email_local == username.lower():
                         is_match = True
-                    elif ns_cname and (ns_aname and (ns_aname in ns_cname or ns_cname in ns_aname)):
+
+                # Match username to author_name (only as exact normalized match)
+                # This handles cases like username="alicedev" matching author_name="alicedev (contractor)"
+                if not is_match and username and c_author_name:
+                    if ns_cname and ns_uname and ns_cname == ns_uname:
+                        is_match = True
+
+                # Allow prefix/suffix match for labels/tags in names (e.g., "alicedev" matches "alicedev (contractor)")
+                if not is_match and username and c_author_name and len(ns_uname) >= 3:
+                    if ns_cname.startswith(ns_uname) or ns_cname.endswith(ns_uname):
                         is_match = True
 
                 if not is_match:
@@ -189,7 +200,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                         stats["afternoon_commits"] += 1
 
                 except Exception:
-                    date_str = created_at_str
+                    date_str = created_at_str.split("T")[0] if created_at_str else "N/A"
                     time_str = "N/A"
                     slot = "N/A"
 

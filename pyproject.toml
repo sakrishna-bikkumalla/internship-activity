@@ -22,7 +22,7 @@ dev = [
   "ruff",
   "mypy",
   "types-python-dateutil",
-  "pytest",
+  "pytest>=9.0.3",
   "pytest-asyncio",
   "pytest-cov",
   "pre-commit",
