@@ -276,10 +276,14 @@ class GitLabUsersAPI:
             scope = "Personal" if is_personal else "Contributed"
 
             try:
+                # Use strict local matching instead of server-side 'author' filter
+                # to ensure we don't miss commits due to API email/username inconsistencies.
+                api_params = {"all": True}
+
                 # Single-pass fetch for all commits in the project
                 commits = await self.client._async_get_paginated(
                     f"/projects/{p_id}/repository/commits",
-                    params={"all": True},
+                    params=api_params,
                     per_page=100,
                     max_pages=50,
                 )
@@ -290,8 +294,7 @@ class GitLabUsersAPI:
                     if not c_id:
                         continue
 
-                    # Local Identity Matching: Username -> Email
-                    # Note: commit['author'] is handled if present, else fallback to author_email
+                    # Local Identity Matching: Strict Mode
                     author = commit.get("author") or {}
                     c_username = (author.get("username") or "").strip().lower()
                     c_auth_email = (commit.get("author_email") or "").strip().lower()
@@ -300,16 +303,20 @@ class GitLabUsersAPI:
                     c_email_local = c_auth_email.split("@")[0] if "@" in c_auth_email else c_auth_email
 
                     is_match = False
+                    # Priority 1: Exact GitLab Username match
                     if target_username and c_username == target_username:
                         is_match = True
-                    elif target_username and c_email_local == target_username:
-                        is_match = True
+                    # Priority 2: Exact Email match
                     elif target_email and (c_auth_email == target_email or c_comm_email == target_email):
+                        is_match = True
+                    # Priority 3: Exact Email local part match
+                    elif target_username and c_email_local == target_username:
                         is_match = True
                     elif target_email and "@" in target_email:
                         if target_email.split("@")[0] == c_email_local:
                             is_match = True
 
+                    # Priority 4: Exact Normalized Name match
                     if not is_match:
                         import re
 
@@ -320,21 +327,11 @@ class GitLabUsersAPI:
                         ns_uname = _ns(target_username)
                         ns_aname = _ns((user_info.get("name") if isinstance(user_info, dict) else ""))
 
+                        # Match if the commit name matches the GitLab display name or username exactly after normalization
                         if ns_cname and (ns_cname == ns_uname or ns_cname == ns_aname):
                             is_match = True
-                        elif (
-                            ns_cname
-                            and ns_uname
-                            and len(ns_uname) >= 3
-                            and (ns_cname.startswith(ns_uname) or ns_cname.endswith(ns_uname))
-                        ):
-                            is_match = True
-                        elif (
-                            ns_cname
-                            and ns_aname
-                            and len(ns_aname) >= 3
-                            and (ns_cname.startswith(ns_aname) or ns_cname.endswith(ns_aname))
-                        ):
+                        # Also allow matching if the normalized display name matches the commit name
+                        elif ns_aname and ns_cname == ns_aname:
                             is_match = True
 
                     if not is_match:

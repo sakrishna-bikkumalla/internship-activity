@@ -816,11 +816,27 @@ class GitLabClient:
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
         return self._run_sync(self._async_get_paginated(endpoint, params, per_page, max_pages))
 
-    def __del__(self):
+    def close(self):
+        """Shut down the background loop and thread gracefully."""
         try:
             # Exit glabflow client context
             if self._gl is not None:
-                asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
-            self._loop.stop()
+                fut = asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
+                try:
+                    fut.result(timeout=5)
+                except Exception:
+                    pass
+                self._gl = None
+
+            # Stop the event loop
+            if self._loop.is_running():
+                self._loop.call_soon_threadsafe(self._loop.stop)
+
+            # Wait for thread to finish
+            if self._thread and self._thread.is_alive():
+                self._thread.join(timeout=2)
         except Exception:
             pass
+
+    def __del__(self):
+        self.close()
