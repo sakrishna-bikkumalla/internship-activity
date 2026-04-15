@@ -74,7 +74,6 @@ def test_users_api_get_user_commits(mock_client):
             "gitlab_compliance_checker.services.batch.client.GitLabClient._async_get_paginated"
         ) as mock_paginated:
             # Case 1: author query matches
-            from unittest.mock import AsyncMock
 
             mock_paginated.return_value = [
                 {
@@ -106,7 +105,6 @@ def test_name_email_match_edge_cases(mock_client):
             "gitlab_compliance_checker.services.batch.client.GitLabClient._async_get_paginated"
         ) as mock_paginated:
             # Test name match with normalized names (dots to spaces)
-            from unittest.mock import AsyncMock
 
             mock_paginated.return_value = [{"id": "c1", "author_name": "user one"}]
             res = mock_client.users.get_user_commits(user_info)

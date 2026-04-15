@@ -103,6 +103,7 @@ class GitLabClient:
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
+        logger.info(f"GitLabClient initialized. Background thread started: {self._thread.name}")
 
         self._sem: asyncio.Semaphore | None = None
         self._init_sem()
@@ -829,14 +830,20 @@ class GitLabClient:
                 self._gl = None
 
             # Stop the event loop
-            if self._loop.is_running():
+            if self._loop and self._loop.is_running():
+                logger.info("Stopping GitLabClient background event loop...")
                 self._loop.call_soon_threadsafe(self._loop.stop)
 
             # Wait for thread to finish
             if self._thread and self._thread.is_alive():
                 self._thread.join(timeout=2)
-        except Exception:
-            pass
+                logger.info(f"GitLabClient background thread joined: {self._thread.name}")
+        except Exception as e:
+            logger.error(f"Error during GitLabClient closure: {e}")
+        finally:
+            self._gl = None
+            self._loop = None
+            self._thread = None
 
     def __del__(self):
         self.close()

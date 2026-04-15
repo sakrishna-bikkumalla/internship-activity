@@ -3,18 +3,90 @@ import asyncio
 from gitlab_compliance_checker.infrastructure.gitlab.description_quality import analyze_description
 
 
+async def get_user_mrs_async(client, user_id, username=None, since=None, until=None, project_ids=None):
+    """
+    Async fetch Merge Requests.
+    """
+    mrs_list = []
+    seen_ids = set()
+    pid_set = set(project_ids) if project_ids else None
+
+    stats = {
+        "total": 0,
+        "merged": 0,
+        "closed": 0,
+        "opened": 0,
+        "pending": 0,
+        "assigned": 0,
+    }
+
+    date_params: dict = {}
+    if since:
+        date_params["created_after"] = since
+    if until:
+        date_params["created_before"] = until
+
+    # Run authored and assigned fetches concurrently
+    authored_f = client._async_get_paginated(
+        "/merge_requests", params={"author_id": user_id, "scope": "all", **date_params}, per_page=100
+    )
+    assigned_f = client._async_get_paginated(
+        "/merge_requests", params={"assignee_id": user_id, "scope": "all", **date_params}, per_page=100
+    )
+
+    authored_items, assigned_items = await asyncio.gather(authored_f, assigned_f)
+
+    for items, role_label in [(authored_items, "Authored"), (assigned_items, "Assigned")]:
+        for item in items:
+            if pid_set is not None and item.get("project_id") not in pid_set:
+                continue
+
+            if role_label == "Assigned":
+                stats["assigned"] += 1
+
+            if item["id"] not in seen_ids:
+                state = item.get("state")
+                desc_quality = analyze_description(item.get("description", ""))
+                mrs_list.append(
+                    {
+                        "title": item.get("title"),
+                        "description": item.get("description"),
+                        "project_id": item.get("project_id"),
+                        "iid": item.get("iid"),
+                        "web_url": item.get("web_url"),
+                        "state": state,
+                        "created_at": item.get("created_at"),
+                        "merged_at": item.get("merged_at"),
+                        "closed_at": item.get("closed_at"),
+                        "role": role_label,
+                        "upvotes": item.get("upvotes", 0),
+                        "user_notes_count": item.get("user_notes_count", 0),
+                        "time_stats": item.get("time_stats", {}),
+                        "head_pipeline": item.get("head_pipeline"),
+                        "desc_score": desc_quality["description_score"],
+                        "quality": desc_quality["quality_label"],
+                        "feedback": desc_quality["feedback"],
+                        "_username": username,
+                    }
+                )
+                seen_ids.add(item["id"])
+                stats["total"] += 1
+                if state == "merged":
+                    stats["merged"] += 1
+                elif state == "closed":
+                    stats["closed"] += 1
+                elif state == "opened":
+                    stats["opened"] += 1
+                    stats["pending"] += 1
+
+    return mrs_list, stats
+
+
 def get_user_mrs(client, user_id, username=None, since=None, until=None, project_ids=None):
     """
     Fetch Merge Requests:
     - Authored MRs (GET /merge_requests?author_id=:id)
     - Assigned MRs (GET /merge_requests?assignee_id=:id)
-
-    Optional date filters:
-      since (str): ISO 8601 UTC datetime — maps to created_after
-      until (str): ISO 8601 UTC datetime — maps to created_before
-
-    Optional project filter:
-      project_ids (list[int]): if provided, only MRs in these projects are counted.
 
     Returns:
       - mrs_list: List of MR dicts
@@ -33,7 +105,6 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
         "assigned": 0,
     }
 
-    # Build optional date filter fragment added to every request
     date_params: dict = {}
     if since:
         date_params["created_after"] = since
@@ -45,7 +116,6 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
             params = {**base_params, **date_params}
             items = client._get_paginated("/merge_requests", params=params, per_page=50, max_pages=10)
             for item in items:
-                # Apply project filter if specified
                 if pid_set is not None and item.get("project_id") not in pid_set:
                     continue
 
@@ -54,7 +124,6 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
 
                 if item["id"] not in seen_ids:
                     state = item.get("state")
-
                     desc_quality = analyze_description(item.get("description", ""))
                     mrs_list.append(
                         {
@@ -94,7 +163,6 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
 
     # 1. Authored
     fetch_and_add({"author_id": user_id, "scope": "all"}, "Authored")
-
     # 2. Assigned
     fetch_and_add({"assignee_id": user_id, "scope": "all"}, "Assigned")
 

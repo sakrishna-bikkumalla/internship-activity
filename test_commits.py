@@ -1,10 +1,11 @@
 import os
+
 from dotenv import load_dotenv
 
 from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
-from gitlab_compliance_checker.infrastructure.gitlab.users import get_user_by_username
-from gitlab_compliance_checker.infrastructure.gitlab.projects import get_user_projects
 from gitlab_compliance_checker.infrastructure.gitlab.commits import get_user_commits
+from gitlab_compliance_checker.infrastructure.gitlab.projects import get_user_projects
+from gitlab_compliance_checker.infrastructure.gitlab.users import get_user_by_username
 
 load_dotenv()
 url = os.getenv("GITLAB_URL", "https://code.swecha.org")
