@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import concurrent.futures
 
 from gitlab_compliance_checker.infrastructure.gitlab import commits, groups, issues, merge_requests, projects, users
@@ -6,6 +7,7 @@ from gitlab_compliance_checker.infrastructure.gitlab import commits, groups, iss
 # Global Thread Pool to limit total concurrent network operations across the app
 # This prevents "Connection Reset" errors when scanning multiple teams
 _GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+atexit.register(lambda: _GLOBAL_EXECUTOR.shutdown(wait=False))
 
 
 def resolve_project_paths(client, repo_paths: list[str]) -> tuple[list[int], list[str]]:

@@ -81,13 +81,13 @@ def _fetch_user_related_issues_by_state(gl_client, user_id, state=None, limit=20
 
 def _get_total_count_from_api(gl_client, endpoint, query_data=None):
     try:
-        response = gl_client._session.get(
-            f"{gl_client.api_base}{endpoint}",
-            params={"per_page": 1, "page": 1, **(query_data or {})},
-            timeout=15,
+        items = gl_client._get_paginated(
+            endpoint,
+            params={**(query_data or {})},
+            per_page=100,
+            max_pages=50,
         )
-        total = response.headers.get("X-Total")
-        return int(total) if total else None
+        return len(items) if items is not None else None
     except Exception:
         return None
 

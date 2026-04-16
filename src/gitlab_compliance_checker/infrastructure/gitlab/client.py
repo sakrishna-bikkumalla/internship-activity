@@ -138,7 +138,6 @@ class GitLabClient:
                 timeout=30.0,
             )
             # CRITICAL: Disable global connector to prevent cross-loop Lock boundary errors in Streamlit
-            gl._use_global_connector = False
             await gl.__aenter__()
             return gl
 
@@ -158,7 +157,7 @@ class GitLabClient:
     async def _async_get(self, endpoint: str, params: dict | None = None) -> Any:
         """Single GET request via glabflow. Returns decoded JSON."""
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             logger.error("GitLab client not initialized.")
             return []
 
@@ -203,7 +202,7 @@ class GitLabClient:
     async def _async_request(self, method, endpoint, params=None):
         """Full HTTP request dispatcher (GET/POST/PUT/DELETE)."""
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             return []
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
@@ -236,7 +235,7 @@ class GitLabClient:
     async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
         """Paginated GET using glabflow's paginate() async generator."""
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             return []
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"

@@ -27,13 +27,56 @@ def test_get_project_branches():
 
 
 @patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.glabflow.Client")
-def test_get_user_from_token(mock_client):
-    assert True  # Skipped logic validation for glabflow internals
+@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper._run_sync")
+def test_get_user_from_token(mock_run_sync, mock_client):
+    import asyncio
+
+    mock_gl = MagicMock()
+    mock_gl.__aenter__.return_value = mock_gl
+
+    async def mock_get(*args, **kwargs):
+        return {"id": 1, "username": "test_user"}
+
+    mock_gl.get = mock_get
+    mock_client.return_value = mock_gl
+
+    def run_coro(coro):
+        loop = asyncio.new_event_loop()
+        return loop.run_until_complete(coro)
+
+    mock_run_sync.side_effect = run_coro
+
+    result = api_helper.get_user_from_token("http://gl.local", "tok")
+    assert isinstance(result, dict)
+    assert result.get("username") == "test_user"
 
 
 @patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.glabflow.Client")
-def test_get_user_groups_by_token(mock_client):
-    assert True
+@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper._run_sync")
+def test_get_user_groups_by_token(mock_run_sync, mock_client):
+    import asyncio
+
+    mock_gl = MagicMock()
+    mock_gl.__aenter__.return_value = mock_gl
+
+    async def mock_paginate(*args, **kwargs):
+        yield [{"id": 100, "name": "group_a"}]
+        yield [{"id": 101, "name": "group_b"}]
+
+    mock_gl.paginate = mock_paginate
+    mock_client.return_value = mock_gl
+
+    def run_coro(coro):
+        loop = asyncio.new_event_loop()
+        return loop.run_until_complete(coro)
+
+    mock_run_sync.side_effect = run_coro
+
+    result = api_helper.get_user_groups_by_token("http://gl.local", "tok")
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0]["name"] == "group_a"
+    assert result[1]["name"] == "group_b"
 
 
 # ---------------- FILES READER TESTS ----------------
