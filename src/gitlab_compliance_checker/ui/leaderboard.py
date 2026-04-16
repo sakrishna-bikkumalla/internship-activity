@@ -773,19 +773,29 @@ def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
     def add_to_map(date_str):
         if not date_str:
             return
-        # Normalize to YYYY-MM-DD
-        try:
-            day = date_str.split("T")[0] if "T" in date_str else date_str
+        day = None
+        if isinstance(date_str, str):
+            if "T" in date_str:
+                day = date_str.split("T")[0]
+            elif "-" in date_str and len(date_str.split("-")) >= 3:
+                day = date_str.split("-")[0:3] if len(date_str) > 10 else date_str
+            else:
+                try:
+                    day = datetime.date.fromisoformat(date_str).isoformat()
+                except Exception:
+                    return
+        elif hasattr(date_str, "isoformat"):
+            day = date_str.date().isoformat() if hasattr(date_str, "date") else date_str.isoformat()
+
+        if day and isinstance(day, str) and len(day) == 10:
             activity_map[day] = activity_map.get(day, 0) + 1
-        except Exception:
-            pass
 
     for m in mrs:
         add_to_map(m.get("created_at"))
     for i in issues:
         add_to_map(i.get("created_at"))
     for c in commits:
-        add_to_map(c.get("date"))  # Commits already have a "date" field in YYYY-MM-DD
+        add_to_map(c.get("date"))
 
     return activity_map
 
@@ -829,144 +839,179 @@ def _get_contribution_index(activity_map: dict[str, int], username: str | None =
 
 
 def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
-    """Renders a GitLab-style activity heatmap (364 days)."""
+    """Renders a GitLab-style activity heatmap (364 days) matching GitLab's contribution graph."""
     today = datetime.date.today()
-    # Align start to a Monday 52 weeks ago
     start_date = today - datetime.timedelta(days=363)
-    while start_date.weekday() != 0:  # 0 is Monday
+    while start_date.weekday() != 0:
         start_date -= datetime.timedelta(days=1)
 
-    # Intensity levels (GitLab Blue palette)
-    def get_intensity_style(count):
-        if count == 0:
-            return "rgba(255, 255, 255, 0.05)"
-        if count <= 2:
-            return "#1e3a5f"
-        if count <= 5:
-            return "#2b5a91"
-        if count <= 10:
-            return "#3b7bc4"
-        if count <= 20:
-            return "#4b9cf7"
-        return "#70b1ff"
-
-    weeks_html = []
-    current_date = start_date
-    months_labels = []
-    last_month = None
-
-    # HTML/CSS for the heatmap
     heatmap_styles = """
     <style>
-        .heatmap-container {
-            background: rgba(17, 19, 24, 0.6);
-            border: 1px solid rgba(120, 129, 149, 0.2);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 25px;
+        .heatmap-wrapper {
+            background: rgba(13, 14, 18, 0.95);
+            border: 1px solid rgba(120, 129, 149, 0.15);
+            border-radius: 6px;
+            padding: 16px 12px;
+            margin: 10px 0;
             overflow-x: auto;
-            position: relative;
-        }
-        .heatmap-grid {
-            display: flex;
-            gap: 4px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .heatmap-months {
+            display: flex;
+            margin-left: 32px;
+            margin-bottom: 4px;
+            height: 16px;
+        }
+        .heatmap-month-label {
+            flex: 1;
+            font-size: 10px;
+            color: #8b949e;
+            min-width: 0;
+        }
+        .heatmap-weeks {
+            display: flex;
+            gap: 3px;
+        }
+        .heatmap-day-labels {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 88px;
+            padding-right: 6px;
+            font-size: 9px;
+            color: #8b949e;
         }
         .heatmap-week {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 3px;
         }
         .heatmap-day {
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
             border-radius: 2px;
-            background: rgba(255, 255, 255, 0.05);
-            transition: all 0.2s ease;
+            background: rgba(255, 255, 255, 0.08);
+            outline: 1px solid rgba(255,255,255,0.02);
         }
         .heatmap-day:hover {
-            transform: scale(1.3);
-            z-index: 10;
-            box-shadow: 0 0 8px rgba(52, 152, 219, 0.5);
-            border: 1px solid rgba(255,255,255,0.4);
+            transform: scale(1.5);
+            z-index: 5;
+            box-shadow: 0 0 8px rgba(52, 152, 219, 0.6);
         }
+        .heatmap-day-0 { background: rgba(255,255,255,0.08); }
+        .heatmap-day-1 { background: #1e3a5f; }
+        .heatmap-day-2 { background: #2b5a91; }
+        .heatmap-day-3 { background: #3b7bc4; }
+        .heatmap-day-4 { background: #4b9cf7; }
+        .heatmap-day-5 { background: #70b1ff; }
         .heatmap-today {
-            border: 1px solid #70b1ff !important;
+            outline: 2px solid #70b1ff !important;
+            outline-offset: -1px;
         }
-        .heatmap-labels-y {
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding-right: 10px;
-            font-size: 10px;
-            color: #888;
-            height: 108px; /* 7 * 12 + 6 * 4 */
-            padding-top: 2px;
-        }
-        .heatmap-labels-x {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 5px;
-            margin-left: 35px;
-            font-size: 10px;
-            color: #888;
-            height: 15px;
-        }
-        .month-label { width: 44px; flex-shrink: 0; }
         .heatmap-legend {
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            margin-top: 15px;
-            gap: 6px;
-            font-size: 11px;
-            color: #888;
+            gap: 4px;
+            margin-top: 10px;
+            font-size: 10px;
+            color: #8b949e;
+        }
+        .heatmap-legend-box {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
         }
     </style>
     """
 
-    # Generate weeks
+    weeks_data = []
+    current_date = start_date
+    month_starts = []
+    last_month = None
+
     for w in range(53):
-        days_in_week = []
-        for d in range(7):
+        week_days = []
+        for _d in range(7):
             date_str = current_date.isoformat()
-            count = activity_map.get(date_str, 0)
-
-            # Month label logic (only show if it's the start of the month)
-            if current_date.day <= 7 and current_date.month != last_month:
-                months_labels.append(f'<div class="month-label">{current_date.strftime("%b")}</div>')
-                last_month = current_date.month
-            elif w == 0 and d == 0:
-                months_labels.append(f'<div class="month-label">{current_date.strftime("%b")}</div>')
-
-            is_today = "heatmap-today" if current_date == today else ""
-            title = f"{current_date.strftime('%b %d, %Y')}: {count} contributions"
-            days_in_week.append(
-                f'<div class="heatmap-day {is_today}" style="background: {get_intensity_style(count)};" title="{title}"></div>'
+            count_val: int = activity_map.get(date_str, 0)
+            is_today = current_date == today
+            week_days.append(
+                {
+                    "date": date_str,
+                    "count": count_val,
+                    "is_today": is_today,
+                    "day": current_date.day,
+                    "month": current_date.month,
+                }
             )
             current_date += datetime.timedelta(days=1)
+        weeks_data.append(week_days)
 
-        weeks_html.append(f'<div class="heatmap-week">{"".join(days_in_week)}</div>')
+        if last_month != current_date.month:
+            month_starts.append((w, current_date.strftime("%b")))
+            last_month = current_date.month
 
-    legend_html = f"""
+    month_labels_html = []
+    for w in range(53):
+        label = ""
+        for mw, mname in month_starts:
+            if mw == w:
+                label = f'<div class="heatmap-month-label">{mname}</div>'
+                break
+        month_labels_html.append(label)
+
+    weeks_html = []
+    for week_days in weeks_data:
+        days_html = []
+        for day_info in week_days:
+            count: int = day_info["count"]  # type: ignore[assignment]
+            if count == 0:
+                level = "heatmap-day-0"
+            elif count <= 2:
+                level = "heatmap-day-1"
+            elif count <= 5:
+                level = "heatmap-day-2"
+            elif count <= 10:
+                level = "heatmap-day-3"
+            elif count <= 20:
+                level = "heatmap-day-4"
+            else:
+                level = "heatmap-day-5"
+
+            today_class = "heatmap-today" if day_info["is_today"] else ""
+            title = f"{day_info['date']}: {count} contribution{'s' if count != 1 else ''}"
+            days_html.append(f'<div class="heatmap-day {level} {today_class}" title="{title}"></div>')
+        weeks_html.append(f'<div class="heatmap-week">{"".join(days_html)}</div>')
+
+    legend_html = """
     <div class="heatmap-legend">
         <span>Less</span>
-        <div class="heatmap-day" style="background: {get_intensity_style(0)}"></div>
-        <div class="heatmap-day" style="background: {get_intensity_style(2)}"></div>
-        <div class="heatmap-day" style="background: {get_intensity_style(5)}"></div>
-        <div class="heatmap-day" style="background: {get_intensity_style(10)}"></div>
-        <div class="heatmap-day" style="background: {get_intensity_style(21)}"></div>
+        <div class="heatmap-legend-box" style="background: rgba(255,255,255,0.08);"></div>
+        <div class="heatmap-legend-box" style="background: #1e3a5f;"></div>
+        <div class="heatmap-legend-box" style="background: #2b5a91;"></div>
+        <div class="heatmap-legend-box" style="background: #3b7bc4;"></div>
+        <div class="heatmap-legend-box" style="background: #4b9cf7;"></div>
+        <div class="heatmap-legend-box" style="background: #70b1ff;"></div>
         <span>More</span>
     </div>
     """
 
     full_heatmap_html = f"""
     {heatmap_styles}
-    <div class="heatmap-container">
-        <div class="heatmap-labels-x">{"".join(months_labels)}</div>
-        <div class="heatmap-grid">
-            <div class="heatmap-labels-y">
-                <div>Mon</div><div>Wed</div><div>Fri</div>
+    <div class="heatmap-wrapper">
+        <div class="heatmap-months">
+            {"".join(month_labels_html)}
+        </div>
+        <div class="heatmap-weeks">
+            <div class="heatmap-day-labels">
+                <span></span>
+                <span>Mon</span>
+                <span></span>
+                <span>Wed</span>
+                <span></span>
+                <span>Fri</span>
+                <span></span>
             </div>
             {"".join(weeks_html)}
         </div>

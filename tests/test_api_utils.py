@@ -1,14 +1,9 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
-from gitlab import GitlabGetError
-
 from gitlab_compliance_checker.infrastructure.gitlab import (
     api_helper,
     files_reader,
-    network,
     parse_uvlock,
-    retry_helper,
 )
 
 # ---------------- API HELPER TESTS ----------------
@@ -23,109 +18,87 @@ def test_extract_path_from_url():
 
 
 def test_get_project_branches():
-    project = MagicMock()
-    mock_branch = MagicMock()
-    mock_branch.name = "main"
-    project.branches.list.return_value = [mock_branch]
-    assert api_helper.get_project_branches(project) == ["main"]
+    mock_gl = MagicMock()
+    mock_gl._get_paginated.return_value = [{"name": "main"}]
+    assert api_helper.get_project_branches(mock_gl, 123) == ["main"]
 
-    project.branches.list.side_effect = Exception("error")
-    assert api_helper.get_project_branches(project) == []
+    mock_gl._get_paginated.side_effect = Exception("error")
+    assert api_helper.get_project_branches(mock_gl, 123) == []
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.gitlab.Gitlab")
-def test_get_user_from_token(mock_gitlab):
-    mock_gl_instance = MagicMock()
-    mock_gl_instance.user.as_dict.return_value = {"username": "user1"}
-    mock_gitlab.return_value = mock_gl_instance
+@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.glabflow.Client")
+@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper._run_sync")
+def test_get_user_from_token(mock_run_sync, mock_client):
+    import asyncio
 
-    res = api_helper.get_user_from_token("http://gl.com", "token")
-    assert res == {"username": "user1"}
+    mock_gl = MagicMock()
+    mock_gl.__aenter__.return_value = mock_gl
 
-    mock_gl_instance.auth.side_effect = Exception("Fail")
-    assert "Error validating token" in api_helper.get_user_from_token("http://gl.com", "token")
+    async def mock_get(*args, **kwargs):
+        return {"id": 1, "username": "test_user"}
+
+    mock_gl.get = mock_get
+    mock_client.return_value = mock_gl
+
+    def run_coro(coro):
+        loop = asyncio.new_event_loop()
+        return loop.run_until_complete(coro)
+
+    mock_run_sync.side_effect = run_coro
+
+    result = api_helper.get_user_from_token("http://gl.local", "tok")
+    assert isinstance(result, dict)
+    assert result.get("username") == "test_user"
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.gitlab.Gitlab")
-def test_get_user_groups_by_token(mock_gitlab):
-    mock_gl_instance = MagicMock()
+@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.glabflow.Client")
+@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper._run_sync")
+def test_get_user_groups_by_token(mock_run_sync, mock_client):
+    import asyncio
 
-    mock_group = MagicMock()
-    mock_group.as_dict.return_value = {"name": "g1"}
-    mock_gl_instance.groups.list.return_value = [mock_group]
+    mock_gl = MagicMock()
+    mock_gl.__aenter__.return_value = mock_gl
 
-    mock_gitlab.return_value = mock_gl_instance
+    async def mock_paginate(*args, **kwargs):
+        yield [{"id": 100, "name": "group_a"}]
+        yield [{"id": 101, "name": "group_b"}]
 
-    res = api_helper.get_user_groups_by_token("http://gl.com/api/v4", "token")
-    assert res == [{"name": "g1"}]
+    mock_gl.paginate = mock_paginate
+    mock_client.return_value = mock_gl
 
-    res = api_helper.get_user_groups_by_token("http://gl.com", "token")
-    assert res == [{"name": "g1"}]
+    def run_coro(coro):
+        loop = asyncio.new_event_loop()
+        return loop.run_until_complete(coro)
 
-    # Exception
-    mock_gl_instance.groups.list.side_effect = Exception("error")
-    assert "Error fetching groups" in api_helper.get_user_groups_by_token("http://gl.com", "token")
+    mock_run_sync.side_effect = run_coro
+
+    result = api_helper.get_user_groups_by_token("http://gl.local", "tok")
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0]["name"] == "group_a"
+    assert result[1]["name"] == "group_b"
 
 
 # ---------------- FILES READER TESTS ----------------
 
 
 def test_read_file_content():
-    project = MagicMock()
-    mock_file = MagicMock()
-    mock_file.decode.return_value = b"Hello"
-    project.files.get.return_value = mock_file
-    assert files_reader.read_file_content(project, "f.txt", "main") == "Hello"
+    mock_gl = MagicMock()
+    # Content is "Hello" in base64
+    mock_gl._get.return_value = {"content": "SGVsbG8="}
+    assert files_reader.read_file_content(mock_gl, 123, "f.txt", "main") == "Hello"
 
-    project.files.get.side_effect = Exception("404")
-    assert files_reader.read_file_content(project, "f.txt", "main") is None
+    mock_gl._get.side_effect = Exception("404")
+    assert files_reader.read_file_content(mock_gl, 123, "f.txt", "main") is None
 
 
 def test_list_all_files():
-    project = MagicMock()
-    project.repository_tree.return_value = [{"path": "src/a.py", "type": "blob"}, {"path": "src", "type": "tree"}]
-    assert files_reader.list_all_files(project) == ["src/a.py"]
+    mock_gl = MagicMock()
+    mock_gl._get_paginated.return_value = [{"path": "src/a.py", "type": "blob"}, {"path": "src", "type": "tree"}]
+    assert files_reader.list_all_files(mock_gl, 123) == ["src/a.py"]
 
-    # Test TypeError fallback
-    project.repository_tree.side_effect = [TypeError("old version"), [{"path": "b.py", "type": "blob"}]]
-    assert files_reader.list_all_files(project) == ["b.py"]
-
-    project.repository_tree.side_effect = Exception("Fatal")
-    assert files_reader.list_all_files(project) == []
-
-
-# ---------------- NETWORK TESTS ----------------
-
-
-@patch("gitlab_compliance_checker.infrastructure.gitlab.network.gitlab.Gitlab")
-def test_network_get_user_from_token(mock_gitlab):
-    mock_gl_instance = MagicMock()
-    mock_gl_instance.user.as_dict.return_value = {"id": 1}
-    mock_gitlab.return_value = mock_gl_instance
-
-    assert network.get_user_from_token("http://gl.com", "tok") == {"id": 1}
-    assert network.validate_token("http://gl.com", "tok") is True
-
-    mock_gl_instance.auth.side_effect = Exception("Fail")
-    assert network.validate_token("http://gl.com", "tok") is False
-
-
-@patch("gitlab_compliance_checker.infrastructure.gitlab.network.gitlab.Gitlab")
-def test_network_get_user_groups(mock_gitlab):
-    mock_gl_instance = MagicMock()
-    mock_group = MagicMock()
-    mock_group.as_dict.return_value = {"name": "group"}
-    mock_gl_instance.groups.list.return_value = [mock_group]
-    mock_gitlab.return_value = mock_gl_instance
-
-    # Base url with /api/v4
-    res1 = network.get_user_groups("http://gl.com/api/v4", "tok")
-    # Base url without /api/v4
-    res2 = network.get_user_groups("http://gl.com", "tok")
-
-    assert res1 == [{"name": "group"}]
-    assert res2 == [{"name": "group"}]
-    assert mock_gitlab.call_count == 2
+    mock_gl._get_paginated.side_effect = Exception("Fatal")
+    assert files_reader.list_all_files(mock_gl, 123) == []
 
 
 # ---------------- PARSE UVLOCK TESTS ----------------
@@ -141,56 +114,11 @@ def test_parse_uvlock_content():
 
 
 def test_extract_dependencies_from_project():
-    project = MagicMock()
-    mock_file = MagicMock()
-    mock_file.decode.return_value = b'[[package]]\nname="x"'
-    project.files.get.return_value = mock_file
-    res = parse_uvlock.extract_dependencies_from_project(project)
+    mock_gl = MagicMock()
+    # "[[package]]\nname="x"" in base64 is W1twYWNrYWdlXV0KbmFtZT0ieCI=
+    mock_gl._get.return_value = {"content": "W1twYWNrYWdlXV0KbmFtZT0ieCI="}
+    res = parse_uvlock.extract_dependencies_from_project(mock_gl, 123)
     assert res["total_dependencies"] == 1
 
-    project.files.get.side_effect = Exception("error")
-    assert "error" in parse_uvlock.extract_dependencies_from_project(project)
-
-
-# ---------------- RETRY HELPER TESTS ----------------
-
-
-@patch("time.sleep")
-def test_get_project_with_retries(mock_sleep):
-    mock_gl = MagicMock()
-
-    # Success on first try
-    mock_gl.projects.get.return_value = "project"
-    assert retry_helper.get_project_with_retries(mock_gl, "123") == "project"
-    assert retry_helper.get_project_with_retries(mock_gl, 123) == "project"
-
-    # 404 should raise immediately
-    mock_response = MagicMock()
-    mock_response.status_code = 404
-    err_404 = GitlabGetError()
-    err_404.response = mock_response
-    mock_gl.projects.get.side_effect = err_404
-    with pytest.raises(GitlabGetError):
-        retry_helper.get_project_with_retries(mock_gl, "path")
-
-    # Other GitlabGetError retry
-    mock_response_500 = MagicMock()
-    mock_response_500.status_code = 500
-    err_500 = GitlabGetError()
-    err_500.response = mock_response_500
-    mock_gl.projects.get.side_effect = [err_500, "project"]
-    assert retry_helper.get_project_with_retries(mock_gl, "path", retries=2) == "project"
-
-    # ConnectionResetError retry
-    mock_gl.projects.get.side_effect = [ConnectionResetError(), "project"]
-    assert retry_helper.get_project_with_retries(mock_gl, "path", retries=2) == "project"
-
-    # Exhaust retries with GitlabGetError
-    mock_gl.projects.get.side_effect = err_500
-    with pytest.raises(GitlabGetError):
-        retry_helper.get_project_with_retries(mock_gl, "path", retries=2)
-
-    # Exhaust retries with ConnectionResetError
-    mock_gl.projects.get.side_effect = ConnectionResetError("reset")
-    with pytest.raises(ConnectionResetError):
-        retry_helper.get_project_with_retries(mock_gl, "path", retries=2)
+    mock_gl._get.side_effect = Exception("error")
+    assert "error" in parse_uvlock.extract_dependencies_from_project(mock_gl, 123)

@@ -1,5 +1,6 @@
 import base64
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from gitlab_compliance_checker.infrastructure.gitlab.parsers import parse_json, parse_yaml
 
@@ -12,13 +13,19 @@ def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any
     Checks for: ruff, uv audit, vulture, knip, mypy, git-cliff, secret scanning, etc.
     """
     try:
-        project = gl.projects.get(project_id)
-        branch = ref or getattr(project, "default_branch", "main")
+        if not ref:
+            project_info = gl._get(f"/projects/{project_id}")
+            ref = project_info.get("default_branch", "main")
 
         # Fetch root files for language detection
         try:
-            items = project.repository_tree(path="", ref=branch, all=True)
-            filenames = [item["name"] for item in items if item["type"] == "blob"]
+            items = gl._get_paginated(
+                f"/projects/{project_id}/repository/tree",
+                params={"ref": ref, "path": "", "all": True},
+                per_page=100,
+                max_pages=50,
+            )
+            filenames = [item["name"] for item in (items or []) if item.get("type") == "blob"]
         except Exception:
             filenames = []
 
@@ -26,13 +33,14 @@ def check_tools(gl, project_id: int, ref: Optional[str] = None) -> Dict[str, Any
 
         def get_file_content(filepath: str) -> str:
             try:
-                f = project.files.get(file_path=filepath, ref=branch)
-                return base64.b64decode(f.content).decode("utf-8")
+                encoded_path = quote(filepath, safe="")
+                f = gl._get(f"/projects/{project_id}/repository/files/{encoded_path}", params={"ref": ref})
+                if f and isinstance(f, dict) and "content" in f:
+                    return base64.b64decode(f["content"]).decode("utf-8")
+                return ""
             except Exception:
                 return ""
 
-        # Load key configuration files
-        # Load key configuration files
         configs: Dict[str, Any] = {
             "gitlab_ci": parse_yaml(get_file_content(".gitlab-ci.yml")),
             "pre_commit": parse_yaml(get_file_content(".pre-commit-config.yaml")),

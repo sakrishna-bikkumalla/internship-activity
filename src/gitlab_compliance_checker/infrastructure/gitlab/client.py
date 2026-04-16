@@ -5,40 +5,34 @@ import threading
 from datetime import datetime, timezone
 from typing import Any
 
-import gitlab
+import glabflow
+import msgspec
 
 # Set up logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-async def safe_api_call_async(func, *args, **kwargs):
+async def safe_api_call_async(coro_factory, *args, **kwargs):
     """
     Async safe wrapper for GitLab API calls with retry logic and 429 handling.
+    Accepts a coroutine factory (callable that returns a coroutine).
     """
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            return await asyncio.to_thread(func, *args, **kwargs)
-        except gitlab.exceptions.GitlabHttpError as e:
-            if e.response_code == 429:
-                wait_time = 5 * (attempt + 1)
-
-                logger.warning(f"Rate limited (429). Waiting {wait_time}s...")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(wait_time)
-                    continue
-                else:
-                    raise Exception("GitLab API Rate Limit Exceeded (429 Too Many Requests). Max retries reached.")
-
+            return await coro_factory(*args, **kwargs)
+        except glabflow.RateLimitError as e:
+            wait_time = getattr(e, "retry_after", None) or 5 * (attempt + 1)
+            logger.warning(f"Rate limited (429). Waiting {wait_time}s...")
             if attempt < max_retries - 1:
-                await asyncio.sleep(2)
+                await asyncio.sleep(wait_time)
                 continue
-            logger.error(f"HTTP ERROR {e.response_code} on {getattr(func, '__name__', 'unknown')}: {e.error_message}")
-            return []
-        except gitlab.exceptions.GitlabConnectionError as e:
+            else:
+                raise Exception("GitLab API Rate Limit Exceeded (429 Too Many Requests). Max retries reached.") from e
+        except (glabflow.ServerError, glabflow.TransientError) as e:
             wait_time = 5 * (attempt + 1)
-            logger.warning(f"Connection Error: {e}. Waiting {wait_time}s...")
+            logger.warning(f"Transient/Server Error: {e}. Waiting {wait_time}s...")
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait_time)
                 continue
@@ -47,7 +41,7 @@ async def safe_api_call_async(func, *args, **kwargs):
             if attempt < max_retries - 1:
                 await asyncio.sleep(1)
                 continue
-            logger.error(f"FAILED API CALL on {getattr(func, '__name__', 'unknown')}: {type(e).__name__} - {e}")
+            logger.error(f"FAILED API CALL: {type(e).__name__} - {e}")
             return []
     return []
 
@@ -79,24 +73,43 @@ _ZERO_ISSUE_ROW: dict[str, Any] = {
     "No Semantic Title": 0,
 }
 
+_JSON_DECODER = msgspec.json.Decoder()
+
+
+def _decode_json(data) -> Any:
+    """Decode JSON bytes or already-parsed data from glabflow."""
+    if isinstance(data, (dict, list)):
+        return data
+    if isinstance(data, (bytes, bytearray)):
+        try:
+            return _JSON_DECODER.decode(data)
+        except Exception:
+            return []
+    return data if data is not None else []
+
 
 class GitLabClient:
     def __init__(self, base_url: str, private_token: str, ssl_verify: bool = True):
         self.base_url = base_url.rstrip("/")
+        # glabflow expects the API base (with /api/v4)
         self.api_base = f"{self.base_url}/api/v4"
         self.private_token = private_token
         self.ssl_verify = ssl_verify
         self.error_msg = None
-        self._client = None
+        self._gl: glabflow.Client | None = None
 
-        # We run a separate background thread for the asyncio loop to avoid
-        # conflicts with Streamlit's own execution model.
+        # A background thread runs a dedicated event loop.
+        # This keeps glabflow's async client isolated from Streamlit's loop.
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
+        logger.info(f"GitLabClient initialized. Background thread started: {self._thread.name}")
 
-        self._sem = None
+        self._sem: asyncio.Semaphore | None = None
         self._init_sem()
+
+        # Enter glabflow client context in the background loop
+        self._init_gl_client()
 
     def _run_event_loop(self):
         asyncio.set_event_loop(self._loop)
@@ -113,43 +126,140 @@ class GitLabClient:
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return fut.result()
 
+    def _init_gl_client(self):
+        """Initialize and enter glabflow.Client as async context manager in background loop."""
+
+        async def _enter():
+            gl = glabflow.Client(
+                base_url=self.api_base,
+                token=self.private_token,
+                ssl=self.ssl_verify,
+                concurrency=25,
+                timeout=30.0,
+            )
+            # CRITICAL: Disable global connector to prevent cross-loop Lock boundary errors in Streamlit
+            await gl.__aenter__()
+            return gl
+
+        try:
+            fut = asyncio.run_coroutine_threadsafe(_enter(), self._loop)
+            self._gl = fut.result(timeout=30)
+        except Exception as e:
+            self.error_msg = str(e)
+            logger.error(f"Failed to initialize glabflow client: {e}")
+            self._gl = None
+
     @property
     def client(self):
-        """Lazy-loaded python-gitlab client."""
-        if self._client is None:
+        """Returns the glabflow Client instance (for compatibility)."""
+        return self._gl
+
+    async def _async_get(self, endpoint: str, params: dict | None = None) -> Any:
+        """Single GET request via glabflow. Returns decoded JSON."""
+        gl = self._gl
+        if not gl:
+            logger.error("GitLab client not initialized.")
+            return []
+
+        path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        if path.startswith("/api/v4"):
+            path = path[len("/api/v4") :]
+
+        # Robust handling of parameters via query string to avoid serialization issues
+        if params:
+            from urllib.parse import urlencode
+
+            query = urlencode({k: v for k, v in params.items() if v is not None})
+            connector = "&" if "?" in path else "?"
+            path = f"{path}{connector}{query}"
+
+        sem = self._sem
+        if sem is None:
+            return []
+
+        try:
+            async with sem:
+                raw = await gl.get(path)
+            return _decode_json(raw)
+        except glabflow.NotFoundError:
+            return []
+        except glabflow.RateLimitError as e:
+            wait = getattr(e, "retry_after", None) or 5
+            logger.warning(f"Rate limited on GET {path}. Waiting {wait}s...")
+            await asyncio.sleep(wait)
             try:
-                self._client = gitlab.Gitlab(
-                    url=self.base_url, private_token=self.private_token, timeout=30, ssl_verify=self.ssl_verify
-                )
+                # Use narrowed local 'sem'
+                async with sem:
+                    raw = await gl.get(path)
+                return _decode_json(raw)
             except Exception as e:
-                self.error_msg = str(e)
-                logger.error(f"Failed to initialize python-gitlab client: {e}")
-                self._client = None
-        return self._client
+                logger.error(f"Retry GET {path} failed: {e}")
+                return []
+        except Exception as e:
+            logger.error(f"GET {path} failed: {type(e).__name__} - {e}")
+            return []
 
     async def _async_request(self, method, endpoint, params=None):
-        gl = self.client
+        """Full HTTP request dispatcher (GET/POST/PUT/DELETE)."""
+        gl = self._gl
         if not gl:
             return []
 
-        # Remove leading / if present for http_get etc.
-        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
-        if not path.startswith("/"):
-            path = f"/{path}"
+        path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        if path.startswith("/api/v4"):
+            path = path[len("/api/v4") :]
 
-        def make_request_sync():
-            if method.upper() == "GET":
-                return gl.http_get(path, query_data=params or {})
-            elif method.upper() == "POST":
-                return gl.http_post(path, post_data=params or {})
-            elif method.upper() == "PUT":
-                return gl.http_put(path, post_data=params or {})
-            elif method.upper() == "DELETE":
-                return gl.http_delete(path)
-            return None
+        try:
+            if self._sem is None:
+                return []
+            async with self._sem:
+                if method.upper() == "GET":
+                    if params:
+                        from urllib.parse import urlencode
 
-        async with self._sem:
-            return await safe_api_call_async(make_request_sync)
+                        query = urlencode({k: v for k, v in params.items() if v is not None})
+                        connector = "&" if "?" in path else "?"
+                        path = f"{path}{connector}{query}"
+                    raw = await gl.get(path)
+                elif method.upper() == "POST":
+                    raw = await gl.post(path, json=params or {})
+                else:
+                    raw = await gl.get(path)
+            return _decode_json(raw)
+        except glabflow.NotFoundError:
+            return []
+        except Exception as e:
+            logger.error(f"{method} {path} failed: {type(e).__name__} - {e}")
+            return []
+
+    async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
+        """Paginated GET using glabflow's paginate() async generator."""
+        gl = self._gl
+        if not gl:
+            return []
+
+        path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        if path.startswith("/api/v4"):
+            path = path[len("/api/v4") :]
+
+        all_items: list = []
+        p_params = {**(params or {}), "per_page": per_page}
+
+        try:
+            page_count = 0
+            async for raw_page in gl.paginate(path, **p_params):
+                page_count += 1
+                page_data = _decode_json(raw_page)
+                if isinstance(page_data, list):
+                    all_items.extend(page_data)
+                elif isinstance(page_data, dict):
+                    all_items.append(page_data)
+                if page_count >= max_pages:
+                    break
+        except Exception as e:
+            logger.error(f"Paginated GET {path} failed: {type(e).__name__} - {e}")
+
+        return all_items
 
     async def _evaluate_single_mr(self, mr: dict) -> tuple[str, dict]:
         uname = mr.get("_username", "unknown")
@@ -185,17 +295,14 @@ class GitLabClient:
                     if pl[0].get("status") == "failed":
                         flags["failed_pipe"] = True
 
-            print(f"DEBUG: {iid} Time Spent check starting")
             # 2. Time Spent Check
             ts = mr.get("time_stats")
             if ts is None or (isinstance(ts, dict) and not ts):
-                # Fetch time stats if not in the MR dict
                 ts = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/time_stats")
 
             if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
                 flags["no_time"] = True
 
-            print(f"DEBUG: {iid} Semantic Commits check starting")
             # 3. Semantic Commits Check
             m_commits = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/commits")
             if m_commits and isinstance(m_commits, list):
@@ -214,7 +321,6 @@ class GitLabClient:
                 ):
                     flags["no_semantic_commits"] = True
 
-            print(f"DEBUG: {iid} Internal Review check starting")
             # 4. Internal Review
             m_notes = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/notes")
             mr_author_id = mr.get("author", {}).get("id")
@@ -225,7 +331,6 @@ class GitLabClient:
                 has_human_review = True
             flags["no_internal_review"] = not has_human_review
 
-            print(f"DEBUG: {iid} Issues check starting")
             # 5. Issues check
             content = f"{mr.get('title', '')} {mr.get('description', '')}"
             if re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", content, re.IGNORECASE):
@@ -233,7 +338,6 @@ class GitLabClient:
             else:
                 iss = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/issues")
                 if not iss:
-                    # Final check: look for links in notes
                     has_issue_link_in_notes = any(
                         re.search(r"#\d+|issue\s*#?\d+|\[\d+\]", n.get("body", ""), re.IGNORECASE)
                         for n in (m_notes or [])
@@ -241,7 +345,6 @@ class GitLabClient:
                     if not has_issue_link_in_notes:
                         flags["no_issues"] = True
 
-            print(f"DEBUG: {iid} Unit Tests check starting")
             # 6. Unit Tests check
             title_l = str(mr.get("title") or "").lower()
             if "test" in title_l or "spec" in title_l:
@@ -285,7 +388,7 @@ class GitLabClient:
         group_id=None,
         mr_scope: str = "author",
     ) -> list[dict]:
-        u_data = await self._async_request("GET", "/users", params={"username": uname})
+        u_data = await self._async_get("/users", params={"username": uname})
         target_user = next(
             (u for u in (u_data or []) if str(u.get("username", "")).lower() == str(uname).lower()), None
         )
@@ -302,7 +405,7 @@ class GitLabClient:
         if group_id:
             params["group_id"] = group_id
 
-        mrs = await self._async_request("GET", "/merge_requests", params=params)
+        mrs = await self._async_get("/merge_requests", params=params)
         for mr in mrs or []:
             if isinstance(mr, dict):
                 mr["_username"] = uname
@@ -391,7 +494,7 @@ class GitLabClient:
             if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
                 flags["no_time"] = True
 
-            # 5. Semantic Title Check (follows conventional commits)
+            # 5. Semantic Title Check
             title_lower = str(issue.get("title") or "").lower()
             semantic_prefixes = ("feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "bug")
             if not any(title_lower.startswith(p) for p in semantic_prefixes):
@@ -424,7 +527,7 @@ class GitLabClient:
         issue_scope: str = "author",
     ) -> list[dict]:
         """Fetch all issues for a specific user by author or assignee scope."""
-        u_data = await self._async_request("GET", "/users", params={"username": uname})
+        u_data = await self._async_get("/users", params={"username": uname})
         target_user = next(
             (u for u in (u_data or []) if str(u.get("username", "")).lower() == str(uname).lower()), None
         )
@@ -440,7 +543,7 @@ class GitLabClient:
             params["project_id"] = project_id
         if group_id:
             params["group_id"] = group_id
-        issues = await self._async_request("GET", "/issues", params=params)
+        issues = await self._async_get("/issues", params=params)
         for issue in issues or []:
             issue["_username"] = uname
         return issues or []
@@ -462,14 +565,11 @@ class GitLabClient:
         for uname, f in eval_results:
             if uname in result_map:
                 row = result_map[uname]
-                # Count total assigned issues
                 row["Total Assigned"] += 1
 
-                # Count opened issues
                 if f.get("is_opened"):
                     row["Opened Issues"] += 1
 
-                # Count and evaluate only closed issues
                 if f.get("is_closed"):
                     row["Closed Issues"] += 1
                     if f.get("no_desc"):
@@ -530,7 +630,6 @@ class GitLabClient:
                 if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
                     flags["no_time"] = True
             else:
-                # If missing, we don't know, so we don't flag it as "no time"
                 flags["no_time"] = False
 
             # 4. Semantic Title Check (Heuristic for semantic commits)
@@ -647,7 +746,6 @@ class GitLabClient:
             "Merge > 2 Days": 0,
         }
 
-        # Only evaluate closed/merged MRs for quality
         closed_mrs = [mr for mr in mrs if mr.get("state") in ("merged", "closed")]
 
         for mr in closed_mrs:
@@ -713,53 +811,38 @@ class GitLabClient:
         return self._run_sync(self._async_request(method, endpoint, params))
 
     def _get(self, endpoint, params=None):
-        return self._request("GET", endpoint, params=params)
-
-    async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
-        gl = self.client
-        if not gl:
-            return []
-
-        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
-        if not path.startswith("/"):
-            path = f"/{path}"
-
-        p_params = {**(params or {}), "per_page": per_page}
-
-        def fetch_page_sync(p_no, as_list=False):
-            curr_params = {**p_params, "page": p_no}
-            return gl.http_get(path, query_data=curr_params, as_list=as_list)
-
-        async def fetch_page(p_no, as_list=False):
-            async with self._sem:
-                return await safe_api_call_async(fetch_page_sync, p_no, as_list=as_list)
-
-        try:
-            # Fetch first page to get total pages
-            first_page_list = await fetch_page(1, as_list=True)
-            if not first_page_list:
-                return []
-
-            all_items = list(first_page_list)
-            total_pages = getattr(first_page_list, "total_pages", 1) or 1
-            num_to_fetch = min(total_pages, max_pages)
-
-            if num_to_fetch > 1:
-                tasks = [fetch_page(p) for p in range(2, num_to_fetch + 1)]
-                results = await asyncio.gather(*tasks)
-                for page_data in results:
-                    if page_data and isinstance(page_data, list):
-                        all_items.extend(page_data)
-            return all_items
-        except Exception as e:
-            logger.error(f"Error in async paginated request: {e}")
-            return []
+        return self._run_sync(self._async_get(endpoint, params=params))
 
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
         return self._run_sync(self._async_get_paginated(endpoint, params, per_page, max_pages))
 
-    def __del__(self):
+    def close(self):
+        """Shut down the background loop and thread gracefully."""
         try:
-            self._loop.stop()
-        except Exception:
-            pass
+            # Exit glabflow client context
+            if self._gl is not None:
+                fut = asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
+                try:
+                    fut.result(timeout=5)
+                except Exception:
+                    pass
+                self._gl = None
+
+            # Stop the event loop
+            if self._loop and self._loop.is_running():
+                logger.info("Stopping GitLabClient background event loop...")
+                self._loop.call_soon_threadsafe(self._loop.stop)
+
+            # Wait for thread to finish
+            if self._thread and self._thread.is_alive():
+                self._thread.join(timeout=2)
+                logger.info(f"GitLabClient background thread joined: {self._thread.name}")
+        except Exception as e:
+            logger.error(f"Error during GitLabClient closure: {e}")
+        finally:
+            self._gl = None
+            self._loop = None
+            self._thread = None
+
+    def __del__(self):
+        self.close()

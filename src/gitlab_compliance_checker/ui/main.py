@@ -11,6 +11,29 @@ from gitlab_compliance_checker.ui.leaderboard import render_team_leaderboard
 from gitlab_compliance_checker.ui.profile import render_user_profile
 
 
+def cleanup_gitlab_client(client: GitLabClient):
+    """Callback to shut down the client's background thread when the resource is evicted."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Cleaning up GitLabClient resource (st.cache_resource eviction)")
+    client.close()
+
+
+@st.cache_resource(on_release=cleanup_gitlab_client)
+def get_gitlab_client(url: str, token: str, ssl_verify: bool):
+    """
+    Cached GitLab client initialization.
+    Ensures only one instance (and one background thread) exists for a set of credentials.
+    Streamlit handles persistence across reruns automatically.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Creating NEW GitLabClient resource for {url}")
+    return GitLabClient(url, token, ssl_verify=ssl_verify)
+
+
 def main():
     # Load environment variables
     load_dotenv()
@@ -42,17 +65,17 @@ def main():
         st.warning("Please enter a GitLab Token in the sidebar or .env file.")
         st.stop()
 
-    # Initialize Client
+    # Initialize Client (Persistent using st.cache_resource)
     try:
-        client = GitLabClient(gitlab_url, gitlab_token, ssl_verify=ssl_verify)
+        client = get_gitlab_client(gitlab_url, gitlab_token, ssl_verify)
     except Exception as e:
         st.error(f"Critical Error initializing GitLab client: {e}")
         st.stop()
 
     # Routing
     if mode == "Check Project Compliance":
-        # Compliance mode expects the python-gitlab object for now (legacy compatibility)
-        render_compliance_mode(client.client)
+        # Compliance mode expects the client wrapper
+        render_compliance_mode(client)
 
     elif mode == "User Profile Overview":
         st.subheader("👤 User Profile Overview")

@@ -9,12 +9,16 @@ from gitlab_compliance_checker.infrastructure.gitlab import batch
 
 def test_resolve_project_paths():
     mock_client = MagicMock()
+
     # Mock return for one valid, one invalid, one exception
-    mock_client._get.side_effect = [
-        {"id": 10},  # proj1
-        None,  # proj2
-        Exception("API Error"),  # proj3
-    ]
+    def _side_effect(path):
+        if "proj1" in path:
+            return {"id": 10}
+        if "proj2" in path:
+            return None
+        raise Exception("API Error")
+
+    mock_client._get.side_effect = _side_effect
 
     ids, failed = batch.resolve_project_paths(mock_client, ["group/proj1", "group/proj2", "group/proj3", "  "])
     assert ids == [10]
@@ -113,7 +117,7 @@ def test_process_batch_users(mock_single):
 
 
 @pytest.mark.asyncio
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user", new_callable=MagicMock)
+@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user_async", new_callable=MagicMock)
 async def test_process_batch_users_async(mock_single):
     mock_single.return_value = {"username": "u1", "status": "Success"}
     res = await batch.process_batch_users_async(MagicMock(), ["u1"])
@@ -122,7 +126,7 @@ async def test_process_batch_users_async(mock_single):
 
 
 @pytest.mark.asyncio
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user", new_callable=MagicMock)
+@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user_async", new_callable=MagicMock)
 async def test_process_batch_users_async_error(mock_single):
     mock_single.side_effect = Exception("Async fail")
     res = await batch.process_batch_users_async(MagicMock(), ["u1"])

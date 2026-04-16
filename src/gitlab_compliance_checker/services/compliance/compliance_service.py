@@ -1,5 +1,6 @@
 import base64
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 from gitlab_compliance_checker.infrastructure.gitlab.pipeline_checker import check_ci_pipeline
 
@@ -16,8 +17,8 @@ def run_project_compliance_checks(gl, project_id: int, ref: Optional[str] = None
     Ultimate entry point: Runs all production-grade compliance checks for a project.
     """
     try:
-        project = gl.projects.get(project_id)
-        branch = ref or getattr(project, "default_branch", "main")
+        project_info = gl._get(f"/projects/{project_id}")
+        branch = ref or project_info.get("default_branch", "main")
     except Exception:
         branch = "main"
 
@@ -34,9 +35,11 @@ def run_project_compliance_checks(gl, project_id: int, ref: Optional[str] = None
     # --- GitLab CI Deep Dive ---
     project_type = results["tools"].get("project_type", "Unknown")
     try:
-        f = project.files.get(file_path=".gitlab-ci.yml", ref=branch)
-        ci_content = base64.b64decode(f.content).decode("utf-8")
-        results["dx_ci"] = check_ci_pipeline(ci_content, project_type=project_type)
+        encoded_path = quote(".gitlab-ci.yml", safe="")
+        f = gl._get(f"/projects/{project_id}/repository/files/{encoded_path}", params={"ref": branch})
+        if f and isinstance(f, dict) and "content" in f:
+            ci_content = base64.b64decode(f["content"]).decode("utf-8")
+            results["dx_ci"] = check_ci_pipeline(ci_content, project_type=project_type)
     except Exception:
         pass
 

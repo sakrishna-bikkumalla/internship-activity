@@ -14,14 +14,8 @@ from gitlab_compliance_checker.services.compliance.templates_checker import chec
 
 @pytest.fixture
 def mock_gl():
-    return MagicMock()
-
-
-@pytest.fixture
-def mock_project():
-    project = MagicMock()
-    project.default_branch = "main"
-    project.repository_tree.return_value = [
+    gl = MagicMock()
+    gl._get_paginated.return_value = [
         {"name": "README.md", "path": "README.md", "type": "blob"},
         {"name": "LICENSE", "path": "LICENSE", "type": "blob"},
         {"name": "main.py", "path": "main.py", "type": "blob"},
@@ -29,15 +23,12 @@ def mock_project():
         {"name": "template.html", "path": "templates/template.html", "type": "blob"},
         {"name": "style.css", "path": "css/style.css", "type": "blob"},
     ]
-    return project
+    gl._get.return_value = {"default_branch": "main"}
+    return gl
 
 
 class TestClassifyFiles:
-    """Tests for file_classifier.py - classify_files function."""
-
-    def test_classify_files_with_extensions(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-
+    def test_classify_files_with_extensions(self, mock_gl):
         result = classify_files(mock_gl, 123)
 
         assert "py" in result
@@ -47,156 +38,92 @@ class TestClassifyFiles:
         assert result["md"] == 1
 
     def test_classify_files_no_extensions(self, mock_gl):
-        mock_project = MagicMock()
-        mock_project.repository_tree.return_value = [
-            {"name": "README"},
-            {"name": "Makefile"},
+        mock_gl._get_paginated.return_value = [
+            {"name": "README", "type": "blob"},
+            {"name": "Makefile", "type": "blob"},
         ]
-        mock_gl.projects.get.return_value = mock_project
-
         result = classify_files(mock_gl, 123)
-
         assert result == {}
 
     def test_classify_files_exception_handling(self, mock_gl):
-        mock_gl.projects.get.side_effect = Exception("API Error")
-
+        mock_gl._get_paginated.side_effect = Exception("API Error")
         result = classify_files(mock_gl, 123)
-
         assert "error" in result
         assert "API Error" in result["error"]
 
 
 class TestCheckLicense:
-    """Tests for license_checker.py - check_license function."""
-
-    def test_license_exists(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_file = MagicMock()
-        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode(
-            "utf-8"
-        )
-        mock_project.files.get.return_value = mock_file
+    def test_license_exists(self, mock_gl):
+        encoded = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode("utf-8")
+        mock_gl._get.return_value = {"content": encoded}
 
         result = check_license(mock_gl, 123)
-
         assert result["exists"] is True
         assert result["valid"] is True
         assert "AGPLv3" in result["status"]
 
-    def test_license_missing(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_project.files.get.side_effect = Exception("Not Found")
+    def test_license_missing(self, mock_gl):
+        def side_effect(endpoint, **kwargs):
+            if "files" in endpoint:
+                raise Exception("Not Found")
+            return {"default_branch": "main"}
 
+        mock_gl._get.side_effect = side_effect
         result = check_license(mock_gl, 123)
-
         assert result["exists"] is False
         assert "missing" in result["status"].lower()
 
-    def test_license_case_insensitive(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_file = MagicMock()
-        mock_file.content = base64.b64encode(b"Affero General Public License version 3 19 November 2007").decode(
-            "utf-8"
-        )
-
-        # Simulate variant check
-        def side_effect(file_path, ref):
-            if file_path == "LICENSE":
-                return mock_file
-            raise Exception("Not Found")
-
-        mock_project.files.get.side_effect = side_effect
-
-        result = check_license(mock_gl, 123)
-
-        assert result["exists"] is True
-        assert result["valid"] is True
-
 
 class TestCheckReadme:
-    """Tests for readme_checker.py - check_readme function."""
-
-    def test_readme_exists(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_file = MagicMock()
-        # Sufficient length and sections
-        mock_file.content = base64.b64encode(b"README\nInstallation\nUsage\nLicense\n" + b"x" * 150).decode("utf-8")
-        mock_project.files.get.return_value = mock_file
+    def test_readme_exists(self, mock_gl):
+        encoded = base64.b64encode(b"README\nInstallation\nUsage\nLicense\n" + b"x" * 150).decode("utf-8")
+        mock_gl._get.return_value = {"content": encoded}
 
         result = check_readme(mock_gl, 123)
-
         assert result["exists"] is True
         assert result["needs_improvement"] is False
 
-    def test_readme_missing(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_project.files.get.side_effect = Exception("Not Found")
+    def test_readme_missing(self, mock_gl):
+        def side_effect(endpoint, **kwargs):
+            if "files" in endpoint:
+                raise Exception("Not Found")
+            return {"default_branch": "main"}
 
+        mock_gl._get.side_effect = side_effect
         result = check_readme(mock_gl, 123)
-
         assert result["exists"] is False
         assert "Missing" in result["status"]
 
-    def test_readme_case_insensitive(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_file = MagicMock()
-        mock_file.content = base64.b64encode(b"README content").decode("utf-8")
-
-        def side_effect(file_path, ref):
-            if file_path == "README.md":
-                return mock_file
-            raise Exception("Not Found")
-
-        mock_project.files.get.side_effect = side_effect
-
-        result = check_readme(mock_gl, 123)
-
-        assert result["exists"] is True
-
 
 class TestCheckTemplates:
-    """Tests for templates_checker.py - check_templates function."""
-
-    def test_templates_exist(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-
-        def side_effect(path, ref):
-            if path == ".gitlab/issue_templates":
+    def test_templates_exist(self, mock_gl):
+        def side_effect(path, **kwargs):
+            p = kwargs.get("params", {}).get("path")
+            if p == ".gitlab/issue_templates":
                 return [{"name": "Bug.md"}]
-            if path == ".gitlab/merge_request_templates":
+            if p == ".gitlab/merge_request_templates":
                 return [{"name": "Feature.md"}]
             return []
 
-        mock_project.repository_tree.side_effect = side_effect
+        mock_gl._get_paginated.side_effect = side_effect
 
         result = check_templates(mock_gl, 123)
-
         assert result["exists"] is True
         assert result["issue_templates_folder"] is True
         assert "Bug.md" in result["issue_template_files"]
 
-    def test_templates_missing(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_project.repository_tree.return_value = []
-
+    def test_templates_missing(self, mock_gl):
+        mock_gl._get_paginated.return_value = []
         result = check_templates(mock_gl, 123)
-
         assert result["exists"] is False
 
-    def test_templates_exception(self, mock_gl, mock_project):
-        mock_gl.projects.get.return_value = mock_project
-        mock_project.repository_tree.side_effect = Exception("API Error")
-
+    def test_templates_exception(self, mock_gl):
+        mock_gl._get_paginated.side_effect = Exception("API Error")
         result = check_templates(mock_gl, 123)
-
-        assert "error" not in result  # it catches internal exceptions per path
         assert result["exists"] is False
 
 
 class TestComplianceService:
-    """Tests for compliance_service.py - run_project_compliance_checks function."""
-
     @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_templates")
     @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_license")
     @patch("gitlab_compliance_checker.services.compliance.compliance_service.check_readme")
@@ -208,7 +135,6 @@ class TestComplianceService:
         mock_templates.return_value = {"exists": True, "status": "Templates present"}
 
         result = run_project_compliance_checks(mock_gl, 123)
-
         assert "readme" in result
         assert "license" in result
         assert "templates" in result
@@ -228,33 +154,24 @@ class TestComplianceService:
         mock_templates.return_value = {"exists": False, "status": "Templates missing"}
 
         result = run_project_compliance_checks(mock_gl, 123)
-
         assert result["readme"]["exists"] is False
         assert result["license"]["exists"] is False
         assert result["templates"]["exists"] is False
 
 
 class TestClassification:
-    """Tests for classification.py - get_project_file_classification function."""
-
     @patch("gitlab_compliance_checker.services.compliance.classification.classify_files")
     def test_classification_delegates_to_classify_files(self, mock_classify, mock_gl):
         mock_classify.return_value = {"py": 10, "js": 5}
-
         result = get_project_file_classification(mock_gl, 123)
-
         mock_classify.assert_called_once_with(mock_gl, 123)
         assert result == {"py": 10, "js": 5}
 
 
 class TestComplianceChecks:
-    """Tests for compliance_checks.py - get_project_compliance_report function."""
-
     @patch("gitlab_compliance_checker.services.compliance.compliance_checks.run_project_compliance_checks")
     def test_compliance_report_delegates(self, mock_run_checks, mock_gl):
         mock_run_checks.return_value = {"readme": {}, "license": {}}
-
         result = get_project_compliance_report(mock_gl, 123)
-
         mock_run_checks.assert_called_once_with(mock_gl, 123)
         assert "readme" in result

@@ -1,4 +1,27 @@
-import gitlab
+import asyncio
+import os
+import threading
+from typing import Any, Dict, List, Union
+
+import glabflow
+import msgspec
+
+_JSON_DECODER = msgspec.json.Decoder()
+
+
+def _decode(raw: Any) -> Union[Dict[Any, Any], List[Any]]:
+    """Decode raw bytes or pass through already-parsed data from glabflow."""
+    if isinstance(raw, (dict, list)):
+        return raw
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            val = _JSON_DECODER.decode(raw)
+            if isinstance(val, (dict, list)):
+                return val
+            return []
+        except Exception:
+            return []
+    return []
 
 
 class GitLabClient:
@@ -6,61 +29,107 @@ class GitLabClient:
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v4"
         self.private_token = private_token
-        self._client = None
+        self._gl: glabflow.Client | None = None
+
+        # Background event loop — same pattern as infrastructure/gitlab/client.py
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._thread.start()
+
+        self._init_gl_client()
         self.users = GitLabUsersAPI(self)
 
-    @property
-    def client(self):
-        """Lazy-loaded python-gitlab client."""
-        if self._client is None:
-            self._client = gitlab.Gitlab(
-                url=self.base_url, private_token=self.private_token, timeout=30, ssl_verify=False
+    def _run_sync(self, coro):
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+
+    def _init_gl_client(self):
+        async def _enter():
+            gl = glabflow.Client(
+                base_url=self.api_base,
+                token=self.private_token,
+                ssl=os.environ.get("GITLAB_SSL_VERIFY", "True").lower() in ("true", "1", "t"),
+                concurrency=25,
+                timeout=30.0,
             )
-        return self._client
+            # CRITICAL: Prevent event loop contention in Streamlit threads
+            await gl.__aenter__()
+            return gl
+
+        try:
+            fut = asyncio.run_coroutine_threadsafe(_enter(), self._loop)
+            self._gl = fut.result(timeout=30)
+        except Exception:
+            self._gl = None
 
     def _request(self, method, endpoint, params=None):
-        gl = self.client
-        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
-        if not path.startswith("/"):
-            path = f"/{path}"
+        return self._run_sync(self._async_request(method, endpoint, params))
 
-        if method.upper() == "GET":
-            return gl.http_get(path, query_data=params or {})
-        elif method.upper() == "POST":
-            return gl.http_post(path, post_data=params or {})
-        elif method.upper() == "PUT":
-            return gl.http_put(path, post_data=params or {})
-        elif method.upper() == "DELETE":
-            return gl.http_delete(path)
-        return None
+    async def _async_request(self, method, endpoint, params=None):
+        gl = self._gl
+        if not gl:
+            return []
+
+        path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        if path.startswith("/api/v4"):
+            path = path[len("/api/v4") :]
+
+        try:
+            if method.upper() == "GET":
+                raw = await gl.get(path, **(params or {}))
+            elif method.upper() == "POST":
+                raw = await gl.post(path, json=params or {})
+            else:
+                raw = await gl.get(path, **(params or {}))
+            return _decode(raw)
+        except glabflow.NotFoundError:
+            return []
+        except Exception:
+            return []
 
     def _get(self, endpoint, params=None):
         return self._request("GET", endpoint, params=params)
 
     def _get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
-        gl = self.client
-        path = endpoint[len("/api/v4") :] if endpoint.startswith("/api/v4") else endpoint
-        if not path.startswith("/"):
-            path = f"/{path}"
+        return self._run_sync(self._async_get_paginated(endpoint, params, per_page, max_pages))
 
-        all_items = []
-        base_params = {**(params or {}), "per_page": per_page}
+    async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
+        gl = self._gl
+        if not gl:
+            return []
+
+        path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        if path.startswith("/api/v4"):
+            path = path[len("/api/v4") :]
+
+        all_items: list = []
+        p_params = {**(params or {}), "per_page": per_page}
+        page_count = 0
 
         try:
-            # Using as_list=True to get total_pages if needed,
-            # but here we just loop manually to respect max_pages
-            for page in range(1, max_pages + 1):
-                page_params = {**base_params, "page": page}
-                batch = gl.http_get(path, query_data=page_params)
-                if not isinstance(batch, list) or not batch:
-                    break
-                all_items.extend(batch)
-                if len(batch) < per_page:
+            # Set ordered=False for maximum throughput during parallel fetching
+            async for raw_page in gl.paginate(path, ordered=False, **p_params):
+                page_count += 1
+                page_data = _decode(raw_page)
+                if isinstance(page_data, list):
+                    all_items.extend(page_data)
+                    if len(page_data) < per_page:
+                        break
+                elif isinstance(page_data, dict):
+                    all_items.append(page_data)
+                if page_count >= max_pages:
                     break
         except Exception:
             pass
 
         return all_items
+
+    def __del__(self):
+        try:
+            if self._gl is not None:
+                asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
+            self._loop.stop()
+        except Exception:
+            pass
 
 
 class GitLabUsersAPI:
@@ -128,7 +197,6 @@ class GitLabUsersAPI:
                 )
             )
         except Exception:
-            # Some GitLab instances may not expose this endpoint for all tokens.
             pass
 
         return list(project_map.values())
@@ -175,144 +243,126 @@ class GitLabUsersAPI:
 
     def get_user_commits(self, user_info):
         """
-        Reliable commit fetching for GitLab:
-        1) List user projects
-        2) Fetch commits per-project using /projects/{id}/repository/commits
-        3) Filter locally by author identity to avoid global endpoint limitations
+        Ultra-fast commit fetching for GitLab:
+        1) Parallel project scanning (asyncio.gather).
+        2) Single-pass fetching per project (fetch once, match locally).
+        3) Refined identity matching (Username -> Email fallback).
         """
         user_id = user_info.get("id") if isinstance(user_info, dict) else user_info
         if not user_id:
-            print("[commits] user id missing; cannot fetch commits")
             return []
 
         projects = self.get_user_projects(user_id)
         if not projects:
-            print(f"[commits] no projects found for user_id={user_id}")
             return []
 
-        author_name = (user_info.get("name") or "").strip().lower() if isinstance(user_info, dict) else ""
-        username = (user_info.get("username") or "").strip().lower() if isinstance(user_info, dict) else ""
-        author_email = (
+        target_username = (user_info.get("username") or "").strip().lower() if isinstance(user_info, dict) else ""
+        target_email = (
             (user_info.get("email") or user_info.get("public_email") or "").strip().lower()
             if isinstance(user_info, dict)
             else ""
         )
 
-        name_candidates = {
-            value
-            for value in [
-                author_name,
-                username,
-                username.replace("_", " ").replace(".", " ") if username else "",
-                author_email.split("@")[0] if author_email else "",
-            ]
-            if value
-        }
-        email_candidates = {author_email} if author_email else set()
-
-        author_queries = []
-        for value in [author_email, author_name, username]:
-            if value and value not in author_queries:
-                author_queries.append(value)
-
-        def _name_match(value):
-            value = (value or "").strip().lower()
-            if not value:
-                return False
-            normalized = value.replace("_", " ").replace(".", " ")
-            for candidate in name_candidates:
-                candidate_normalized = candidate.replace("_", " ").replace(".", " ")
-                if (
-                    value == candidate
-                    or normalized == candidate_normalized
-                    or candidate in value
-                    or candidate_normalized in normalized
-                ):
-                    return True
-            return False
-
-        def _email_match(value):
-            value = (value or "").strip().lower()
-            if not value:
-                return False
-            local_part = value.split("@")[0]
-            return value in email_candidates or local_part in name_candidates
-
         all_commits = []
         seen_commit_ids = set()
-        scanned_projects = 0
+        lock = threading.Lock()
 
-        for project in projects:
-            project_id = project.get("id")
-            project_name = project.get("name") or project.get("path_with_namespace") or str(project_id)
+        async def _fetch_project_commits(project):
+            p_id = project.get("id")
+            p_name = project.get("name") or project.get("path_with_namespace") or str(p_id)
             namespace_path = (project.get("namespace", {}) or {}).get("full_path", "").strip().lower()
             creator_id = project.get("creator_id")
-            is_personal_project = namespace_path == username or creator_id == user_id
-            project_scope = "Personal" if is_personal_project else "Contributed"
-            if not project_id:
-                continue
+            is_personal = namespace_path == target_username or creator_id == user_id
+            scope = "Personal" if is_personal else "Contributed"
 
-            scanned_projects += 1
             try:
-                commit_batches = []
+                # Use strict local matching instead of server-side 'author' filter
+                # to ensure we don't miss commits due to API email/username inconsistencies.
+                api_params = {"all": True}
 
-                if author_queries:
-                    for author_query in author_queries:
-                        commit_batches.append(
-                            self.client._get_paginated(
-                                f"/projects/{project_id}/repository/commits",
-                                params={"all": True, "author": author_query},
-                                per_page=100,
-                                max_pages=50,
-                            )
-                        )
+                # Single-pass fetch for all commits in the project
+                commits = await self.client._async_get_paginated(
+                    f"/projects/{p_id}/repository/commits",
+                    params=api_params,
+                    per_page=100,
+                    max_pages=50,
+                )
 
-                # Fallback: if author-filtered fetch returns nothing, query all commits and
-                # filter locally by author identity.
-                if not any(commit_batches):
-                    commit_batches.append(
-                        self.client._get_paginated(
-                            f"/projects/{project_id}/repository/commits",
-                            params={"all": True},
-                            per_page=100,
-                            max_pages=50,
-                        )
-                    )
+                project_commits = []
+                for commit in commits:
+                    c_id = commit.get("id") or commit.get("short_id")
+                    if not c_id:
+                        continue
 
-                for commits in commit_batches:
-                    for commit in commits:
-                        commit_id = commit.get("id") or commit.get("short_id")
+                    # Local Identity Matching: Strict Mode
+                    author = commit.get("author") or {}
+                    c_username = (author.get("username") or "").strip().lower()
+                    c_auth_email = (commit.get("author_email") or "").strip().lower()
+                    c_comm_email = (commit.get("committer_email") or "").strip().lower()
+                    c_author_name = (commit.get("author_name") or "").strip().lower()
+                    c_email_local = c_auth_email.split("@")[0] if "@" in c_auth_email else c_auth_email
 
-                        commit_author_name = (commit.get("author_name") or "").strip().lower()
-                        commit_author_email = (commit.get("author_email") or "").strip().lower()
-                        commit_committer_name = (commit.get("committer_name") or "").strip().lower()
-                        commit_committer_email = (commit.get("committer_email") or "").strip().lower()
+                    is_match = False
+                    # Priority 1: Exact GitLab Username match
+                    if target_username and c_username == target_username:
+                        is_match = True
+                    # Priority 2: Exact Email match
+                    elif target_email and (c_auth_email == target_email or c_comm_email == target_email):
+                        is_match = True
+                    # Priority 3: Exact Email local part match
+                    elif target_username and c_email_local == target_username:
+                        is_match = True
+                    elif target_email and "@" in target_email:
+                        if target_email.split("@")[0] == c_email_local:
+                            is_match = True
 
-                        if author_queries:
-                            author_match = (
-                                _name_match(commit_author_name)
-                                or _name_match(commit_committer_name)
-                                or _email_match(commit_author_email)
-                                or _email_match(commit_committer_email)
-                            )
-                            if not author_match:
-                                continue
+                    # Priority 4: Exact Normalized Name match
+                    if not is_match:
+                        import re
 
-                        if commit_id and commit_id in seen_commit_ids:
+                        def _ns(s):
+                            return re.sub(r"[\s_\.\-]", "", (s or "").lower())
+
+                        ns_cname = _ns(c_author_name)
+                        ns_uname = _ns(target_username)
+                        ns_aname = _ns((user_info.get("name") if isinstance(user_info, dict) else ""))
+
+                        # Match if the commit name matches the GitLab display name or username exactly after normalization
+                        if ns_cname and (ns_cname == ns_uname or ns_cname == ns_aname):
+                            is_match = True
+                        # Also allow matching if the normalized display name matches the commit name
+                        elif ns_aname and ns_cname == ns_aname:
+                            is_match = True
+
+                    if not is_match:
+                        continue
+
+                    with lock:
+                        if c_id in seen_commit_ids:
                             continue
+                        seen_commit_ids.add(c_id)
 
-                        if commit_id:
-                            seen_commit_ids.add(commit_id)
-
-                        commit["project_name"] = project_name
-                        commit["project_id"] = project_id
-                        commit["project_scope"] = project_scope
-                        all_commits.append(commit)
-
+                    commit["project_name"] = p_name
+                    commit["project_id"] = p_id
+                    commit["project_scope"] = scope
+                    project_commits.append(commit)
+                return project_commits
             except Exception as e:
-                print(f"[commits] failed for project_id={project_id} ({project_name}): {e}")
+                print(f"[commits] failed for project {p_name}: {e}")
+                return []
+
+        async def _process_all():
+            # Process in batches of 10 to respect rate limits
+            tasks = [_fetch_project_commits(p) for p in projects]
+            results = []
+            for i in range(0, len(tasks), 10):
+                batch = tasks[i : i + 10]
+                results.extend(await asyncio.gather(*batch))
+            return [c for sub in results for c in sub]
+
+        all_commits = self.client._run_sync(_process_all())
 
         print(
-            f"[commits] scanned_projects={scanned_projects}, matched_commits={len(all_commits)} for user_id={user_id}"
+            f"[commits] scanned_projects={len(projects)}, matched_commits={len(all_commits)} for username={target_username}"
         )
         return all_commits

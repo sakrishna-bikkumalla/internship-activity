@@ -88,7 +88,9 @@ async def test_process_batch_users_async_handles_crash():
             raise RuntimeError("Simulated API failure")
         return _make_mock_result(u)
 
-    with patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user", side_effect=side_effect):
+    with patch(
+        "gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user_async", side_effect=side_effect
+    ):
         results = await process_batch_users_async(mock_client, usernames)
 
     # Should have 3 results total: 2 success + 1 crash
