@@ -1,8 +1,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from gitlab import GitlabGetError
 
+# We remove 'from gitlab import GitlabGetError' as it is no longer available.
+# We will use a generic Exception mock in tests that check for errors.
 from gitlab_compliance_checker.services.batch import file_reader, retry_helper
 
 # --- Tests for file_reader.py ---
@@ -43,7 +44,7 @@ def test_read_file_content_cached_no_streamlit():
 
 
 def test_read_file_content_cached_with_streamlit():
-    # Mock streamlit success (line 41-49)
+    # Mock streamlit success
     mock_st = MagicMock()
 
     # mock_st.cache_data is a decorator
@@ -83,32 +84,33 @@ def test_read_file_content_cached_with_streamlit_fail():
 
 def test_get_project_with_retries_success():
     gl_client = MagicMock()
-    gl_client.projects.get.return_value = "project_obj"
+    # Updated to match gl_client._get call in retry_helper
+    gl_client._get.return_value = {"id": 123, "name": "project_name"}
 
     res = retry_helper.get_project_with_retries(gl_client, "123")
-    assert res == "project_obj"
-    gl_client.projects.get.assert_called_with(123)
+    assert res == {"id": 123, "name": "project_name"}
+    gl_client._get.assert_called_with("/projects/123")
 
 
 def test_get_project_with_retries_404():
     gl_client = MagicMock()
-    # Mocking GitlabGetError with response attribute
-    err = GitlabGetError()
-    err.response = MagicMock(status_code=404)
-    gl_client.projects.get.side_effect = err
+    # In the new code, we raise Exception that contains "404" or is a specific NotFoundError
+    err = Exception("404 Not Found")
+    gl_client._get.side_effect = err
 
-    with pytest.raises(GitlabGetError):
+    with pytest.raises(Exception) as excinfo:
         retry_helper.get_project_with_retries(gl_client, "path/to/proj")
+    assert "404" in str(excinfo.value)
 
 
 def test_get_project_with_retries_transient_then_success():
     gl_client = MagicMock()
-    gl_client.projects.get.side_effect = [ConnectionResetError(), "success"]
+    gl_client._get.side_effect = [ConnectionResetError(), {"id": 123}]
 
     with patch("time.sleep"):  # avoid actual sleeping
         res = retry_helper.get_project_with_retries(gl_client, "123", retries=2)
-        assert res == "success"
-        assert gl_client.projects.get.call_count == 2
+        assert res == {"id": 123}
+        assert gl_client._get.call_count == 2
 
 
 def test_get_project_with_retries_all_fail():
@@ -117,19 +119,8 @@ def test_get_project_with_retries_all_fail():
     class RequestError(Exception):
         pass
 
-    gl_client.projects.get.side_effect = RequestError("timeout")
+    gl_client._get.side_effect = RequestError("timeout")
 
     with patch("time.sleep"):
         with pytest.raises(RequestError):
-            retry_helper.get_project_with_retries(gl_client, "123", retries=2)
-
-
-def test_get_project_with_retries_gitlab_other_error():
-    gl_client = MagicMock()
-    err = GitlabGetError()
-    err.response = MagicMock(status_code=500)
-    gl_client.projects.get.side_effect = err
-
-    with patch("time.sleep"):
-        with pytest.raises(GitlabGetError):
             retry_helper.get_project_with_retries(gl_client, "123", retries=2)

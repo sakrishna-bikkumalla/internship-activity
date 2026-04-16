@@ -75,7 +75,7 @@ def test_main_mode_routing_check_project(monkeypatch, reimport_main):
 
     main_mod.main()
 
-    assert called["compliance"] == "fake-client"
+    assert called["compliance"].client == "fake-client"
 
 
 def test_main_mode_user_profile_not_found(monkeypatch, reimport_main):

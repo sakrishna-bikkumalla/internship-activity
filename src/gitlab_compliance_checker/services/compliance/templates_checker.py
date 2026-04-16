@@ -6,8 +6,9 @@ def check_templates(gl, project_id: int, ref: Optional[str] = None) -> Dict[str,
     Detailed GitLab templates checker for issues and MRs.
     """
     try:
-        project = gl.projects.get(project_id)
-        branch = ref or getattr(project, "default_branch", "main")
+        if not ref:
+            project_info = gl._get(f"/projects/{project_id}")
+            ref = project_info.get("default_branch", "main")
 
         result = {
             "issue_templates_folder": False,
@@ -17,10 +18,13 @@ def check_templates(gl, project_id: int, ref: Optional[str] = None) -> Dict[str,
             "exists": False,
         }
 
-        # Check Issue Templates
         try:
-            items = project.repository_tree(path=".gitlab/issue_templates", ref=branch)
-            md_files = [item["name"] for item in items if item["name"].lower().endswith(".md")]
+            items = gl._get_paginated(
+                f"/projects/{project_id}/repository/tree",
+                params={"path": ".gitlab/issue_templates", "ref": ref},
+                per_page=100,
+            )
+            md_files = [item.get("name") for item in (items or []) if str(item.get("name", "")).lower().endswith(".md")]
             if md_files:
                 result["issue_templates_folder"] = True
                 result["issue_template_files"] = md_files
@@ -28,10 +32,13 @@ def check_templates(gl, project_id: int, ref: Optional[str] = None) -> Dict[str,
         except Exception:
             pass
 
-        # Check Merge Request Templates
         try:
-            items = project.repository_tree(path=".gitlab/merge_request_templates", ref=branch)
-            md_files = [item["name"] for item in items if item["name"].lower().endswith(".md")]
+            items = gl._get_paginated(
+                f"/projects/{project_id}/repository/tree",
+                params={"path": ".gitlab/merge_request_templates", "ref": ref},
+                per_page=100,
+            )
+            md_files = [item.get("name") for item in (items or []) if str(item.get("name", "")).lower().endswith(".md")]
             if md_files:
                 result["merge_request_templates_folder"] = True
                 result["merge_request_template_files"] = md_files

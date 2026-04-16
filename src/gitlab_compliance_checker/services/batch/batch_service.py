@@ -15,11 +15,8 @@ def process_single_project(gl_client, project_id: Any, include_details: bool = T
         Project compliance result dict
     """
     try:
-        # Note: compliance_service expects the python-gitlab client object
-        # gl_client should be either the GitLabClient wrapper or the raw gitlab.Gitlab object
-        # We handle both if possible, but standard is the raw client for compliance_service
-        raw_client = getattr(gl_client, "client", gl_client)
-
+        # gl_client should be the GitLabClient wrapper
+        raw_client = gl_client
         report: Dict[str, Any] = run_project_compliance_checks(raw_client, project_id)
 
         if not include_details:

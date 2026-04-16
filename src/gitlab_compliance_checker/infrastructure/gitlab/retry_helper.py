@@ -1,36 +1,27 @@
-# gitlab_compliance_checker/infrastructure/gitlab/retry_helper.py
-
-import http.client
+import logging
 import time
 
-from gitlab import GitlabGetError
+logger = logging.getLogger(__name__)
 
 
 def get_project_with_retries(gl_client, path_or_id, retries=3, backoff=1):
     """
     Fetch GitLab project with retry logic for transient failures.
+    `gl_client` is a GitLabClient wrapper.
     """
-
     for attempt in range(1, retries + 1):
         try:
-            return gl_client.projects.get(int(path_or_id) if str(path_or_id).isdigit() else path_or_id)
+            # path_or_id can be 'group/project' or 123
+            encoded = str(path_or_id).replace("/", "%2F")
+            return gl_client._get(f"/projects/{encoded}")
 
-        except GitlabGetError as e:
-            if getattr(e, "response", None) is not None and e.response.status_code == 404:
+        except Exception as e:
+            # Check for 404
+            if "404" in str(e) or "Not Found" in type(e).__name__:
                 raise
+
             if attempt == retries:
                 raise
 
-        except (
-            ConnectionResetError,
-            ConnectionAbortedError,
-            OSError,
-            http.client.RemoteDisconnected,
-            Exception,
-        ) as e:
-            if type(e).__name__ not in ("RequestException", "ConnectionError", "Timeout"):
-                if not isinstance(e, (OSError, http.client.RemoteDisconnected)):
-                    raise
-            if attempt == retries:
-                raise
+            logger.warning(f"Retry {attempt}/{retries} for project {path_or_id} due to: {e}")
             time.sleep(backoff * (2 ** (attempt - 1)))

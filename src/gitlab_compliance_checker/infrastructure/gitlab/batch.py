@@ -64,7 +64,8 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
         result["data"]["user"] = user_obj
 
         # Use ThreadPoolExecutor for concurrent fetching
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        # Reduced max_workers to prevent resource contention
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             # Kick off independent fetches
             f_projs = executor.submit(projects.get_user_projects, client, user_id, username)
             f_groups = executor.submit(groups.get_user_groups, client, user_id)
@@ -169,7 +170,8 @@ def process_batch_users(client, usernames, since=None, until=None, project_ids: 
     results = []
     clean_usernames = [u.strip() for u in usernames if u.strip()]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # Reduced max_workers to prevent connection pooling issues
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_to_user = {
             executor.submit(process_single_user, client, u, since, until, project_ids): u for u in clean_usernames
         }

@@ -55,10 +55,10 @@ def get_user_commits(client, user, projects, since=None, until=None):
             project_seen_shas = set()
             valid_project_commits = 0
 
-            # Fetch ALL commits from ALL branches without API-side author filter
-            # We'll do filtering on the client side to ensure we don't miss commits
-            # due to API inconsistencies
-            api_params = {"all": True, "with_stats": "false"}
+            # Use strict local matching instead of server-side 'author' filter
+            # to ensure we don't miss commits due to API email/username inconsistencies.
+            api_params = {"all": "true", "with_stats": "false"}
+
             if since:
                 api_params["since"] = since
             if until:
@@ -79,33 +79,41 @@ def get_user_commits(client, user, projects, since=None, until=None):
                 if not sha or sha in project_seen_shas:
                     continue
 
-                # Include merge commits - they count as contributions!
-                # No longer filtering out commits with multiple parents
-
                 c_author_name = (c.get("author_name", "") or "").lower()
                 c_author_email = (c.get("author_email", "") or "").lower()
 
-                # More flexible identity matching
+                # Strict identity matching - only match if we have strong evidence
                 is_match = False
+                c_email_local = c_author_email.split("@")[0] if "@" in c_author_email else c_author_email
 
-                # Try exact email match first
-                if author_email and c_author_email == author_email.lower():
+                # Normalized matching helper (strip spaces and punctuation)
+                import re
+
+                def _ns(s):
+                    return re.sub(r"[\s_\.\-]", "", (s or "").lower())
+
+                ns_cname = _ns(c_author_name)
+                ns_uname = _ns(username)
+                ns_aname = _ns(author_name)
+
+                # PRIORITY 1: Exact email match
+                if author_email and c_author_email and c_author_email == author_email.lower():
                     is_match = True
-                # Try exact name match
-                elif author_name and c_author_name == author_name.lower():
+
+                # PRIORITY 2: Exact username match (matches email local part)
+                elif username and c_email_local == username.lower():
                     is_match = True
-                # Try username in email (e.g., "username@...")
-                elif username and c_author_email.startswith(f"{username.lower()}@"):
+
+                # PRIORITY 3: Email local part match (against user's GitLab email)
+                elif author_email and "@" in author_email and author_email.split("@")[0].lower() == c_email_local:
                     is_match = True
-                # Try username in author name (e.g., "John Doe" for "johndoe")
-                elif username and username.lower() in c_author_name.lower():
+
+                # PRIORITY 4: Exact normalized name match
+                # Match if commit name matches GitLab display name or username exactly after normalization
+                elif ns_cname and (ns_uname and ns_cname == ns_uname):
                     is_match = True
-                # Try partial email match (e.g., "john.doe" matches "john.doe@...")
-                elif author_email:
-                    # Extract local part of email for comparison
-                    email_local = author_email.split("@")[0].lower()
-                    if email_local in c_author_email.lower() or email_local in c_author_name.lower():
-                        is_match = True
+                elif ns_cname and (ns_aname and ns_cname == ns_aname):
+                    is_match = True
 
                 if not is_match:
                     continue
@@ -134,7 +142,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
         return p_res
 
     # Run per-project fetching in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_project = {executor.submit(_fetch_project_commits, p): p for p in projects}
         for future in concurrent.futures.as_completed(future_to_project):
             res = future.result()
@@ -173,7 +181,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                         stats["afternoon_commits"] += 1
 
                 except Exception:
-                    date_str = created_at_str
+                    date_str = created_at_str.split("T")[0] if created_at_str else "N/A"
                     time_str = "N/A"
                     slot = "N/A"
 

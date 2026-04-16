@@ -1,18 +1,16 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import gitlab
+import glabflow
 import pytest
 
 from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient, safe_api_call_async
-
-# ---------------- SAFE API CALL TESTS ----------------
 
 
 @pytest.mark.asyncio
 async def test_safe_api_call_success():
     """Returns result on success."""
 
-    def mock_func(x):
+    async def mock_func(x):
         return x * 2
 
     assert await safe_api_call_async(mock_func, 5) == 10
@@ -22,9 +20,8 @@ async def test_safe_api_call_success():
 @patch("asyncio.sleep", new_callable=AsyncMock)
 async def test_safe_api_call_429_retry(mock_sleep):
     """Retries on 429 with backoff."""
-    mock_func = MagicMock()
-    # Create a mock for the exception
-    err_429 = gitlab.exceptions.GitlabHttpError("Rate limited", response_code=429)
+    mock_func = AsyncMock()
+    err_429 = glabflow.RateLimitError("Rate limited", status_code=429, url="http", retry_after=5)
     mock_func.side_effect = [err_429, "success"]
 
     result = await safe_api_call_async(mock_func)
@@ -37,27 +34,16 @@ async def test_safe_api_call_429_retry(mock_sleep):
 @patch("asyncio.sleep", new_callable=AsyncMock)
 async def test_safe_api_call_429_max_retries(mock_sleep):
     """Raises exception after max retries for 429."""
-    err_429 = gitlab.exceptions.GitlabHttpError("Rate limited", response_code=429)
-    mock_func = MagicMock(side_effect=err_429)
+    err_429 = glabflow.RateLimitError("Rate limited", status_code=429, url="http", retry_after=5)
+    mock_func = AsyncMock(side_effect=err_429)
     with pytest.raises(Exception, match="Max retries reached"):
         await safe_api_call_async(mock_func)
-
-
-# ---------------- GITLAB CLIENT TESTS ----------------
 
 
 def test_gitlab_client_init():
     client = GitLabClient("https://gitlab.com/", "token")
     assert client.base_url == "https://gitlab.com"
     assert client.api_base == "https://gitlab.com/api/v4"
-
-
-@patch("gitlab_compliance_checker.infrastructure.gitlab.client.gitlab.Gitlab")
-def test_gitlab_client_lazy_init(mock_gitlab):
-    client = GitLabClient("http://test", "token")
-    gl = client.client
-    assert gl is not None
-    mock_gitlab.assert_called_once()
 
 
 @pytest.mark.asyncio

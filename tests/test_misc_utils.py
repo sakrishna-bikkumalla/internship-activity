@@ -19,11 +19,13 @@ def test_get_user_by_username():
     assert res["id"] == 1
 
     # Not found
-    mock_client._get.side_effect = [[]]
+    # Provide 2 results to cover initial lookup and search fallback
+    mock_client._get.side_effect = [[], []]
     assert get_user_by_username(mock_client, "none") is None
 
     # Invalid response
-    mock_client._get.side_effect = [None]
+    # Provide 2 results to cover initial lookup and search fallback
+    mock_client._get.side_effect = [None, None]
     assert get_user_by_username(mock_client, "none") is None
 
 

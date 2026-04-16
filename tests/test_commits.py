@@ -125,8 +125,17 @@ class TestUsernameMatching:
 
         assert stats["total"] == 1
 
-    def test_match_by_username_in_name(self):
+    def test_no_match_by_fuzzy_username_in_name(self):
         commit = _make_commit("sha1", "alicedev (contractor)", "x@x.com", "2024-01-15T10:00:00+00:00")
+        client = _make_client([commit])
+        user = {"name": "Alice Dev", "email": "alice@example.com", "username": "alicedev"}
+    
+        commits, counts, stats = get_user_commits(client, user, [_make_project(1)])
+    
+        assert stats["total"] == 0
+
+    def test_match_by_exact_username_in_name(self):
+        commit = _make_commit("sha1", "alicedev", "x@x.com", "2024-01-15T10:00:00+00:00")
         client = _make_client([commit])
         user = {"name": "Alice Dev", "email": "alice@example.com", "username": "alicedev"}
 

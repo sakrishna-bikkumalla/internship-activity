@@ -18,10 +18,8 @@ def service(mock_gl):
 def test_process_project_success(service, mock_gl):
     # Mock dependencies
     with patch("gitlab_compliance_checker.services.batch.legacy_batch_service.get_project_with_retries") as mock_get:
-        proj = MagicMock()
-        proj.id = 123
-        proj.path_with_namespace = "gp/p1"
-        proj.default_branch = "main"
+        # Mock project as a dict
+        proj = {"id": 123, "path_with_namespace": "gp/p1", "default_branch": "main"}
         mock_get.return_value = proj
 
         with patch(

@@ -42,17 +42,26 @@ def main():
         st.warning("Please enter a GitLab Token in the sidebar or .env file.")
         st.stop()
 
-    # Initialize Client
-    try:
-        client = GitLabClient(gitlab_url, gitlab_token, ssl_verify=ssl_verify)
-    except Exception as e:
-        st.error(f"Critical Error initializing GitLab client: {e}")
-        st.stop()
+    # Initialize Client (Persistent in session state)
+    client_key = f"{gitlab_url}_{hash(gitlab_token)}_{ssl_verify}"
+    if "gitlab_client" not in st.session_state or st.session_state.get("gitlab_client_key") != client_key:
+        # Clean up old client context and background thread
+        if "gitlab_client" in st.session_state:
+            st.session_state["gitlab_client"].close()
+
+        try:
+            st.session_state["gitlab_client"] = GitLabClient(gitlab_url, gitlab_token, ssl_verify=ssl_verify)
+            st.session_state["gitlab_client_key"] = client_key
+        except Exception as e:
+            st.error(f"Critical Error initializing GitLab client: {e}")
+            st.stop()
+
+    client = st.session_state["gitlab_client"]
 
     # Routing
     if mode == "Check Project Compliance":
-        # Compliance mode expects the python-gitlab object for now (legacy compatibility)
-        render_compliance_mode(client.client)
+        # Compliance mode expects the client wrapper
+        render_compliance_mode(client)
 
     elif mode == "User Profile Overview":
         st.subheader("👤 User Profile Overview")
