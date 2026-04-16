@@ -1,4 +1,5 @@
 import asyncio
+import os
 import threading
 from typing import Any, Dict, List, Union
 
@@ -46,12 +47,11 @@ class GitLabClient:
             gl = glabflow.Client(
                 base_url=self.api_base,
                 token=self.private_token,
-                ssl=False,
+                ssl=os.environ.get("GITLAB_SSL_VERIFY", "True").lower() in ("true", "1", "t"),
                 concurrency=25,
                 timeout=30.0,
             )
             # CRITICAL: Prevent event loop contention in Streamlit threads
-            gl._use_global_connector = False
             await gl.__aenter__()
             return gl
 
@@ -66,7 +66,7 @@ class GitLabClient:
 
     async def _async_request(self, method, endpoint, params=None):
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             return []
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
@@ -94,7 +94,7 @@ class GitLabClient:
 
     async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=20):
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             return []
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"

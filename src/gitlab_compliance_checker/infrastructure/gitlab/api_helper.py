@@ -1,9 +1,20 @@
 import asyncio
+import os
+import threading
 from typing import Any, Dict, List, Union, cast
 from urllib.parse import urlparse
 
 import glabflow
 import msgspec
+
+_GLOBAL_LOOP = asyncio.new_event_loop()
+_GLOBAL_LOOP_THREAD = threading.Thread(target=_GLOBAL_LOOP.run_forever, daemon=True)
+_GLOBAL_LOOP_THREAD.start()
+
+
+def _run_sync(coro):
+    return asyncio.run_coroutine_threadsafe(coro, _GLOBAL_LOOP).result()
+
 
 _JSON_DECODER = msgspec.json.Decoder()
 
@@ -53,7 +64,7 @@ def get_user_from_token(base_url: str, token: str) -> Union[Dict[str, Any], str]
             base_url=api_base,
             token=token,
             timeout=15,
-            ssl=False,
+            ssl=os.environ.get("GITLAB_SSL_VERIFY", "True").lower() in ("true", "1", "t"),
         ) as gl:
             raw = await gl.get("/user")
             user = _decode(raw)
@@ -62,8 +73,8 @@ def get_user_from_token(base_url: str, token: str) -> Union[Dict[str, Any], str]
             return "Error validating token: User is None"
 
     try:
-        # Cast the result of asyncio.run to satisfy Mypy
-        return cast(Union[Dict[str, Any], str], asyncio.run(_fetch()))
+        # Cast the result of _run_sync to satisfy Mypy
+        return cast(Union[Dict[str, Any], str], _run_sync(_fetch()))
     except Exception as e:
         return f"Error validating token: {e}"
 
@@ -76,7 +87,7 @@ def get_user_groups_by_token(base_url: str, token: str) -> List[Dict[str, Any]]:
             base_url=api_base,
             token=token,
             timeout=15,
-            ssl=False,
+            ssl=os.environ.get("GITLAB_SSL_VERIFY", "True").lower() in ("true", "1", "t"),
         ) as gl:
             async for raw_page in gl.paginate("/groups", membership="true", per_page=100):
                 page = _decode(raw_page)
@@ -85,6 +96,6 @@ def get_user_groups_by_token(base_url: str, token: str) -> List[Dict[str, Any]]:
         return result
 
     try:
-        return cast(List[Dict[str, Any]], asyncio.run(_fetch()))
-    except Exception:
-        return []
+        return cast(List[Dict[str, Any]], _run_sync(_fetch()))
+    except Exception as e:
+        return f"Error fetching groups: {e}"  # type: ignore

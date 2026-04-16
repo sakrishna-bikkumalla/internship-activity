@@ -15,6 +15,15 @@ def extract_path_from_url(input_str):
 
 
 def get_project_branches(gl_client, project_id):
+    """Get all branches for a given project.
+
+    Args:
+        gl_client: GitLab client wrapper instance
+        project_id: The ID or path of the GitLab project
+
+    Returns:
+        A list of branch names as strings.
+    """
     try:
         final_pid = str(project_id).replace("/", "%2F")
         branches = gl_client._get_paginated(f"/projects/{final_pid}/repository/branches", all=True)
@@ -24,6 +33,16 @@ def get_project_branches(gl_client, project_id):
 
 
 def list_all_files(gl_client, project_id, branch="main"):
+    """Fetch a recursive file tree and return a list of all file paths.
+
+    Args:
+        gl_client: GitLab client wrapper instance
+        project_id: The ID or path of the GitLab project
+        branch: The branch to scan (defaults to main)
+
+    Returns:
+        A list of file paths (blobs only).
+    """
     try:
         final_pid = str(project_id).replace("/", "%2F")
         items = gl_client._get_paginated(
@@ -121,6 +140,16 @@ def classify_repository_files(file_paths):
 
 
 def check_vscode_settings(gl_client, project_id, branch="main"):
+    """Check if the project has a .vscode/settings.json file.
+
+    Args:
+        gl_client: GitLab client wrapper instance
+        project_id: The ID or path of the GitLab project
+        branch: Branch name
+
+    Returns:
+        True if the settings.json file exists, False otherwise
+    """
     try:
         final_pid = str(project_id).replace("/", "%2F")
         items = gl_client._get(f"/projects/{final_pid}/repository/tree", params={"path": ".vscode", "ref": branch})
@@ -145,6 +174,17 @@ def check_vscode_file_exists(gl_client, project_id, filename, branch="main"):
 
 
 def check_extensions_json_for_ruff(gl_client, project_id, branch="main", read_file_fn=None):
+    """Check if Ruff is recommended in .vscode/extensions.json.
+
+    Args:
+        gl_client: GitLab client wrapper instance
+        project_id: The ID or path of the project
+        branch: Branch name
+        read_file_fn: Dependency injection for file reading
+
+    Returns:
+        True if charliermarsh.ruff is in recommendations.
+    """
     if read_file_fn is None:
         from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
 
@@ -196,6 +236,17 @@ def check_templates_presence(gl_client, project_id, branch="main"):
 
 
 def check_license_content(gl_client, project_id, branch="main", read_file_fn=None):
+    """Retrieve the license and categorize it based on strict rules.
+
+    Args:
+        gl_client: GitLab client wrapper instance
+        project_id: Project identifier
+        branch: Branch to check
+        read_file_fn: Injected strategy to read files
+
+    Returns:
+        A string indicating 'valid', 'gnu_other', 'invalid', or 'not_found'
+    """
     if read_file_fn is None:
         from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
 
@@ -225,6 +276,17 @@ def check_license_content(gl_client, project_id, branch="main", read_file_fn=Non
 
 
 def check_project_compliance(gl_client, project_id, branch=None, read_file_fn=None):
+    """Check project compliance with standard repository structures.
+
+    Args:
+        gl_client: GitLab client wrapper instance
+        project_id: The project ID or dictionary of project info
+        branch: Branch name to check (defaults to main)
+        read_file_fn: Optional file reading function
+
+    Returns:
+        Dict with compliance report results.
+    """
     if read_file_fn is None:
         from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
 

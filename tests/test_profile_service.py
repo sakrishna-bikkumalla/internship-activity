@@ -58,12 +58,8 @@ class TestIssueIsRelatedToUser:
 
 class TestGetTotalCountFromApi:
     def test_valid_total(self, mock_client):
-        mock_response = MagicMock()
-        mock_response.headers = {"X-Total": "100"}
-        mock_client._session.get.return_value = mock_response
+        mock_client._get_paginated.return_value = [None] * 100
 
-        # mock_client.api_base used in _get_total_count_from_api
-        mock_client.api_base = "http://gl"
         result = _get_total_count_from_api(mock_client, "/test")
         assert result == 100
 
@@ -93,10 +89,7 @@ class TestGetUserProfile:
 
 class TestGetUserProjectsCount:
     def test_success(self, mock_client):
-        mock_client.api_base = "http://gl"
-        mock_response = MagicMock()
-        mock_response.headers = {"X-Total": "50"}
-        mock_client._session.get.return_value = mock_response
+        mock_client._get_paginated.return_value = [None] * 50
 
         result = get_user_projects_count(mock_client, 42)
         assert result == 50
@@ -104,10 +97,7 @@ class TestGetUserProjectsCount:
 
 class TestGetUserOpenMrsCount:
     def test_success(self, mock_client):
-        mock_client.api_base = "http://gl"
-        mock_response = MagicMock()
-        mock_response.headers = {"X-Total": "10"}
-        mock_client._session.get.return_value = mock_response
+        mock_client._get_paginated.return_value = [None] * 10
 
         result = get_user_open_mrs_count(mock_client, 42)
         assert result == 10

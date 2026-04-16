@@ -67,3 +67,4 @@ reports/*
 !reports/.gitkeep
 repro_timeout*.py
 data/
+scripts/debug/*

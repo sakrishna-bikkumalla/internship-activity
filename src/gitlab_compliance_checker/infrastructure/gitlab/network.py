@@ -1,8 +1,19 @@
 import asyncio
+import os
+import threading
 from typing import Any, Dict, List, Union
 
 import glabflow
 import msgspec
+
+_GLOBAL_LOOP = asyncio.new_event_loop()
+_GLOBAL_LOOP_THREAD = threading.Thread(target=_GLOBAL_LOOP.run_forever, daemon=True)
+_GLOBAL_LOOP_THREAD.start()
+
+
+def _run_sync(coro):
+    return asyncio.run_coroutine_threadsafe(coro, _GLOBAL_LOOP).result()
+
 
 DEFAULT_TIMEOUT = 15
 
@@ -34,7 +45,7 @@ def get_user_from_token(base_url: str, token: str):
             base_url=api_base,
             token=token,
             timeout=DEFAULT_TIMEOUT,
-            ssl=False,
+            ssl=os.environ.get("GITLAB_SSL_VERIFY", "True").lower() in ("true", "1", "t"),
         ) as gl:
             raw = await gl.get("/user")
             user = _decode(raw)
@@ -42,7 +53,7 @@ def get_user_from_token(base_url: str, token: str):
                 return user
             raise Exception("Authentication failed or user not found.")
 
-    return asyncio.run(_fetch())
+    return _run_sync(_fetch())
 
 
 def get_user_groups(base_url: str, token: str):
@@ -57,7 +68,7 @@ def get_user_groups(base_url: str, token: str):
             base_url=api_base,
             token=token,
             timeout=DEFAULT_TIMEOUT,
-            ssl=False,
+            ssl=os.environ.get("GITLAB_SSL_VERIFY", "True").lower() in ("true", "1", "t"),
         ) as gl:
             async for raw_page in gl.paginate("/groups", membership="true", per_page=100):
                 page = _decode(raw_page)
@@ -65,7 +76,7 @@ def get_user_groups(base_url: str, token: str):
                     result.extend(page)
         return result
 
-    return asyncio.run(_fetch())
+    return _run_sync(_fetch())
 
 
 def validate_token(base_url: str, token: str) -> bool:

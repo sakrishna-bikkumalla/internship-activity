@@ -56,6 +56,18 @@ class FakeStreamlitModule(types.ModuleType):
         self.stop = self._stop
         self.caption = lambda *a, **k: None
 
+    def cache_data(self, *a, **k):
+        def deco(func):
+            return CachedFunction(func)
+
+        return deco
+
+    def cache_resource(self, *a, **k):
+        def deco(func):
+            return CachedFunction(func)
+
+        return deco
+
     def _record_warning(self, message):
         self.messages["warning"].append(message)
 
@@ -67,12 +79,6 @@ class FakeStreamlitModule(types.ModuleType):
 
     def _stop(self, *a, **k):
         raise SystemExit("stop")
-
-    def cache_data(self, ttl=None):
-        def deco(func):
-            return CachedFunction(func)
-
-        return deco
 
 
 class CachedFunction:

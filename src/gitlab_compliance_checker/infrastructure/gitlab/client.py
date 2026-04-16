@@ -103,6 +103,7 @@ class GitLabClient:
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
+        logger.info(f"GitLabClient initialized. Background thread started: {self._thread.name}")
 
         self._sem: asyncio.Semaphore | None = None
         self._init_sem()
@@ -137,7 +138,6 @@ class GitLabClient:
                 timeout=30.0,
             )
             # CRITICAL: Disable global connector to prevent cross-loop Lock boundary errors in Streamlit
-            gl._use_global_connector = False
             await gl.__aenter__()
             return gl
 
@@ -157,7 +157,7 @@ class GitLabClient:
     async def _async_get(self, endpoint: str, params: dict | None = None) -> Any:
         """Single GET request via glabflow. Returns decoded JSON."""
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             logger.error("GitLab client not initialized.")
             return []
 
@@ -202,7 +202,7 @@ class GitLabClient:
     async def _async_request(self, method, endpoint, params=None):
         """Full HTTP request dispatcher (GET/POST/PUT/DELETE)."""
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             return []
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
@@ -235,7 +235,7 @@ class GitLabClient:
     async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
         """Paginated GET using glabflow's paginate() async generator."""
         gl = self._gl
-        if not gl or not gl._session:
+        if not gl:
             return []
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
@@ -829,14 +829,20 @@ class GitLabClient:
                 self._gl = None
 
             # Stop the event loop
-            if self._loop.is_running():
+            if self._loop and self._loop.is_running():
+                logger.info("Stopping GitLabClient background event loop...")
                 self._loop.call_soon_threadsafe(self._loop.stop)
 
             # Wait for thread to finish
             if self._thread and self._thread.is_alive():
                 self._thread.join(timeout=2)
-        except Exception:
-            pass
+                logger.info(f"GitLabClient background thread joined: {self._thread.name}")
+        except Exception as e:
+            logger.error(f"Error during GitLabClient closure: {e}")
+        finally:
+            self._gl = None
+            self._loop = None
+            self._thread = None
 
     def __del__(self):
         self.close()
