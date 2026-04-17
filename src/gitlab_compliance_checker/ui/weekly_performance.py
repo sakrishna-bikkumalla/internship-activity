@@ -1,7 +1,9 @@
 from datetime import date, timedelta
+from typing import Any
 
 import streamlit as st
 
+from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
 from gitlab_compliance_checker.services.weekly_performance.models import (
     InternCSVRow,
     WeeklyActivity,
@@ -21,6 +23,9 @@ def _init_state() -> None:
     if "wp_corpus_token" not in st.session_state:
         st.session_state["wp_corpus_token"]: str | None = None
 
+    if "wp_corpus_client" not in st.session_state:
+        st.session_state["wp_corpus_client"]: CorpusClient | None = None
+
     if "wp_week_start" not in st.session_state:
         today = date.today()
         monday = today - timedelta(days=today.weekday())
@@ -35,8 +40,47 @@ def _render_corpus_login() -> None:
             if not phone or not password:
                 st.warning("Phone and password are required.")
             else:
-                st.info("Corpus login not yet implemented. Contributor B will complete this.")
-                st.session_state["wp_corpus_token"] = "placeholder_token"
+                try:
+                    corpus_client = CorpusClient()
+                    token = corpus_client.login(phone, password)
+                    st.session_state["wp_corpus_token"] = token
+                    st.session_state["wp_corpus_client"] = corpus_client
+                    st.success("Logged in to Corpus!")
+                except Exception as e:
+                    st.error(f"Login failed: {e}")
+
+
+def fetch_team_audio_urls(
+    corpus_client: CorpusClient,
+    team_members: list[InternCSVRow],
+    start_date: str,
+    end_date: str,
+) -> dict[str, list[str]]:
+    """Fetch audio URLs for all team members, grouped by date.
+
+    Returns:
+        Dict mapping "YYYY-MM-DD" -> list of audio URLs
+    """
+    audio_urls_by_date: dict[str, list[str]] = {}
+
+    for member in team_members:
+        corpus_uid = member.get("corpus_uid")
+        if not corpus_uid:
+            continue
+
+        try:
+            records = corpus_client.fetch_records(corpus_uid, start_date, end_date)
+            for record in records:
+                date_str = record.get("date")
+                audio_url = record.get("file_url")
+                if date_str and audio_url:
+                    if date_str not in audio_urls_by_date:
+                        audio_urls_by_date[date_str] = []
+                    audio_urls_by_date[date_str].append(audio_url)
+        except Exception as e:
+            st.warning(f"Failed to fetch records for {member['full_name']}: {e}")
+
+    return audio_urls_by_date
 
 
 def _render_csv_upload() -> list[InternCSVRow]:
@@ -138,6 +182,47 @@ def _render_7day_grid(
         st.metric("Total Weekly Time", f"{total_hours}h {total_minutes}m")
 
 
+def _fetch_all_activity(
+    selected_intern: InternCSVRow,
+    all_interns: list[InternCSVRow],
+    week_start: date,
+    corpus_client: CorpusClient | None,
+) -> WeeklyActivity:
+    """Fetch both GitLab and Corpus data (Corpus only for now)."""
+    activity = WeeklyActivity(
+        intern_name=selected_intern["full_name"],
+        gitlab_username=selected_intern["gitlab_username"],
+        corpus_uid=selected_intern["corpus_uid"],
+    )
+
+    # Initialize 7 days of empty data
+    for i in range(7):
+        day_key = (week_start + timedelta(days=i)).isoformat()
+        activity.daily_data[day_key] = {
+            "gitlab": {"mrs": 0, "issues": 0, "commits": 0, "time_spent_seconds": 0},
+            "corpus": {"audio_urls": []},
+        }
+
+    # Contributor A will implement GitLab fetching here.
+
+    # Contributor B: Fetch Corpus Audio
+    if corpus_client:
+        team_name = selected_intern.get("team_name")
+        team_members = [i for i in all_interns if i.get("team_name") == team_name]
+
+        start_date = week_start.isoformat()
+        end_date = (week_start + timedelta(days=6)).isoformat()
+
+        with st.spinner("Fetching team audio records..."):
+            audio_data = fetch_team_audio_urls(corpus_client, team_members, start_date, end_date)
+
+            for date_str, urls in audio_data.items():
+                if date_str in activity.daily_data:
+                    activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
+
+    return activity
+
+
 def render_weekly_performance_ui() -> None:
     st.subheader("📊 Weekly Performance Tracker")
 
@@ -161,9 +246,6 @@ def render_weekly_performance_ui() -> None:
         st.markdown(f"### {selected_intern['full_name']}")
         st.caption(f"GitLab: @{selected_intern['gitlab_username']} | Corpus UID: {selected_intern['corpus_uid']}")
 
-        placeholder_activity = WeeklyActivity(
-            intern_name=selected_intern["full_name"],
-            gitlab_username=selected_intern["gitlab_username"],
-            corpus_uid=selected_intern["corpus_uid"],
-        )
-        _render_7day_grid(week_start, placeholder_activity, show_audio=True)
+        corpus_client = st.session_state.get("wp_corpus_client")
+        activity = _fetch_all_activity(selected_intern, interns, week_start, corpus_client)
+        _render_7day_grid(week_start, activity, show_audio=True)
