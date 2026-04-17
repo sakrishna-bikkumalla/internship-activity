@@ -9,6 +9,7 @@ from gitlab_compliance_checker.ui.batch import render_batch_analytics_ui
 from gitlab_compliance_checker.ui.compliance import render_compliance_mode
 from gitlab_compliance_checker.ui.leaderboard import render_team_leaderboard
 from gitlab_compliance_checker.ui.profile import render_user_profile
+from gitlab_compliance_checker.ui.weekly_performance import render_weekly_performance_ui
 
 
 def cleanup_gitlab_client(client: GitLabClient):
@@ -58,6 +59,7 @@ def main():
             "User Profile Overview",
             "Team Leaderboard",
             "Batch Analytics",
+            "Weekly Performance Tracker",
         ],
     )
 
@@ -103,6 +105,9 @@ def main():
 
     elif mode == "Team Leaderboard":
         render_team_leaderboard(client)
+
+    elif mode == "Weekly Performance Tracker":
+        render_weekly_performance_ui()
 
     else:
         st.error(f"Routing Error: Unknown mode '{mode}' selected.")
