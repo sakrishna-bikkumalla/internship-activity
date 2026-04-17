@@ -1,19 +1,6 @@
 import sys
 
 
-def test_ssl_verify_disabled():
-    client_file = "gitlab_utils/client.py"
-    with open(client_file, "r") as f:
-        content = f.read()
-
-    if "ssl_verify=False" in content:
-        print("✅ PASS: ssl_verify is set to False in client.py")
-        return True
-    else:
-        print("❌ FAIL: ssl_verify is NOT set to False in client.py")
-        return False
-
-
 def test_default_users_exist():
     batch_file = "modes/batch_mode.py"
     with open(batch_file, "r") as f:
@@ -42,11 +29,10 @@ def test_default_users_exist():
 
 
 if __name__ == "__main__":
-    s1 = test_ssl_verify_disabled()
-    s2 = test_default_users_exist()
-    if s1 and s2:
-        print("\n🎉 All verification checks passed!")
+    s1 = test_default_users_exist()
+    if s1:
+        print("\nAll verification checks passed!")
         sys.exit(0)
     else:
-        print("\n❌ Verification failed!")
+        print("\nVerification failed!")
         sys.exit(1)

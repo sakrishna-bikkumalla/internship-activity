@@ -89,12 +89,10 @@ def _decode_json(data) -> Any:
 
 
 class GitLabClient:
-    def __init__(self, base_url: str, private_token: str, ssl_verify: bool = True):
+    def __init__(self, base_url: str, private_token: str):
         self.base_url = base_url.rstrip("/")
-        # glabflow expects the API base (with /api/v4)
         self.api_base = f"{self.base_url}/api/v4"
         self.private_token = private_token
-        self.ssl_verify = ssl_verify
         self.error_msg = None
         self._gl: glabflow.Client | None = None
 
@@ -133,7 +131,6 @@ class GitLabClient:
             gl = glabflow.Client(
                 base_url=self.api_base,
                 token=self.private_token,
-                ssl=self.ssl_verify,
                 concurrency=25,
                 timeout=30.0,
             )

@@ -22,7 +22,7 @@ def cleanup_gitlab_client(client: GitLabClient):
 
 
 @st.cache_resource(on_release=cleanup_gitlab_client)
-def get_gitlab_client(url: str, token: str, ssl_verify: bool):
+def get_gitlab_client(url: str, token: str):
     """
     Cached GitLab client initialization.
     Ensures only one instance (and one background thread) exists for a set of credentials.
@@ -32,7 +32,7 @@ def get_gitlab_client(url: str, token: str, ssl_verify: bool):
 
     logger = logging.getLogger(__name__)
     logger.info(f"Creating NEW GitLabClient resource for {url}")
-    return GitLabClient(url, token, ssl_verify=ssl_verify)
+    return GitLabClient(url, token)
 
 
 def main():
@@ -50,7 +50,6 @@ def main():
 
     gitlab_url = st.sidebar.text_input("GitLab URL", value=default_url).strip()
     gitlab_token = st.sidebar.text_input("GitLab Token", value=default_token, type="password").strip()
-    ssl_verify = st.sidebar.checkbox("Verify SSL", value=True)
 
     mode = st.sidebar.radio(
         "Select Mode",
@@ -69,7 +68,7 @@ def main():
 
     # Initialize Client (Persistent using st.cache_resource)
     try:
-        client = get_gitlab_client(gitlab_url, gitlab_token, ssl_verify)
+        client = get_gitlab_client(gitlab_url, gitlab_token)
     except Exception as e:
         st.error(f"Critical Error initializing GitLab client: {e}")
         st.stop()
@@ -107,7 +106,7 @@ def main():
         render_team_leaderboard(client)
 
     elif mode == "Weekly Performance Tracker":
-        render_weekly_performance_ui()
+        render_weekly_performance_ui(client)
 
     else:
         st.error(f"Routing Error: Unknown mode '{mode}' selected.")

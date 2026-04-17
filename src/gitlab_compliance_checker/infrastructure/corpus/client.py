@@ -1,9 +1,16 @@
-import requests
+import logging
+import re
 from typing import Any
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 
 class CorpusClient:
-    def __init__(self, base_url: str = "https://corpus.example.com"):
+    def __init__(self, base_url: str = "https://api.corpus.swecha.org"):
         self.base_url = base_url.rstrip("/")
         self.token: str | None = None
 
@@ -30,59 +37,127 @@ class CorpusClient:
         response.raise_for_status()
 
         data = response.json()
-        token = data.get("access_token")
+        token: str = data.get("access_token", "")
         if not token:
             raise Exception("Login failed: Access token not found in response.")
 
         self.token = token
         return token
 
+    def _resolve_user_to_uuid(self, user_identifier: str) -> str:
+        """Resolve a username to UUID if necessary.
+
+        The /users/{user_identifier} endpoint accepts either username or UUID.
+        The /records/ endpoint requires a UUID for user_id.
+
+        Args:
+            user_identifier: Either a username or UUID
+
+        Returns:
+            The user's UUID
+
+        Raises:
+            Exception if user not found or token missing
+        """
+        if not self.token:
+            raise Exception("Authentication required. Please login first.")
+
+        if UUID_PATTERN.match(user_identifier):
+            return user_identifier
+
+        url = f"{self.base_url}/api/v1/users/{user_identifier}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        logger.debug(f"[Corpus] Resolving user '{user_identifier}' to UUID via {url}")
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        user_data = response.json()
+        user_id: str = user_data.get("id", "")
+        logger.debug(f"[Corpus] User '{user_identifier}' resolved to UUID: {user_id}")
+        if not user_id:
+            raise Exception(f"Could not resolve user '{user_identifier}' to UUID")
+        return user_id
+
     def fetch_records(
         self,
         user_id: str,
-        start_date: str,
-        end_date: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch Corpus records for a user within a date range.
+        """Fetch Corpus records for a user, optionally filtered by date range.
 
         Args:
-            user_id: Corpus user ID
-            start_date: Start date in YYYY-MM-DD format
-            end_date: End date in YYYY-MM-DD format
+            user_id: Corpus user ID (or username)
+            start_date: Start date in YYYY-MM-DD format (optional, filters client-side)
+            end_date: End date in YYYY-MM-DD format (optional, filters client-side)
 
         Returns:
             List of record dicts containing standup entries
 
         API Endpoint: GET /api/v1/records/
-        Query Params: user_id, start_date, end_date
+        Query Params: user_id, media_type, skip, limit
         Headers: Authorization: Bearer {token}
-
-        Expected Response Structure:
-        {
-            "records": [
-                {
-                    "id": "...",
-                    "user_id": "...",
-                    "date": "YYYY-MM-DD",
-                    "file_url": "https://...",  # ← This is the audio URL
-                    ...
-                },
-                ...
-            ]
-        }
+        Note: date filtering is done client-side via published_date field
         """
         if not self.token:
             raise Exception("Authentication required. Please login first.")
 
-        url = f"{self.base_url}/api/v1/records/"
-        params = {"user_id": user_id, "start_date": start_date, "end_date": end_date}
-        headers = {"Authorization": f"Bearer {self.token}"}
+        uuid_user_id = self._resolve_user_to_uuid(user_id)
+        logger.debug(
+            f"[Corpus] Fetching records for user_id={uuid_user_id}, start_date={start_date}, end_date={end_date}"
+        )
 
-        response = requests.get(url, params=params, headers=headers)
-        response.raise_for_status()
+        all_records: list[dict[str, Any]] = []
+        skip = 0
+        limit = 100
 
-        data = response.json()
-        return data.get("records", [])
+        while True:
+            url = f"{self.base_url}/api/v1/records/"
+            params: dict[str, Any] = {"user_id": uuid_user_id, "skip": skip, "limit": limit}
+            headers = {"Authorization": f"Bearer {self.token}"}
+
+            logger.debug(f"[Corpus] GET {url} params={params}")
+            response = requests.get(url, params=params, headers=headers)
+            response.raise_for_status()
+
+            data = response.json()
+            if isinstance(data, dict):
+                records = data.get("records", [])
+            else:
+                records = data if isinstance(data, list) else []
+            logger.debug(f"[Corpus] Fetched {len(records)} records (skip={skip}, limit={limit})")
+            if not records:
+                break
+            all_records.extend(records)
+            if len(records) < limit:
+                break
+            skip += limit
+
+        logger.debug(f"[Corpus] Total records fetched: {len(all_records)}")
+        if all_records:
+            sample = all_records[0]
+            logger.debug(f"[Corpus] Sample record keys: {list(sample.keys())}")
+            logger.debug(f"[Corpus] Sample record: {sample}")
+
+        if start_date or end_date:
+            filtered: list[dict[str, Any]] = []
+            for record in all_records:
+                published = record.get("published_date", "")
+                if not isinstance(published, str) or not published:
+                    created_at = record.get("created_at", "")
+                    published = created_at[:10] if isinstance(created_at, str) and created_at else ""
+                if isinstance(published, str) and published:
+                    if start_date and published < start_date:
+                        continue
+                    if end_date and published > end_date:
+                        continue
+                filtered.append(record)
+            logger.debug(
+                f"[Corpus] Date filtering: {len(all_records)} -> {len(filtered)} records (start={start_date}, end={end_date})"
+            )
+            return filtered
+
+        return all_records
 
     def extract_audio_urls(self, records: list[dict[str, Any]]) -> list[str]:
         """Extract audio file URLs from Corpus records.
@@ -91,6 +166,15 @@ class CorpusClient:
             records: List of record dicts from fetch_records
 
         Returns:
-            List of audio file URLs (file_url field)
+            List of audio file URLs where media_type is "audio" (or all file_urls if no media_type specified)
         """
-        return [record["file_url"] for record in records if "file_url" in record and record["file_url"]]
+        logger.debug(f"[Corpus] extract_audio_urls called with {len(records)} records")
+        audio_urls = [
+            record["file_url"]
+            for record in records
+            if record.get("file_url") and (record.get("media_type") is None or record.get("media_type") == "audio")
+        ]
+        logger.debug(f"[Corpus] Extracted {len(audio_urls)} audio URLs")
+        for i, url in enumerate(audio_urls):
+            logger.debug(f"[Corpus] Audio URL {i + 1}: {url}")
+        return audio_urls

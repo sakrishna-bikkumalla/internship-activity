@@ -6,7 +6,7 @@
 exclude: '^(.venv/|__pycache__/|\.git/|assets/|\.gitlab/|\.vscode/|reports/|tests/|views/|repro_.*\.py|test_.*\.py)'
 
 default_language_version:
-  python: python3.12
+  python: python3.13
 
 repos:
   # General file quality checks (Moved earlier to ensure clean slate for generators)
@@ -52,7 +52,7 @@ repos:
         args: ['if git diff --cached --name-only | grep -q "^assets/badges/"; then echo "ERROR: Modifications to assets/badges are not allowed"; exit 1; fi']
         language: system
         pass_filenames: false
-        stages: [commit]
+        stages: [pre-commit]
 
       # Mypy type checking
       # Runs only on staged files for performance (pass_filenames: true is default)
@@ -90,7 +90,7 @@ repos:
           '
         language: system
         pass_filenames: false
-        stages: [commit]
+        stages: [pre-commit]
 
       # 2. Babel Extract Loop: Extract and automatically stage messages.pot to prevent commit blocking
       - id: babel-extract

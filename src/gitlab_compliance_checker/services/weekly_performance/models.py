@@ -41,12 +41,11 @@ def parse_intern_csv(csv_content: bytes) -> list[InternCSVRow]:
     reader = csv.DictReader(io.StringIO(csv_content.decode("utf-8")))
     rows: list[InternCSVRow] = []
     for row in reader:
-        rows.append(
-            InternCSVRow(
-                team_name=row.get("Team Name", "").strip(),
-                full_name=row.get("Full Name", "").strip(),
-                gitlab_username=row.get("GitLab Username", "").strip(),
-                corpus_uid=row.get("Corpus UID", "").strip(),
-            )
-        )
+        parsed: InternCSVRow = {
+            "team_name": row.get("Team Name", "").strip(),
+            "full_name": row.get("Full Name", "").strip(),
+            "gitlab_username": row.get("GitLab Username", "").strip(),
+            "corpus_uid": row.get("Corpus UID", "").strip(),
+        }
+        rows.append(parsed)
     return rows

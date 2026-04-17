@@ -6,10 +6,9 @@ from conftest import make_fake_st
 
 
 class FakeClient:
-    def __init__(self, url, token, ssl_verify=True):
+    def __init__(self, url, token):
         self.url = url
         self.token = token
-        self.ssl_verify = ssl_verify
         self.client = "fake-client"
 
 
@@ -49,7 +48,7 @@ def test_main_client_init_error(monkeypatch, reimport_main):
     main_mod.st = fake_st
 
     class BadClient:
-        def __init__(self, url, token, ssl_verify=True):
+        def __init__(self, url, token):
             raise Exception("boom")
 
     monkeypatch.setattr(main_mod, "GitLabClient", BadClient)
@@ -166,7 +165,7 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_main):
     fake_st = make_fake_st(["https://gitlab.com", "token", "ghost"], "User Profile Overview")
     main_mod.st = fake_st
     app_client = FakeClient("https://gitlab.com", "token")
-    monkeypatch.setattr(main_mod, "GitLabClient", lambda url, token, ssl_verify=True: app_client)
+    monkeypatch.setattr(main_mod, "GitLabClient", lambda url, token: app_client)
 
     monkeypatch.setattr(main_mod.users, "get_user_by_username", lambda client, username: {"id": 1})
 
