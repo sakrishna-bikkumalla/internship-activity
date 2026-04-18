@@ -43,34 +43,41 @@ def _get_user_id(gl_client, username: str) -> int | None:
 
 
 def _fetch_mrs_by_date(gl_client, user_id: int, start_date: date, end_date: date) -> dict[str, int]:
-    logger.debug(f"[GitLab] Fetching MRs for user_id={user_id}, {start_date} to {end_date}")
+    logger.debug(f"[GitLab] Fetching merged MRs for user_id={user_id}, {start_date} to {end_date}")
     counts: dict[str, int] = defaultdict(int)
     seen_ids: set[int] = set()
 
+    # To find MRs merged this week, we query for merged state and recent updates.
+    # An MR merge is an update, so updated_after ensures we catch them.
     date_params = {
         "scope": "all",
-        "created_after": start_date.isoformat(),
-        "created_before": (end_date + timedelta(days=1)).isoformat(),
+        "state": "merged",
+        "updated_after": (start_date - timedelta(days=1)).isoformat(),
     }
+
+    start_date_str = start_date.isoformat()
+    end_date_str = end_date.isoformat()
 
     for params, role in [
         ({"author_id": user_id, **date_params}, "author"),
         ({"assignee_id": user_id, **date_params}, "assignee"),
     ]:
         mrs = gl_client._get("/merge_requests", params=params) or []
-        logger.debug(f"[GitLab] Got {len(mrs)} {role} MRs")
+        logger.debug(f"[GitLab] Got {len(mrs)} {role} merged MRs (possibly including older updates)")
         for mr in mrs:
             mr_id = mr.get("id")
             if mr_id in seen_ids:
                 continue
             seen_ids.add(mr_id)
-            created_at = mr.get("created_at", "")
-            if created_at:
-                date_str = _parse_ist_date(created_at)
-                if date_str:
+
+            merged_at = mr.get("merged_at", "")
+            if merged_at:
+                date_str = _parse_ist_date(merged_at)
+                # Verify the merge date falls exactly within our target week range
+                if start_date_str <= date_str <= end_date_str:
                     counts[date_str] += 1
 
-    logger.debug(f"[GitLab] MRs by date: {dict(counts)}")
+    logger.debug(f"[GitLab] Merged MRs by date: {dict(counts)}")
     return dict(counts)
 
 

@@ -1,6 +1,6 @@
 import logging
 from datetime import date, timedelta
-from typing import cast
+from typing import Any, cast
 
 import streamlit as st
 
@@ -15,7 +15,79 @@ from gitlab_compliance_checker.services.weekly_performance.models import (
 
 logger = logging.getLogger(__name__)
 
-WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+# Premium UI CSS for status cards
+STATUS_CARD_CSS = """
+<style>
+    .status-card {
+        padding: 16px;
+        border-radius: 12px;
+        border-left: 6px solid;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        transition: all 0.2s ease-in-out;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        margin-bottom: 12px;
+        font-family: 'Inter', sans-serif;
+    }
+    .status-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+    }
+    .status-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+        letter-spacing: 0.05em;
+        opacity: 0.8;
+    }
+    .status-value {
+        font-size: 1.3rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .status-icon { font-size: 1.2rem; }
+
+    .block-mrs { background-color: #E8F5E9; border-left-color: #4CAF50; color: #1B5E20; }
+    .block-issues { background-color: #FCE4EC; border-left-color: #E91E63; color: #880E4F; }
+    .block-commits { background-color: #F3E5F5; border-left-color: #9C27B0; color: #4A148C; }
+    .block-time { background-color: #FFF3E0; border-left-color: #FF9800; color: #E65100; }
+</style>
+"""
+
+
+def _render_status_block(label: str, value: Any, type_class: str, icon: str) -> None:
+    """Render a styled status block with dynamic height."""
+    # Scale height based on value to create a bar-chart-like effect
+    base_height = 70
+    extra_height = 0
+
+    if isinstance(value, int):
+        extra_height = min(value * 8, 100)
+    elif isinstance(value, str) and "h" in value:
+        try:
+            hours = int(value.split("h")[0])
+            extra_height = min(hours * 12, 120)
+        except Exception:
+            pass
+
+    total_height = base_height + extra_height
+
+    html = f"""
+    <div class="status-card {type_class}" style="height: {total_height}px;">
+        <div class="status-label">{label}</div>
+        <div class="status-value">
+            <span class="status-icon">{icon}</span>
+            <span>{value}</span>
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _init_state() -> None:
@@ -197,20 +269,21 @@ def _render_7day_grid(
         corpus = day_data.get("corpus", {})
 
         with day_col:
-            st.markdown(f"**{WEEKDAY_NAMES[i]}**  ")
+            st.markdown(f"**{WEEKDAY_NAMES[i]}**")
             st.caption(day_date.strftime("%b %d"))
 
-            st.metric("MRs", gitlab.get("mrs", 0))
-            st.metric("Issues", gitlab.get("issues", 0))
-            st.metric("Commits", gitlab.get("commits", 0))
+            _render_status_block("MRs", gitlab.get("mrs", 0), "block-mrs", "🔀")
+            _render_status_block("Issues", gitlab.get("issues", 0), "block-issues", "📝")
+            _render_status_block("Commits", gitlab.get("commits", 0), "block-commits", "💻")
 
             time_spent = gitlab.get("time_spent_seconds", 0)
+            time_str = "0h 0m"
             if time_spent > 0:
                 hours = time_spent // 3600
                 minutes = (time_spent % 3600) // 60
-                st.caption(f"⏱ {hours}h {minutes}m")
-            else:
-                st.caption("⏱ 0h 0m")
+                time_str = f"{hours}h {minutes}m"
+
+            _render_status_block("Time Spent", time_str, "block-time", "⌛")
 
             if show_audio:
                 audio_urls = corpus.get("audio_urls", [])
@@ -232,7 +305,6 @@ def _render_7day_grid(
 def _fetch_all_activity(
     gl_client,
     selected_intern: InternCSVRow,
-    all_interns: list[InternCSVRow],
     week_start: date,
     corpus_client: CorpusClient | None,
 ) -> WeeklyActivity:
@@ -272,15 +344,13 @@ def _fetch_all_activity(
 
     # Contributor B: Fetch Corpus Audio
     if corpus_client:
-        team_name = selected_intern.get("team_name")
-        team_members = [i for i in all_interns if i.get("team_name") == team_name]
-        logger.debug(f"[UI] Fetching Corpus audio for team '{team_name}' with {len(team_members)} members")
+        logger.debug(f"[UI] Fetching Corpus audio for: {selected_intern['full_name']}")
 
         start_date: str = week_start.isoformat()
         end_date_str: str = (week_start + timedelta(days=6)).isoformat()
 
-        with st.spinner("Fetching team audio records..."):
-            audio_data = fetch_team_audio_urls(corpus_client, team_members, start_date, end_date_str)
+        with st.spinner("Fetching audio records..."):
+            audio_data = fetch_team_audio_urls(corpus_client, [selected_intern], start_date, end_date_str)
             logger.debug(f"[UI] Audio data by date: {audio_data}")
 
             for date_str, urls in audio_data.items():
@@ -291,6 +361,9 @@ def _fetch_all_activity(
 
 
 def render_weekly_performance_ui(gl_client) -> None:
+    # Inject custom CSS
+    st.markdown(STATUS_CARD_CSS, unsafe_allow_html=True)
+
     st.subheader("📊 Weekly Performance Tracker")
 
     _init_state()
@@ -314,5 +387,5 @@ def render_weekly_performance_ui(gl_client) -> None:
         st.caption(f"GitLab: @{selected_intern['gitlab_username']} | Corpus UID: {selected_intern['corpus_uid']}")
 
         corpus_client = st.session_state.get("wp_corpus_client")
-        activity = _fetch_all_activity(gl_client, selected_intern, interns, week_start, corpus_client)
+        activity = _fetch_all_activity(gl_client, selected_intern, week_start, corpus_client)
         _render_7day_grid(week_start, activity, show_audio=True)

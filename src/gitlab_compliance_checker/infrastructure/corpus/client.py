@@ -142,10 +142,19 @@ class CorpusClient:
         if start_date or end_date:
             filtered: list[dict[str, Any]] = []
             for record in all_records:
+                # Defensive check: ensure record belongs to the requested user
+                rec_user_id = record.get("user_id")
+                if rec_user_id and rec_user_id != uuid_user_id:
+                    logger.warning(
+                        f"[Corpus] Skipping record {record.get('id')} - user_id mismatch: {rec_user_id} != {uuid_user_id}"
+                    )
+                    continue
+
                 published = record.get("published_date", "")
                 if not isinstance(published, str) or not published:
                     created_at = record.get("created_at", "")
                     published = created_at[:10] if isinstance(created_at, str) and created_at else ""
+
                 if isinstance(published, str) and published:
                     if start_date and published < start_date:
                         continue
