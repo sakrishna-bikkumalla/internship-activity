@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 class GitLabDailyData(TypedDict):
@@ -10,7 +10,7 @@ class GitLabDailyData(TypedDict):
 
 
 class CorpusDailyData(TypedDict):
-    audio_urls: list[str]
+    audio_urls: list[dict[str, Any]]
 
 
 class DailyData(TypedDict):
@@ -25,6 +25,7 @@ class WeeklyActivity:
     corpus_uid: str
     daily_data: dict[str, DailyData] = field(default_factory=dict)
     total_weekly_time: int = 0
+    audio_fetched: bool = False
 
 
 class InternCSVRow(TypedDict):

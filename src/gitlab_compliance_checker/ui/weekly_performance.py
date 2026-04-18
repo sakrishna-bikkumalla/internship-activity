@@ -1,11 +1,15 @@
 import logging
+import time
 from datetime import date, timedelta
 from typing import Any, cast
 
 import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
-from gitlab_compliance_checker.services.weekly_performance.aggregator import aggregate_intern_data
+from gitlab_compliance_checker.services.weekly_performance.aggregator import (
+    _parse_ist_date,
+    aggregate_intern_data,
+)
 from gitlab_compliance_checker.services.weekly_performance.models import (
     DailyData,
     InternCSVRow,
@@ -108,6 +112,9 @@ def _init_state() -> None:
         monday = today - timedelta(days=today.weekday())
         st.session_state["wp_week_start"] = monday
 
+    if "wp_activity_cache" not in st.session_state:
+        st.session_state["wp_activity_cache"] = {}
+
 
 def _get_interns() -> list[InternCSVRow]:
     return cast(list[InternCSVRow], st.session_state.get("wp_interns", []))
@@ -140,22 +147,24 @@ def fetch_team_audio_urls(
     team_members: list[InternCSVRow],
     start_date: str,
     end_date: str,
-) -> dict[str, list[str]]:
-    """Fetch audio URLs for all team members, grouped by date.
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Fetch audio URLs for all team members, grouped by intern and date.
 
     Returns:
-        Dict mapping "YYYY-MM-DD" -> list of audio URLs
+        Dict mapping corpus_uid -> {date_str -> list of audio URLs}
     """
     logger.debug(
         f"[UI] fetch_team_audio_urls called for {len(team_members)} members, dates: {start_date} to {end_date}"
     )
-    audio_urls_by_date: dict[str, list[str]] = {}
+    # Result: { corpus_uid: { date_str: [audio_entries] } }
+    audio_data: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
     for member in team_members:
         corpus_uid = member.get("corpus_uid")
         if not corpus_uid:
             continue
 
+        audio_data[corpus_uid] = {}
         logger.debug(f"[UI] Fetching records for member: {member['full_name']} (corpus_uid={corpus_uid})")
         try:
             records = corpus_client.fetch_records(corpus_uid, start_date, end_date)
@@ -169,18 +178,19 @@ def fetch_team_audio_urls(
                 if not record:
                     continue
                 created_at = record.get("created_at", "")
-                date_str = created_at[:10] if isinstance(created_at, str) and created_at else None
-                logger.debug(f"[UI] Audio URL: {url}, created_at={created_at}, date_str={date_str}")
+                date_str = _parse_ist_date(created_at) if created_at else None
                 if date_str:
-                    if date_str not in audio_urls_by_date:
-                        audio_urls_by_date[date_str] = []
-                    audio_urls_by_date[date_str].append(url)
+                    if date_str not in audio_data[corpus_uid]:
+                        audio_data[corpus_uid][date_str] = []
+
+                    # Store as dict to allow for more metadata if needed
+                    audio_entry = {"url": url, "filename": record.get("file_name", "audio"), "created_at": created_at}
+                    audio_data[corpus_uid][date_str].append(audio_entry)
         except Exception as e:
             logger.error(f"[UI] Failed to fetch records for {member['full_name']}: {e}")
             st.warning(f"Failed to fetch records for {member['full_name']}: {e}")
 
-    logger.debug(f"[UI] Total audio_urls_by_date: {audio_urls_by_date}")
-    return audio_urls_by_date
+    return audio_data
 
 
 def _render_csv_upload() -> list[InternCSVRow]:
@@ -242,15 +252,17 @@ def _render_week_selector() -> date:
     return cast(date, st.session_state["wp_week_start"])
 
 
-def _render_intern_selector(interns: list[InternCSVRow]) -> InternCSVRow | None:
+def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
     if not interns:
         st.info("Upload a CSV to see intern data.")
         return None
 
-    intern_options = [f"{r['full_name']} (@{r['gitlab_username']})" for r in interns]
-    intern_map = dict(zip(intern_options, interns, strict=False))
+    options = ["All Interns"] + [f"{r['full_name']} (@{r['gitlab_username']})" for r in interns]
+    intern_map = {f"{r['full_name']} (@{r['gitlab_username']})": r for r in interns}
 
-    selected = st.selectbox("Select Intern", options=intern_options, key="wp_intern_select")
+    selected = st.selectbox("Select Intern", options=options, key="wp_intern_select")
+    if selected == "All Interns":
+        return "ALL"
     return intern_map.get(selected)
 
 
@@ -286,11 +298,24 @@ def _render_7day_grid(
             _render_status_block("Time Spent", time_str, "block-time", "⌛")
 
             if show_audio:
-                audio_urls = corpus.get("audio_urls", [])
-                if audio_urls:
+                audio_entries = corpus.get("audio_urls", [])  # Now contains dicts
+                if audio_entries:
                     st.markdown("**🎤 Standup Audio:**")
-                    for url in audio_urls:
-                        st.audio(url, format="audio/mp3")
+                    for entry in audio_entries:
+                        # Defensive check for old cache format (string) vs new (dict)
+                        if isinstance(entry, dict):
+                            url = entry.get("url")
+                            time_str = ""
+                            if entry.get("created_at"):
+                                try:
+                                    time_str = f"({entry['created_at'][11:16]})"
+                                except Exception:
+                                    pass
+                            st.caption(f"{entry.get('filename', 'Audio')} {time_str}")
+                        else:
+                            url = entry
+
+                        st.audio(url)  # Let browser auto-detect MIME type (best for .m4a)
                 else:
                     st.caption("No audio")
 
@@ -307,56 +332,86 @@ def _fetch_all_activity(
     selected_intern: InternCSVRow,
     week_start: date,
     corpus_client: CorpusClient | None,
+    pre_fetched_audio: dict[str, list[dict[str, Any]]] | None = None,
 ) -> WeeklyActivity:
-    """Fetch both GitLab and Corpus data (Corpus only for now)."""
-    logger.debug(f"[UI] _fetch_all_activity for intern: {selected_intern['full_name']}")
-    activity = WeeklyActivity(
-        intern_name=selected_intern["full_name"],
-        gitlab_username=selected_intern["gitlab_username"],
-        corpus_uid=selected_intern["corpus_uid"],
-    )
+    """Fetch both GitLab and Corpus data with individual caching."""
+    # Cache key: (week_start_iso, gitlab_username)
+    cache_key = (week_start.isoformat(), selected_intern["gitlab_username"])
+    if cache_key in st.session_state["wp_activity_cache"]:
+        activity = cast(WeeklyActivity, st.session_state["wp_activity_cache"][cache_key])
 
-    # Initialize 7 days of empty data
-    for i in range(7):
-        day_key = (week_start + timedelta(days=i)).isoformat()
-        activity.daily_data[day_key] = {
-            "gitlab": {"mrs": 0, "issues": 0, "commits": 0, "time_spent_seconds": 0},
-            "corpus": {"audio_urls": []},
-        }
+        # Enrichment Check: If we have a login but haven't fetched audio for this cached entry, don't return yet
+        if corpus_client and not activity.audio_fetched:
+            logger.debug(f"[UI] Cache enrichment required for {selected_intern['full_name']}")
+            # We proceed to the rest of the function, but skip GitLab part if GitLab data is there
+        else:
+            logger.debug(f"[UI] Cache hit for {selected_intern['full_name']} on {week_start.isoformat()}")
+            return activity
 
-    # Contributor A: Fetch GitLab data
-    logger.debug(f"[UI] Fetching GitLab data for {selected_intern['gitlab_username']}")
-    with st.spinner("Fetching GitLab data..."):
-        end_date = week_start + timedelta(days=6)
-        gitlab_activity = aggregate_intern_data(
-            gl_client,
+    # If we are here, either it's a new entry OR we need enrichment
+    if cache_key in st.session_state["wp_activity_cache"]:
+        activity = st.session_state["wp_activity_cache"][cache_key]
+        is_enrichment = True
+    else:
+        logger.debug(f"[UI] _fetch_all_activity for intern: {selected_intern['full_name']}")
+        activity = WeeklyActivity(
+            intern_name=selected_intern["full_name"],
             gitlab_username=selected_intern["gitlab_username"],
             corpus_uid=selected_intern["corpus_uid"],
-            intern_name=selected_intern["full_name"],
-            start_date=week_start,
-            end_date=end_date,
         )
-        logger.debug(f"[UI] GitLab activity fetched: {list(gitlab_activity.daily_data.keys())}")
-        for date_str, daily in gitlab_activity.daily_data.items():
-            if date_str in activity.daily_data:
-                activity.daily_data[date_str]["gitlab"] = daily.get("gitlab", {})
-        activity.total_weekly_time = gitlab_activity.total_weekly_time
+        is_enrichment = False
 
-    # Contributor B: Fetch Corpus Audio
+    # Initialize 7 days of empty data (Only if not enrichment)
+    if not is_enrichment:
+        for i in range(7):
+            day_key = (week_start + timedelta(days=i)).isoformat()
+            activity.daily_data[day_key] = {
+                "gitlab": {"mrs": 0, "issues": 0, "commits": 0, "time_spent_seconds": 0},
+                "corpus": {"audio_urls": []},
+            }
+
+    # GitLab Data Fetch (Skip if enrichment)
+    if not is_enrichment:
+        logger.debug(f"[UI] Fetching GitLab data for {selected_intern['gitlab_username']}")
+        with st.spinner(f"Fetching GitLab data for {selected_intern['full_name']}..."):
+            end_date = week_start + timedelta(days=6)
+            gitlab_activity = aggregate_intern_data(
+                gl_client,
+                gitlab_username=selected_intern["gitlab_username"],
+                corpus_uid=selected_intern["corpus_uid"],
+                intern_name=selected_intern["full_name"],
+                start_date=week_start,
+                end_date=end_date,
+            )
+            for date_str, daily in gitlab_activity.daily_data.items():
+                if date_str in activity.daily_data:
+                    activity.daily_data[date_str]["gitlab"] = daily.get("gitlab", {})
+            activity.total_weekly_time = gitlab_activity.total_weekly_time
+
+    # Corpus Audio Fetch
     if corpus_client:
-        logger.debug(f"[UI] Fetching Corpus audio for: {selected_intern['full_name']}")
-
-        start_date: str = week_start.isoformat()
-        end_date_str: str = (week_start + timedelta(days=6)).isoformat()
-
-        with st.spinner("Fetching audio records..."):
-            audio_data = fetch_team_audio_urls(corpus_client, [selected_intern], start_date, end_date_str)
-            logger.debug(f"[UI] Audio data by date: {audio_data}")
-
-            for date_str, urls in audio_data.items():
+        if pre_fetched_audio:
+            logger.debug(f"[UI] Using pre-fetched audio for: {selected_intern['full_name']}")
+            for date_str, urls in pre_fetched_audio.items():
                 if date_str in activity.daily_data:
                     activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
+        else:
+            logger.debug(f"[UI] Fetching Corpus audio for: {selected_intern['full_name']}")
+            start_date_str: str = week_start.isoformat()
+            end_date_str: str = (week_start + timedelta(days=6)).isoformat()
 
+            with st.spinner(f"Fetching audio for {selected_intern['full_name']}..."):
+                audio_batch = fetch_team_audio_urls(corpus_client, [selected_intern], start_date_str, end_date_str)
+                # audio_batch is { corpus_uid: { date_str: [urls] } }
+                user_audio = audio_batch.get(selected_intern["corpus_uid"], {})
+                for date_str, urls in user_audio.items():
+                    if date_str in activity.daily_data:
+                        activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
+
+        # Mark that we have attempted to fetch audio for this activity
+        activity.audio_fetched = True
+
+    st.session_state["wp_activity_cache"][cache_key] = activity
     return activity
 
 
@@ -368,6 +423,12 @@ def render_weekly_performance_ui(gl_client) -> None:
 
     _init_state()
     _render_corpus_login()
+
+    with st.sidebar:
+        st.divider()
+        if st.button("🔄 Refresh Data", help="Clear cache and re-fetch from GitLab"):
+            st.session_state["wp_activity_cache"] = {}
+            st.rerun()
 
     interns = _render_csv_upload()
     week_start = _render_week_selector()
@@ -381,11 +442,81 @@ def render_weekly_performance_ui(gl_client) -> None:
 
     selected_intern = _render_intern_selector(interns)
 
-    if selected_intern:
+    if selected_intern == "ALL":
+        # Check if we should actually run the fetch or just display cached data
+        is_all_cached = all(
+            (week_start.isoformat(), intern["gitlab_username"]) in st.session_state.get("wp_activity_cache", {})
+            for intern in interns
+        )
+
+        fetch_button_clicked = st.button("🚀 Fetch Team Performance", use_container_width=True)
+
+        if not fetch_button_clicked and not is_all_cached:
+            st.warning("👈 Click **Fetch Team Performance** to load the results for the entire team.")
+            return
+
+        st.divider()
+        st.info(f"📋 Showing performance for all {len(interns)} interns.")
+
+        corpus_client = st.session_state.get("wp_corpus_client")
+
+        # Optimization: Pre-fetch all audio records in one batch for the whole team
+        team_audio_data = {}
+        if corpus_client:
+            with st.spinner("Pre-fetching team audio records..."):
+                start_date_str = week_start.isoformat()
+                end_date_str = (week_start + timedelta(days=6)).isoformat()
+                team_audio_data = fetch_team_audio_urls(corpus_client, interns, start_date_str, end_date_str)
+
+        for intern in interns:
+            st.markdown(f"### {intern['full_name']}")
+            st.caption(f"GitLab: @{intern['gitlab_username']} | Corpus UID: {intern['corpus_uid']}")
+
+            # Rate limit mitigation: sleep briefly between interns ONLY IF we are not fetching from cache
+            if (week_start.isoformat(), intern["gitlab_username"]) not in st.session_state.get("wp_activity_cache", {}):
+                time.sleep(1)
+
+            # Pass pre-fetched audio for this specific intern
+            intern_audio = team_audio_data.get(intern["corpus_uid"], {})
+            try:
+                activity = _fetch_all_activity(
+                    gl_client, intern, week_start, corpus_client, pre_fetched_audio=intern_audio
+                )
+                _render_7day_grid(week_start, activity, show_audio=True)
+            except Exception as e:
+                if "Rate Limit" in str(e):
+                    st.error(
+                        f"🛑 **GitLab Rate Limit Reached**\n\n{e}\n\nPlease wait a few minutes before trying again."
+                    )
+                    break  # Stop fetching the rest of the team
+                else:
+                    st.error(f"Error fetching data for {intern['full_name']}: {e}")
+
+            st.divider()
+
+    elif selected_intern:
+        # Check cache for individual
+        cache_key = (week_start.isoformat(), selected_intern["gitlab_username"])
+        is_cached = cache_key in st.session_state.get("wp_activity_cache", {})
+
+        fetch_button_clicked = st.button(
+            f"🚀 Fetch Performance for {selected_intern['full_name']}", use_container_width=True
+        )
+
+        if not fetch_button_clicked and not is_cached:
+            st.warning(f"👈 Click **Fetch Performance** to load the results for {selected_intern['full_name']}.")
+            return
+
         st.divider()
         st.markdown(f"### {selected_intern['full_name']}")
         st.caption(f"GitLab: @{selected_intern['gitlab_username']} | Corpus UID: {selected_intern['corpus_uid']}")
 
         corpus_client = st.session_state.get("wp_corpus_client")
-        activity = _fetch_all_activity(gl_client, selected_intern, week_start, corpus_client)
-        _render_7day_grid(week_start, activity, show_audio=True)
+        try:
+            activity = _fetch_all_activity(gl_client, selected_intern, week_start, corpus_client)
+            _render_7day_grid(week_start, activity, show_audio=True)
+        except Exception as e:
+            if "Rate Limit" in str(e):
+                st.error(f"🛑 **GitLab Rate Limit Reached**\n\n{e}")
+            else:
+                st.error(f"Error: {e}")

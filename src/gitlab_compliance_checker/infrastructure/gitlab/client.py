@@ -10,7 +10,6 @@ import msgspec
 
 # Set up logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 async def safe_api_call_async(coro_factory, *args, **kwargs):
@@ -25,6 +24,8 @@ async def safe_api_call_async(coro_factory, *args, **kwargs):
         except glabflow.RateLimitError as e:
             wait_time = getattr(e, "retry_after", None) or 5 * (attempt + 1)
             logger.warning(f"Rate limited (429). Waiting {wait_time}s...")
+            if wait_time > 10:
+                raise Exception(f"GitLab API Rate Limit: Please wait {int(wait_time)}s.") from e
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait_time)
                 continue
@@ -94,11 +95,15 @@ class GitLabClient:
         self.api_base = f"{self.base_url}/api/v4"
         self.private_token = private_token
         self.error_msg = None
+        self.last_rate_limit: dict | None = None  # {endpoint, retry_after, timestamp}
         self._gl: glabflow.Client | None = None
 
         # A background thread runs a dedicated event loop.
         # This keeps glabflow's async client isolated from Streamlit's loop.
-        self._loop = asyncio.new_event_loop()
+        # Use standard DefaultEventLoopPolicy to avoid 'uvloop' issues in background threads
+        # that cause "RuntimeError: Timeout context manager should be used inside a task"
+        policy = asyncio.DefaultEventLoopPolicy()
+        self._loop = policy.new_event_loop()
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
         logger.info(f"GitLabClient initialized. Background thread started: {self._thread.name}")
@@ -110,6 +115,7 @@ class GitLabClient:
         self._init_gl_client()
 
     def _run_event_loop(self):
+        # We ensure this thread uses the standard loop we created
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
 
@@ -182,7 +188,15 @@ class GitLabClient:
             return []
         except glabflow.RateLimitError as e:
             wait = getattr(e, "retry_after", None) or 5
+            self.last_rate_limit = {
+                "endpoint": path,
+                "retry_after": wait,
+                "timestamp": datetime.now(timezone.utc),
+            }
             logger.warning(f"Rate limited on GET {path}. Waiting {wait}s...")
+            if wait > 10:
+                raise Exception(f"GitLab API Rate Limit reached. Please wait {int(wait)}s.")
+
             await asyncio.sleep(wait)
             try:
                 # Use narrowed local 'sem'
@@ -194,7 +208,7 @@ class GitLabClient:
                 return []
         except Exception as e:
             logger.error(f"GET {path} failed: {type(e).__name__} - {e}")
-            return []
+            raise e
 
     async def _async_request(self, method, endpoint, params=None):
         """Full HTTP request dispatcher (GET/POST/PUT/DELETE)."""
@@ -227,7 +241,7 @@ class GitLabClient:
             return []
         except Exception as e:
             logger.error(f"{method} {path} failed: {type(e).__name__} - {e}")
-            return []
+            raise e
 
     async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
         """Paginated GET using glabflow's paginate() async generator."""
@@ -255,6 +269,7 @@ class GitLabClient:
                     break
         except Exception as e:
             logger.error(f"Paginated GET {path} failed: {type(e).__name__} - {e}")
+            raise e
 
         return all_items
 
