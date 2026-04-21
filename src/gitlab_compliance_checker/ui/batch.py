@@ -22,7 +22,7 @@ def render_batch_analytics_ui(client):
         col1, col2 = st.columns(2)
 
         with col1:
-            uploaded_file = st.file_uploader("📂 Upload Usernames (.txt)", type=["txt"], help="One username per line.")
+            uploaded_file = st.file_uploader("📂 Upload Usernames (.csv)", type=["csv"], help="One username per column (first column used).")
 
         with col2:
             text_input = st.text_area(
@@ -52,11 +52,11 @@ def render_batch_analytics_ui(client):
 
         if uploaded_file is not None:
             try:
-                content = uploaded_file.read().decode("utf-8")
-                file_usernames = [line.strip() for line in content.splitlines() if line.strip()]
+                csv_df = pd.read_csv(uploaded_file, header=None)
+                file_usernames = [str(u).strip() for u in csv_df.iloc[:, 0].dropna() if str(u).strip()]
                 usernames.extend(file_usernames)
             except Exception as e:
-                st.error(f"Error reading uploaded file: {e}")
+                st.error(f"Error reading uploaded CSV file: {e}")
 
         # Deduplicate and sort
         usernames = sorted(set(usernames))
