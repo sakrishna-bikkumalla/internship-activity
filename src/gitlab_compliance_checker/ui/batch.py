@@ -108,7 +108,7 @@ def render_batch_analytics_ui(client):
 
     # 2. Execution
     btn_label = "🚀 Run Unified Analysis"
-    if st.button(btn_label, type="primary", use_container_width=True):
+    if st.button(btn_label, type="primary", width="stretch"):
         # username -> college name mapping (populated from both text input and CSV)
         college_map: dict[str, str] = {}
 
@@ -226,7 +226,7 @@ def render_batch_analytics_ui(client):
             report_data.append(row)
 
         df = pd.DataFrame(report_data)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width="stretch")
 
         # Export
         today = datetime.date.today()
