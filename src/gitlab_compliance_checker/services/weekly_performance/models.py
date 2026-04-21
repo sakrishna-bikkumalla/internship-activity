@@ -7,6 +7,7 @@ class GitLabDailyData(TypedDict):
     issues: int
     commits: int
     time_spent_seconds: int
+    active_hours: list[int]
 
 
 class CorpusDailyData(TypedDict):

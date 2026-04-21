@@ -30,16 +30,18 @@ def test_fetch_mrs_by_date():
     ]
     start = date(2024, 4, 15)
     end = date(2024, 4, 19)
-    counts = aggregator._fetch_mrs_by_date(mock_client, 1, start, end)
+    counts, hours = aggregator._fetch_mrs_by_date(mock_client, 1, start, end)
     assert counts == {"2024-04-15": 1}
+    assert hours == {"2024-04-15": {15}}  # 10:00 UTC = 15:30 IST
 
 def test_fetch_issues_by_date():
     mock_client = MagicMock()
     mock_client._get_paginated.return_value = [{"created_at": "2024-04-15T10:00:00Z"}]
     start = date(2024, 4, 15)
     end = date(2024, 4, 19)
-    counts = aggregator._fetch_issues_by_date(mock_client, 1, start, end)
+    counts, hours = aggregator._fetch_issues_by_date(mock_client, 1, start, end)
     assert counts == {"2024-04-15": 1}
+    assert hours == {"2024-04-15": {15}}  # 10:00 UTC = 15:30 IST
 
 @patch("gitlab_compliance_checker.infrastructure.gitlab.users.get_user_by_username")
 @patch("gitlab_compliance_checker.infrastructure.gitlab.projects.get_user_projects")
@@ -48,12 +50,13 @@ def test_fetch_commits_by_date(mock_commits, mock_projs, mock_users):
     mock_client = MagicMock()
     mock_users.return_value = {"id": 1}
     mock_projs.return_value = {"all": [101]}
-    mock_commits.return_value = ([{"date": "2024-04-15"}], None, None)
+    mock_commits.return_value = ([{"date": "2024-04-15", "time": "14:20:00"}], None, None)
     
     start = date(2024, 4, 15)
     end = date(2024, 4, 19)
-    counts = aggregator._fetch_commits_by_date(mock_client, 1, "user", start, end)
+    counts, hours = aggregator._fetch_commits_by_date(mock_client, 1, "user", start, end)
     assert counts == {"2024-04-15": 1}
+    assert hours == {"2024-04-15": {14}}
 
 @patch("gitlab_compliance_checker.infrastructure.gitlab.timelogs.fetch_user_timelogs")
 @patch("gitlab_compliance_checker.services.weekly_performance.aggregator._get_user_id")
@@ -64,9 +67,9 @@ def test_aggregate_intern_data(mock_commits, mock_issues, mock_mrs, mock_user_id
     mock_client = MagicMock()
     mock_user_id.return_value = 123
     mock_timelogs.return_value = [{"time_spent": 3600, "date": "2024-04-15"}]
-    mock_mrs.return_value = {"2024-04-15": 2}
-    mock_issues.return_value = {"2024-04-16": 1}
-    mock_commits.return_value = {"2024-04-15": 5}
+    mock_mrs.return_value = ({"2024-04-15": 2}, {"2024-04-15": {10}})
+    mock_issues.return_value = ({"2024-04-16": 1}, {"2024-04-16": {11}})
+    mock_commits.return_value = ({"2024-04-15": 5}, {"2024-04-15": {14}})
     
     start = date(2024, 4, 15)
     end = date(2024, 4, 19)

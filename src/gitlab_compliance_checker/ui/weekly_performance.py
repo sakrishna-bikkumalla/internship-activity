@@ -7,6 +7,7 @@ import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
 from gitlab_compliance_checker.services.weekly_performance.aggregator import (
+    _get_ist_hour,
     _parse_ist_date,
     aggregate_intern_data,
 )
@@ -22,79 +23,247 @@ logger = logging.getLogger(__name__)
 # Premium UI CSS for status cards
 STATUS_CARD_CSS = """
 <style>
-    .status-card {
-        padding: 10px 4px;
-        border-radius: 10px;
-        border-left: 4px solid;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        transition: all 0.2s ease-in-out;
+    .summary-card {
+        padding: 12px;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid #edf2f7;
+        margin-bottom: 12px;
+        font-family: 'Inter', sans-serif;
+        transition: all 0.3s ease;
+    }
+    .summary-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+        border-color: #e2e8f0;
+    }
+    .summary-title {
+        font-size: 0.8rem;
+        font-weight: 800;
+        color: #4a5568;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border-bottom: 2px solid #f7fafc;
+        padding-bottom: 6px;
+    }
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .metric-item {
         display: flex;
         flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-        margin-bottom: 8px;
-        font-family: 'Inter', sans-serif;
-        overflow: hidden;
+        align-items: flex-start;
+        padding: 8px;
+        border-radius: 8px;
+        background: #f8fafc;
     }
-    .status-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    .metric-label {
+        font-size: 0.6rem;
+        font-weight: 600;
+        color: #718096;
+        margin-bottom: 2px;
     }
-    .status-label {
-        font-size: 0.65rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        margin-bottom: 4px;
-        letter-spacing: 0.03em;
-        opacity: 0.9;
-        white-space: nowrap;
-    }
-    .status-value {
-        font-size: 1.0rem;
-        font-weight: 700;
+    .metric-value-container {
         display: flex;
         align-items: center;
-        justify-content: center;
         gap: 4px;
-        width: 100%;
     }
-    .status-icon { font-size: 1.0rem; }
+    .metric-icon { font-size: 0.9rem; }
+    .metric-value {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #2d3748;
+    }
 
-    .block-mrs { background-color: #E8F5E9; border-left-color: #4CAF50; color: #1B5E20; }
-    .block-issues { background-color: #FCE4EC; border-left-color: #E91E63; color: #880E4F; }
-    .block-commits { background-color: #F3E5F5; border-left-color: #9C27B0; color: #4A148C; }
-    .block-time { background-color: #FFF3E0; border-left-color: #FF9800; color: #E65100; }
+    /* Specific metric colors */
+    .m-mrs .metric-icon { color: #48bb78; }
+    .m-issues .metric-icon { color: #f56565; }
+    .m-commits .metric-icon { color: #805ad5; }
+    .m-time .metric-icon { color: #ed8936; }
+
+    .activity-slots-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 20px 0;
+        background: #ffffff;
+        padding: 16px;
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+    }
+    .slots-title {
+        font-size: 0.65rem;
+        font-weight: 800;
+        color: #64748b;
+        margin-bottom: 5px;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .slot-box {
+        height: 42px;
+        border-radius: 10px;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(0,0,0,0.08);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .slot-box:hover {
+        transform: scale(1.02);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        z-index: 10;
+    }
+    .slot-label {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.9rem;
+        font-weight: 950;
+        color: rgba(0,0,0,0.8);
+        text-shadow: 0 0 4px rgba(255,255,255,1), 0 0 8px rgba(255,255,255,0.5);
+        letter-spacing: 0.02em;
+        pointer-events: none;
+    }
+
+    .slot-active {
+        background-color: #22c55e;
+        box-shadow: inset 0 0 20px rgba(255,255,255,0.2);
+    }
+
+    /* Diagonal Hatch for idle slots */
+    .slot-idle {
+        background: repeating-linear-gradient(
+            45deg,
+            #ffffff,
+            #ffffff 6px,
+            #f1f5f9 6px,
+            #f1f5f9 12px
+        );
+    }
+
+    .slot-yellow {
+        background: repeating-linear-gradient(
+            45deg,
+            #fefce8,
+            #fefce8 6px,
+            #fef08a 6px,
+            #fef08a 12px
+        );
+    }
+
+    .slot-red {
+        background: #ef4444;
+        box-shadow: inset 0 0 20px rgba(0,0,0,0.1);
+    }
+
+    .slot-red-idle {
+        background: repeating-linear-gradient(
+            45deg,
+            #fee2e2,
+            #fee2e2 6px,
+            #fecaca 6px,
+            #fecaca 12px
+        );
+    }
 </style>
 """
 
 
-def _render_status_block(label: str, value: Any, type_class: str, icon: str) -> None:
-    """Render a styled status block with dynamic height."""
-    # Scale height based on value to create a bar-chart-like effect
-    base_height = 70
-    extra_height = 0
-
-    if isinstance(value, int):
-        extra_height = min(value * 8, 100)
-    elif isinstance(value, str) and "h" in value:
-        try:
-            hours = int(value.split("h")[0])
-            extra_height = min(hours * 12, 120)
-        except Exception:
-            pass
-
-    total_height = base_height + extra_height
-
+def _render_summary_card(mrs: int, issues: int, commits: int, time_str: str) -> None:
+    """Render a unified summary card with 4 metrics in a 2x2 grid."""
     html = f"""
-    <div class="status-card {type_class}" style="height: {total_height}px;">
-        <div class="status-label">{label}</div>
-        <div class="status-value">
-            <span class="status-icon">{icon}</span>
-            <span>{value}</span>
+<div class="summary-card">
+    <div class="summary-title">Daily Summary</div>
+    <div class="metrics-grid">
+        <div class="metric-item m-mrs">
+            <div class="metric-label">MRs</div>
+            <div class="metric-value-container">
+                <span class="metric-icon">🔀</span>
+                <span class="metric-value">{mrs}</span>
+            </div>
+        </div>
+        <div class="metric-item m-issues">
+            <div class="metric-label">Issues</div>
+            <div class="metric-value-container">
+                <span class="metric-icon">📝</span>
+                <span class="metric-value">{issues}</span>
+            </div>
+        </div>
+        <div class="metric-item m-commits">
+            <div class="metric-label">Commits</div>
+            <div class="metric-value-container">
+                <span class="metric-icon">💻</span>
+                <span class="metric-value">{commits}</span>
+            </div>
+        </div>
+        <div class="metric-item m-time">
+            <div class="metric-label">Time Spent</div>
+            <div class="metric-value-container">
+                <span class="metric-icon">⌛</span>
+                <span class="metric-value">{time_str}</span>
+            </div>
         </div>
     </div>
-    """
+</div>
+"""
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _render_activity_slots(active_hours: list[int]) -> None:
+    """Render 8 vertical activity slots (9 AM - 5 PM) with streak-based coloring."""
+    slots = [9, 10, 11, 12, 13, 14, 15, 16]
+    is_active = [hour in active_hours for hour in slots]
+
+    # Global State Check
+    is_total_idle = not any(is_active)
+
+    # Streak Detection (4-hour idle)
+    yellow_slots = [False] * 8
+    if not is_total_idle:
+        consecutive_idle = 0
+        for i, active in enumerate(is_active):
+            if not active:
+                consecutive_idle += 1
+            else:
+                if consecutive_idle >= 4:
+                    for j in range(i - consecutive_idle, i):
+                        yellow_slots[j] = True
+                consecutive_idle = 0
+        # Check end of day
+        if consecutive_idle >= 4:
+            for j in range(len(is_active) - consecutive_idle, len(is_active)):
+                yellow_slots[j] = True
+
+    svg_html = ""
+    for i, hour in enumerate(slots):
+        slot_label = f"{hour:02d}:00"
+        status_class = "slot-idle"
+
+        if is_total_idle:
+            status_class = "slot-red-idle"
+        elif is_active[i]:
+            status_class = "slot-active"
+        elif yellow_slots[i]:
+            status_class = "slot-yellow"
+
+        svg_html += f"""
+<div class="slot-box {status_class}" title="{slot_label}">
+    <div class="slot-label">{slot_label}</div>
+</div>
+"""
+
+    html = f"""
+<div class="activity-slots-container">
+    <div class="slots-title">Activity Timeline</div>
+    {svg_html}
+</div>
+"""
     st.markdown(html, unsafe_allow_html=True)
 
 
@@ -303,18 +472,22 @@ def _render_performance_grid(
             st.markdown(f"**{day_date.strftime('%A')}**")
             st.caption(day_date.strftime("%b %d"))
 
-            _render_status_block("MRs", gitlab.get("mrs", 0), "block-mrs", "🔀")
-            _render_status_block("Issues", gitlab.get("issues", 0), "block-issues", "📝")
-            _render_status_block("Commits", gitlab.get("commits", 0), "block-commits", "💻")
-
+            mrs = gitlab.get("mrs", 0)
+            issues = gitlab.get("issues", 0)
+            commits = gitlab.get("commits", 0)
             time_spent = gitlab.get("time_spent_seconds", 0)
+
             time_str = "0h 0m"
             if time_spent > 0:
-                hours = time_spent // 3600
-                minutes = (time_spent % 3600) // 60
-                time_str = f"{hours}h {minutes}m"
+                h = time_spent // 3600
+                m = (time_spent % 3600) // 60
+                time_str = f"{h}h {m}m"
 
-            _render_status_block("Time Spent", time_str, "block-time", "⌛")
+            _render_summary_card(mrs, issues, commits, time_str)
+
+            # Activity Slots
+            active_hours = gitlab.get("active_hours", [])
+            _render_activity_slots(active_hours)
 
             if show_audio:
                 audio_entries = corpus.get("audio_urls", [])  # Now contains dicts
@@ -385,7 +558,7 @@ def _fetch_all_activity(
         for i in range(num_days):
             day_key = (start_date + timedelta(days=i)).isoformat()
             activity.daily_data[day_key] = {
-                "gitlab": {"mrs": 0, "issues": 0, "commits": 0, "time_spent_seconds": 0},
+                "gitlab": {"mrs": 0, "issues": 0, "commits": 0, "time_spent_seconds": 0, "active_hours": []},
                 "corpus": {"audio_urls": []},
             }
 
@@ -425,6 +598,14 @@ def _fetch_all_activity(
                 for date_str, urls in user_audio.items():
                     if date_str in activity.daily_data:
                         activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
+
+                        # Enrich active_hours with Corpus contributions
+                        for audio in urls:
+                            hr = _get_ist_hour(audio.get("created_at", ""))
+                            if hr is not None:
+                                current_hours = set(activity.daily_data[date_str]["gitlab"].get("active_hours", []))
+                                current_hours.add(hr)
+                                activity.daily_data[date_str]["gitlab"]["active_hours"] = sorted(current_hours)
 
         activity.audio_fetched = True
 
