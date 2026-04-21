@@ -24,9 +24,9 @@ def test_get_user_id_not_found():
 def test_fetch_mrs_by_date():
     mock_client = MagicMock()
     # Mock author MRs
-    mock_client._get.side_effect = [
-        [{"id": 1, "merged_at": "2024-04-15T10:00:00Z"}], # Author
-        [{"id": 1, "merged_at": "2024-04-15T10:00:00Z"}], # Assignee (duplicate)
+    mock_client._get_paginated.side_effect = [
+        [{"id": 1, "merged_at": "2024-04-15T10:00:00Z"}],  # Author
+        [{"id": 1, "merged_at": "2024-04-15T10:00:00Z"}],  # Assignee (duplicate)
     ]
     start = date(2024, 4, 15)
     end = date(2024, 4, 19)
@@ -35,7 +35,7 @@ def test_fetch_mrs_by_date():
 
 def test_fetch_issues_by_date():
     mock_client = MagicMock()
-    mock_client._get.return_value = [{"created_at": "2024-04-15T10:00:00Z"}]
+    mock_client._get_paginated.return_value = [{"created_at": "2024-04-15T10:00:00Z"}]
     start = date(2024, 4, 15)
     end = date(2024, 4, 19)
     counts = aggregator._fetch_issues_by_date(mock_client, 1, start, end)

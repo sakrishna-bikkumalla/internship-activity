@@ -38,10 +38,12 @@ def test_fetch_all_activity_new(mock_agg, mock_fetch_audio, mock_spinner):
     
     # We must patch session_state in the module where it's used
     with patch("gitlab_compliance_checker.ui.weekly_performance.st.session_state", {"wp_activity_cache": {}}) as mock_state:
-        activity = weekly_performance._fetch_all_activity(mock_gl, intern, start, mock_corpus)
+        # Pass 7 for num_days and mock_corpus for corpus_client
+        activity = weekly_performance._fetch_all_activity(mock_gl, intern, start, 7, mock_corpus)
         assert activity.intern_name == "Test"
         assert activity.audio_fetched is True
-        assert (start.isoformat(), "user") in mock_state["wp_activity_cache"]
+        # The cache key is now (start_date_iso, num_days, gitlab_username)
+        assert (start.isoformat(), 7, "user") in mock_state["wp_activity_cache"]
 
 def test_parse_intern_csv_integration():
     from gitlab_compliance_checker.services.weekly_performance.models import parse_intern_csv

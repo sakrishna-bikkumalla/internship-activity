@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import logging
 import re
 import threading
@@ -99,24 +100,67 @@ class GitLabClient:
         self._gl: glabflow.Client | None = None
 
         # A background thread runs a dedicated event loop.
-        # This keeps glabflow's async client isolated from Streamlit's loop.
-        # Use standard DefaultEventLoopPolicy to avoid 'uvloop' issues in background threads
-        # that cause "RuntimeError: Timeout context manager should be used inside a task"
-        policy = asyncio.DefaultEventLoopPolicy()
-        self._loop = policy.new_event_loop()
-        self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._run_event_loop, name=f"GitLabClient-{id(self)}", daemon=True)
         self._thread.start()
-        logger.info(f"GitLabClient initialized. Background thread started: {self._thread.name}")
 
-        self._sem: asyncio.Semaphore | None = None
-        self._init_sem()
+        # Queue for requests from the main thread
+        self._request_queue = None
+        self._ready_event = threading.Event()
+        self._init_worker()
 
-        # Enter glabflow client context in the background loop
-        self._init_gl_client()
+    def _init_worker(self):
+        """Start the persistent worker task on the background loop."""
+
+        async def _worker_loop():
+            nonlocal self
+            self._request_queue = asyncio.Queue()
+
+            # Use same initialization logic as before, but inside the persistent task
+            try:
+                self._gl = glabflow.Client(
+                    base_url=self.api_base,
+                    token=self.private_token,
+                    concurrency=25,
+                    timeout=30.0,
+                )
+                await self._gl.__aenter__()
+                self._sem = asyncio.Semaphore(25)
+                self._ready_event.set()
+
+                while True:
+                    coro, future = await self._request_queue.get()
+                    try:
+                        result = await coro
+                        future.set_result(result)
+                    except Exception as e:
+                        if not future.done():
+                            future.set_exception(e)
+                    finally:
+                        self._request_queue.task_done()
+            except Exception as e:
+                self.error_msg = str(e)
+                logger.error(f"Worker loop failure: {e}")
+                self._ready_event.set()
+
+        asyncio.run_coroutine_threadsafe(_worker_loop(), self._loop)
+
+        # Wait for the background thread to be ready
+        if not self._ready_event.wait(timeout=10):
+            logger.error("GitLabClient worker loop failed to start in 10s")
 
     def _run_event_loop(self):
-        # We ensure this thread uses the standard loop we created
+        """Dedicated thread target to run the internal event loop."""
+        # Ensure this thread uses the dedicated loop we created
         asyncio.set_event_loop(self._loop)
+
+        # Explicitly set the policy for this thread to avoid uvloop inheritance
+        try:
+            asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        except Exception:
+            pass
+
+        logger.debug(f"[GitLabClient] Event loop {id(self._loop)} starting in thread {threading.current_thread().name}")
         self._loop.run_forever()
 
     def _init_sem(self):
@@ -127,30 +171,29 @@ class GitLabClient:
         self._sem = fut.result()
 
     def _run_sync(self, coro):
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return fut.result()
+        """Bridge sync call to the background worker loop via the request queue."""
+        if not self._request_queue:
+            # Try to re-init if not ready
+            if not self._ready_event.is_set():
+                self._ready_event.wait(timeout=5)
+            if not self._request_queue:
+                raise RuntimeError("GitLabClient worker queue not initialized.")
 
-    def _init_gl_client(self):
-        """Initialize and enter glabflow.Client as async context manager in background loop."""
+        future = concurrent.futures.Future()
 
-        async def _enter():
-            gl = glabflow.Client(
-                base_url=self.api_base,
-                token=self.private_token,
-                concurrency=25,
-                timeout=30.0,
+        def _submit():
+            asyncio.run_coroutine_threadsafe(
+                asyncio.wait_for(asyncio.shield(self._submit_to_queue(coro, future)), timeout=60), self._loop
             )
-            # CRITICAL: Disable global connector to prevent cross-loop Lock boundary errors in Streamlit
-            await gl.__aenter__()
-            return gl
 
-        try:
-            fut = asyncio.run_coroutine_threadsafe(_enter(), self._loop)
-            self._gl = fut.result(timeout=30)
-        except Exception as e:
-            self.error_msg = str(e)
-            logger.error(f"Failed to initialize glabflow client: {e}")
-            self._gl = None
+        self._loop.call_soon_threadsafe(self._submit_to_queue_wrapper, coro, future)
+        return future.result()
+
+    def _submit_to_queue_wrapper(self, coro, future):
+        asyncio.create_task(self._submit_to_queue(coro, future))
+
+    async def _submit_to_queue(self, coro, future):
+        await self._request_queue.put((coro, future))
 
     @property
     def client(self):
@@ -265,6 +308,7 @@ class GitLabClient:
                     all_items.extend(page_data)
                 elif isinstance(page_data, dict):
                     all_items.append(page_data)
+
                 if page_count >= max_pages:
                     break
         except Exception as e:
@@ -833,12 +877,15 @@ class GitLabClient:
         try:
             # Exit glabflow client context
             if self._gl is not None:
+                # We need to run this on the loop
                 fut = asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
                 try:
                     fut.result(timeout=5)
                 except Exception:
                     pass
                 self._gl = None
+
+            # Stop the request queue worker (if we had a sentinel, we'd use it)
 
             # Stop the event loop
             if self._loop and self._loop.is_running():

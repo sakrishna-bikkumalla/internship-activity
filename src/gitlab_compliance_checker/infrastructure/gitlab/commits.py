@@ -1,6 +1,7 @@
 import asyncio
 import concurrent.futures
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 
 import dateutil.parser
@@ -165,6 +166,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
     project_counts = {}
     commit_slots = {"Morning": 0, "Afternoon": 0, "Other": 0}
     seen_shas = set()
+    shas_lock = threading.Lock()
 
     username = str(user.get("username", "")).lower()
     display_name = str(user.get("name", "")).lower()
@@ -184,7 +186,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
                 f"/projects/{pid}/repository/commits",
                 params={**date_params, "all": "true"},
                 per_page=100,
-                max_pages=5,
+                max_pages=50,
             )
             count = 0
             for item in items:
@@ -203,8 +205,15 @@ def get_user_commits(client, user, projects, since=None, until=None):
                     match = True
 
                 if match:
-                    count += 1
-                    if sha not in seen_shas:
+                    with shas_lock:
+                        if sha not in seen_shas:
+                            seen_shas.add(sha)
+                            should_add = True
+                        else:
+                            should_add = False
+
+                    if should_add:
+                        count += 1
                         timestamp_str = item.get("created_at")
                         try:
                             dt = dateutil.parser.parse(timestamp_str)
@@ -238,7 +247,6 @@ def get_user_commits(client, user, projects, since=None, until=None):
                                 else "",
                             }
                         )
-                        seen_shas.add(sha)
             return pid, p_commits, count
         except Exception:
             return pid, [], 0

@@ -62,7 +62,7 @@ def _fetch_mrs_by_date(gl_client, user_id: int, start_date: date, end_date: date
         ({"author_id": user_id, **date_params}, "author"),
         ({"assignee_id": user_id, **date_params}, "assignee"),
     ]:
-        mrs = gl_client._get("/merge_requests", params=params) or []
+        mrs = gl_client._get_paginated("/merge_requests", params=params, max_pages=10) or []
         logger.debug(f"[GitLab] Got {len(mrs)} {role} merged MRs (possibly including older updates)")
         for mr in mrs:
             mr_id = mr.get("id")
@@ -88,7 +88,7 @@ def _fetch_issues_by_date(gl_client, user_id: int, start_date: date, end_date: d
         "created_after": start_date.isoformat(),
         "created_before": (end_date + timedelta(days=1)).isoformat(),
     }
-    assigned = gl_client._get("/issues", params={"assignee_id": user_id, **date_params}) or []
+    assigned = gl_client._get_paginated("/issues", params={"assignee_id": user_id, **date_params}, max_pages=10) or []
     logger.debug(f"[GitLab] Got {len(assigned)} assigned issues")
     counts: dict[str, int] = defaultdict(int)
     for issue in assigned:
@@ -121,8 +121,10 @@ def _fetch_commits_by_date(
         return dict(counts)
 
     logger.debug(f"[GitLab] Fetching commits across {len(all_projs)} projects")
+    # Broaden range to ensure we capture commits occurring on the end_date across timezones
+    api_until = (end_date + timedelta(days=1)).isoformat()
     all_commits, _, _ = commits.get_user_commits(
-        gl_client, user_obj, all_projs, since=start_date.isoformat(), until=end_date.isoformat()
+        gl_client, user_obj, all_projs, since=start_date.isoformat(), until=api_until
     )
 
     for commit in all_commits or []:
@@ -143,7 +145,9 @@ def aggregate_intern_data(
     end_date: date,
 ) -> WeeklyActivity:
     """Aggregate all GitLab activity for one intern into WeeklyActivity model."""
-    logger.debug(f"[Aggregator] aggregate_intern_data for {intern_name} ({gitlab_username})")
+    logger.debug(
+        f"[Aggregator] aggregate_intern_data for {intern_name} ({gitlab_username}) from {start_date} to {end_date}"
+    )
     user_id = _get_user_id(gl_client, gitlab_username)
     if not user_id:
         logger.warning(f"[Aggregator] Could not find GitLab user_id for {gitlab_username}")

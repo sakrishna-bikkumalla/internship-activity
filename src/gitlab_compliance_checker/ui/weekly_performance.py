@@ -19,43 +19,47 @@ from gitlab_compliance_checker.services.weekly_performance.models import (
 
 logger = logging.getLogger(__name__)
 
-WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
 # Premium UI CSS for status cards
 STATUS_CARD_CSS = """
 <style>
     .status-card {
-        padding: 16px;
-        border-radius: 12px;
-        border-left: 6px solid;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        padding: 10px 4px;
+        border-radius: 10px;
+        border-left: 4px solid;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         transition: all 0.2s ease-in-out;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        margin-bottom: 12px;
+        align-items: center;
+        text-align: center;
+        margin-bottom: 8px;
         font-family: 'Inter', sans-serif;
+        overflow: hidden;
     }
     .status-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
     .status-label {
-        font-size: 0.75rem;
-        font-weight: 600;
+        font-size: 0.65rem;
+        font-weight: 700;
         text-transform: uppercase;
         margin-bottom: 4px;
-        letter-spacing: 0.05em;
-        opacity: 0.8;
+        letter-spacing: 0.03em;
+        opacity: 0.9;
+        white-space: nowrap;
     }
     .status-value {
-        font-size: 1.3rem;
+        font-size: 1.0rem;
         font-weight: 700;
         display: flex;
         align-items: center;
-        gap: 10px;
+        justify-content: center;
+        gap: 4px;
+        width: 100%;
     }
-    .status-icon { font-size: 1.2rem; }
+    .status-icon { font-size: 1.0rem; }
 
     .block-mrs { background-color: #E8F5E9; border-left-color: #4CAF50; color: #1B5E20; }
     .block-issues { background-color: #FCE4EC; border-left-color: #E91E63; color: #880E4F; }
@@ -107,10 +111,11 @@ def _init_state() -> None:
     if "wp_corpus_client" not in st.session_state:
         st.session_state["wp_corpus_client"] = None
 
-    if "wp_week_start" not in st.session_state:
-        today = date.today()
-        monday = today - timedelta(days=today.weekday())
-        st.session_state["wp_week_start"] = monday
+    if "wp_view_mode" not in st.session_state:
+        st.session_state["wp_view_mode"] = "7 Day Range"
+
+    if "wp_start_date" not in st.session_state:
+        st.session_state["wp_start_date"] = date.today()
 
     if "wp_activity_cache" not in st.session_state:
         st.session_state["wp_activity_cache"] = {}
@@ -120,8 +125,8 @@ def _get_interns() -> list[InternCSVRow]:
     return cast(list[InternCSVRow], st.session_state.get("wp_interns", []))
 
 
-def _get_week_start() -> date:
-    return cast(date, st.session_state.get("wp_week_start", date.today()))
+def _get_start_date() -> date:
+    return cast(date, st.session_state.get("wp_start_date", date.today()))
 
 
 def _render_corpus_login() -> None:
@@ -235,21 +240,34 @@ def _render_csv_upload() -> list[InternCSVRow]:
         return []
 
 
-def _render_week_selector() -> date:
-    col_prev, col_week, col_next = st.columns([1, 3, 1])
-    with col_prev:
-        if st.button("← Prev Week", key="wp_prev_week"):
-            st.session_state["wp_week_start"] -= timedelta(days=7)
-            st.rerun()
-    with col_week:
-        week_start = st.session_state["wp_week_start"]
-        week_end = week_start + timedelta(days=6)
-        st.markdown(f"**Week:** {week_start.strftime('%b %d')} – {week_end.strftime('%b %d, %Y')}")
-    with col_next:
-        if st.button("Next Week →", key="wp_next_week"):
-            st.session_state["wp_week_start"] += timedelta(days=7)
-            st.rerun()
-    return cast(date, st.session_state["wp_week_start"])
+def _render_date_selector() -> tuple[Any, str]:
+    col_mode, col_date = st.columns([1, 1])
+    with col_mode:
+        view_mode = st.radio(
+            "View Mode",
+            options=["7 Day Range", "Single Day", "Custom Range"],
+            key="wp_view_mode_radio",
+            horizontal=True,
+        )
+        st.session_state["wp_view_mode"] = view_mode
+
+    with col_date:
+        if view_mode == "Custom Range":
+            # Range mode returns a tuple (start, end) or (start,)
+            date_range = st.date_input(
+                "Select Date Range",
+                value=(st.session_state["wp_start_date"], st.session_state["wp_start_date"] + timedelta(days=6)),
+                key="wp_date_range_picker",
+            )
+            return date_range, view_mode
+        else:
+            start_date = st.date_input(
+                "Select Start Date" if view_mode == "7 Day Range" else "Select Date",
+                value=st.session_state["wp_start_date"],
+                key="wp_date_picker",
+            )
+            st.session_state["wp_start_date"] = start_date
+            return start_date, view_mode
 
 
 def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
@@ -266,14 +284,15 @@ def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
     return intern_map.get(selected)
 
 
-def _render_7day_grid(
-    week_start: date,
+def _render_performance_grid(
+    start_date: date,
     activity: WeeklyActivity | None,
+    num_days: int = 7,
     show_audio: bool = True,
 ) -> None:
-    cols = st.columns(7)
+    cols = st.columns(num_days)
     for i, day_col in enumerate(cols):
-        day_date = week_start + timedelta(days=i)
+        day_date = start_date + timedelta(days=i)
         day_key = day_date.isoformat()
         day_data: DailyData = cast(DailyData, activity.daily_data.get(day_key, {})) if activity else cast(DailyData, {})
 
@@ -281,7 +300,7 @@ def _render_7day_grid(
         corpus = day_data.get("corpus", {})
 
         with day_col:
-            st.markdown(f"**{WEEKDAY_NAMES[i]}**")
+            st.markdown(f"**{day_date.strftime('%A')}**")
             st.caption(day_date.strftime("%b %d"))
 
             _render_status_block("MRs", gitlab.get("mrs", 0), "block-mrs", "🔀")
@@ -300,9 +319,8 @@ def _render_7day_grid(
             if show_audio:
                 audio_entries = corpus.get("audio_urls", [])  # Now contains dicts
                 if audio_entries:
-                    st.markdown("**🎤 Standup Audio:**")
+                    st.markdown("**🎤 Audio:**")
                     for entry in audio_entries:
-                        # Defensive check for old cache format (string) vs new (dict)
                         if isinstance(entry, dict):
                             url = entry.get("url")
                             time_str = ""
@@ -315,37 +333,38 @@ def _render_7day_grid(
                         else:
                             url = entry
 
-                        st.audio(url)  # Let browser auto-detect MIME type (best for .m4a)
+                        st.audio(url)
                 else:
                     st.caption("No audio")
 
-    if activity:
+    if activity and num_days > 1:
         st.divider()
         total_time = activity.total_weekly_time
         total_hours = total_time // 3600
         total_minutes = (total_time % 3600) // 60
-        st.metric("Total Weekly Time", f"{total_hours}h {total_minutes}m")
+        st.metric("Total Time", f"{total_hours}h {total_minutes}m")
 
 
 def _fetch_all_activity(
     gl_client,
     selected_intern: InternCSVRow,
-    week_start: date,
+    start_date: date,
+    num_days: int,
     corpus_client: CorpusClient | None,
     pre_fetched_audio: dict[str, list[dict[str, Any]]] | None = None,
 ) -> WeeklyActivity:
     """Fetch both GitLab and Corpus data with individual caching."""
-    # Cache key: (week_start_iso, gitlab_username)
-    cache_key = (week_start.isoformat(), selected_intern["gitlab_username"])
+    # Cache key: (start_date_iso, num_days, gitlab_username)
+    cache_key = (start_date.isoformat(), num_days, selected_intern["gitlab_username"])
     if cache_key in st.session_state["wp_activity_cache"]:
         activity = cast(WeeklyActivity, st.session_state["wp_activity_cache"][cache_key])
 
-        # Enrichment Check: If we have a login but haven't fetched audio for this cached entry, don't return yet
         if corpus_client and not activity.audio_fetched:
             logger.debug(f"[UI] Cache enrichment required for {selected_intern['full_name']}")
-            # We proceed to the rest of the function, but skip GitLab part if GitLab data is there
         else:
-            logger.debug(f"[UI] Cache hit for {selected_intern['full_name']} on {week_start.isoformat()}")
+            logger.debug(
+                f"[UI] Cache hit for {selected_intern['full_name']} on {start_date.isoformat()} ({num_days} days)"
+            )
             return activity
 
     # If we are here, either it's a new entry OR we need enrichment
@@ -353,7 +372,7 @@ def _fetch_all_activity(
         activity = st.session_state["wp_activity_cache"][cache_key]
         is_enrichment = True
     else:
-        logger.debug(f"[UI] _fetch_all_activity for intern: {selected_intern['full_name']}")
+        logger.debug(f"[UI] _fetch_all_activity for intern: {selected_intern['full_name']} ({num_days} days)")
         activity = WeeklyActivity(
             intern_name=selected_intern["full_name"],
             gitlab_username=selected_intern["gitlab_username"],
@@ -361,10 +380,10 @@ def _fetch_all_activity(
         )
         is_enrichment = False
 
-    # Initialize 7 days of empty data (Only if not enrichment)
+    # Initialize N days of empty data (Only if not enrichment)
     if not is_enrichment:
-        for i in range(7):
-            day_key = (week_start + timedelta(days=i)).isoformat()
+        for i in range(num_days):
+            day_key = (start_date + timedelta(days=i)).isoformat()
             activity.daily_data[day_key] = {
                 "gitlab": {"mrs": 0, "issues": 0, "commits": 0, "time_spent_seconds": 0},
                 "corpus": {"audio_urls": []},
@@ -374,13 +393,13 @@ def _fetch_all_activity(
     if not is_enrichment:
         logger.debug(f"[UI] Fetching GitLab data for {selected_intern['gitlab_username']}")
         with st.spinner(f"Fetching GitLab data for {selected_intern['full_name']}..."):
-            end_date = week_start + timedelta(days=6)
+            end_date = start_date + timedelta(days=num_days - 1)
             gitlab_activity = aggregate_intern_data(
                 gl_client,
                 gitlab_username=selected_intern["gitlab_username"],
                 corpus_uid=selected_intern["corpus_uid"],
                 intern_name=selected_intern["full_name"],
-                start_date=week_start,
+                start_date=start_date,
                 end_date=end_date,
             )
             for date_str, daily in gitlab_activity.daily_data.items():
@@ -397,18 +416,16 @@ def _fetch_all_activity(
                     activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
         else:
             logger.debug(f"[UI] Fetching Corpus audio for: {selected_intern['full_name']}")
-            start_date_str: str = week_start.isoformat()
-            end_date_str: str = (week_start + timedelta(days=6)).isoformat()
+            start_date_str: str = start_date.isoformat()
+            end_date_str: str = (start_date + timedelta(days=num_days - 1)).isoformat()
 
             with st.spinner(f"Fetching audio for {selected_intern['full_name']}..."):
                 audio_batch = fetch_team_audio_urls(corpus_client, [selected_intern], start_date_str, end_date_str)
-                # audio_batch is { corpus_uid: { date_str: [urls] } }
                 user_audio = audio_batch.get(selected_intern["corpus_uid"], {})
                 for date_str, urls in user_audio.items():
                     if date_str in activity.daily_data:
                         activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
 
-        # Mark that we have attempted to fetch audio for this activity
         activity.audio_fetched = True
 
     st.session_state["wp_activity_cache"][cache_key] = activity
@@ -419,7 +436,7 @@ def render_weekly_performance_ui(gl_client) -> None:
     # Inject custom CSS
     st.markdown(STATUS_CARD_CSS, unsafe_allow_html=True)
 
-    st.subheader("📊 Weekly Performance Tracker")
+    st.subheader("📊 Performance Tracker")
 
     _init_state()
     _render_corpus_login()
@@ -431,21 +448,37 @@ def render_weekly_performance_ui(gl_client) -> None:
             st.rerun()
 
     interns = _render_csv_upload()
-    week_start = _render_week_selector()
+    res, view_mode = _render_date_selector()
+
+    if view_mode == "Custom Range":
+        if isinstance(res, (tuple, list)) and len(res) == 2:
+            start_date, end_date = res
+            num_days = (end_date - start_date).days + 1
+            if num_days > 45:
+                st.warning("⚠️ Ranges longer than 45 days may experience performance issues.")
+        else:
+            st.info("📅 Please select both start and end dates in the calendar.")
+            return
+    elif view_mode == "7 Day Range":
+        start_date = res
+        num_days = 7
+    else:  # Single Day
+        start_date = res
+        num_days = 1
 
     if not interns:
         st.info("Upload a CSV file to view intern performance data.")
         st.divider()
         st.markdown("**Preview Grid (no data):**")
-        _render_7day_grid(week_start, None, show_audio=True)
+        _render_performance_grid(start_date, None, num_days=num_days, show_audio=True)
         return
 
     selected_intern = _render_intern_selector(interns)
 
     if selected_intern == "ALL":
-        # Check if we should actually run the fetch or just display cached data
         is_all_cached = all(
-            (week_start.isoformat(), intern["gitlab_username"]) in st.session_state.get("wp_activity_cache", {})
+            (start_date.isoformat(), num_days, intern["gitlab_username"])
+            in st.session_state.get("wp_activity_cache", {})
             for intern in interns
         )
 
@@ -460,43 +493,53 @@ def render_weekly_performance_ui(gl_client) -> None:
 
         corpus_client = st.session_state.get("wp_corpus_client")
 
-        # Optimization: Pre-fetch all audio records in one batch for the whole team
         team_audio_data = {}
         if corpus_client:
             with st.spinner("Pre-fetching team audio records..."):
-                start_date_str = week_start.isoformat()
-                end_date_str = (week_start + timedelta(days=6)).isoformat()
+                start_date_str = start_date.isoformat()
+                end_date_str = (start_date + timedelta(days=num_days - 1)).isoformat()
                 team_audio_data = fetch_team_audio_urls(corpus_client, interns, start_date_str, end_date_str)
 
         for intern in interns:
             st.markdown(f"### {intern['full_name']}")
             st.caption(f"GitLab: @{intern['gitlab_username']} | Corpus UID: {intern['corpus_uid']}")
 
-            # Rate limit mitigation: sleep briefly between interns ONLY IF we are not fetching from cache
-            if (week_start.isoformat(), intern["gitlab_username"]) not in st.session_state.get("wp_activity_cache", {}):
+            if (start_date.isoformat(), num_days, intern["gitlab_username"]) not in st.session_state.get(
+                "wp_activity_cache", {}
+            ):
                 time.sleep(1)
 
-            # Pass pre-fetched audio for this specific intern
             intern_audio = team_audio_data.get(intern["corpus_uid"], {})
             try:
                 activity = _fetch_all_activity(
-                    gl_client, intern, week_start, corpus_client, pre_fetched_audio=intern_audio
+                    gl_client,
+                    intern,
+                    start_date,
+                    num_days,
+                    corpus_client,
+                    pre_fetched_audio=intern_audio,
                 )
-                _render_7day_grid(week_start, activity, show_audio=True)
+                _render_performance_grid(start_date, activity, num_days=num_days, show_audio=True)
             except Exception as e:
-                if "Rate Limit" in str(e):
+                error_str = str(e)
+                if "Rate Limit" in error_str:
                     st.error(
-                        f"🛑 **GitLab Rate Limit Reached**\n\n{e}\n\nPlease wait a few minutes before trying again."
+                        f"🛑 **GitLab Rate Limit Reached** for {intern['full_name']}\n\n{error_str}\n\nPlease wait a few minutes."
                     )
-                    break  # Stop fetching the rest of the team
+                    # We might want to break here if it's a global rate limit
+                    if "429" in error_str:
+                        break
+                elif "Timeout context manager" in error_str:
+                    st.error(
+                        f"⚠️ **Async Context Error** for {intern['full_name']}\n\nThe background event loop encountered a synchronization issue. Please try clicking 'Refresh Data' in the sidebar."
+                    )
                 else:
-                    st.error(f"Error fetching data for {intern['full_name']}: {e}")
+                    st.error(f"❌ **Error fetching data** for {intern['full_name']}\n\n{error_str}")
 
             st.divider()
 
     elif selected_intern:
-        # Check cache for individual
-        cache_key = (week_start.isoformat(), selected_intern["gitlab_username"])
+        cache_key = (start_date.isoformat(), num_days, selected_intern["gitlab_username"])
         is_cached = cache_key in st.session_state.get("wp_activity_cache", {})
 
         fetch_button_clicked = st.button(
@@ -513,8 +556,8 @@ def render_weekly_performance_ui(gl_client) -> None:
 
         corpus_client = st.session_state.get("wp_corpus_client")
         try:
-            activity = _fetch_all_activity(gl_client, selected_intern, week_start, corpus_client)
-            _render_7day_grid(week_start, activity, show_audio=True)
+            activity = _fetch_all_activity(gl_client, selected_intern, start_date, num_days, corpus_client)
+            _render_performance_grid(start_date, activity, num_days=num_days, show_audio=True)
         except Exception as e:
             if "Rate Limit" in str(e):
                 st.error(f"🛑 **GitLab Rate Limit Reached**\n\n{e}")
