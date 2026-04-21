@@ -37,7 +37,7 @@ def get_gitlab_client(url: str, token: str):
 
 def main():
     # Load environment variables
-    load_dotenv()
+    load_dotenv(override=True)
 
     st.title("GitLab Compliance Checker")
 
