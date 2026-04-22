@@ -104,19 +104,14 @@ class GitLabClient:
         self._thread = threading.Thread(target=self._run_event_loop, name=f"GitLabClient-{id(self)}", daemon=True)
         self._thread.start()
 
-        # Queue for requests from the main thread
-        self._request_queue = None
         self._ready_event = threading.Event()
         self._init_worker()
 
     def _init_worker(self):
-        """Start the persistent worker task on the background loop."""
+        """Initialize the background client and semaphore."""
 
-        async def _worker_loop():
+        async def _setup():
             nonlocal self
-            self._request_queue = asyncio.Queue()
-
-            # Use same initialization logic as before, but inside the persistent task
             try:
                 self._gl = glabflow.Client(
                     base_url=self.api_base,
@@ -127,27 +122,16 @@ class GitLabClient:
                 await self._gl.__aenter__()
                 self._sem = asyncio.Semaphore(25)
                 self._ready_event.set()
-
-                while True:
-                    coro, future = await self._request_queue.get()
-                    try:
-                        result = await coro
-                        future.set_result(result)
-                    except Exception as e:
-                        if not future.done():
-                            future.set_exception(e)
-                    finally:
-                        self._request_queue.task_done()
             except Exception as e:
                 self.error_msg = str(e)
-                logger.error(f"Worker loop failure: {e}")
+                logger.error(f"Client initialization failure: {e}")
                 self._ready_event.set()
 
-        asyncio.run_coroutine_threadsafe(_worker_loop(), self._loop)
+        asyncio.run_coroutine_threadsafe(_setup(), self._loop)
 
         # Wait for the background thread to be ready
         if not self._ready_event.wait(timeout=10):
-            logger.error("GitLabClient worker loop failed to start in 10s")
+            logger.error("GitLabClient failed to initialize in 10s")
 
     def _run_event_loop(self):
         """Dedicated thread target to run the internal event loop."""
@@ -164,36 +148,31 @@ class GitLabClient:
         self._loop.run_forever()
 
     def _init_sem(self):
+        """Re-initialize semaphore if needed (rare)."""
+
         async def create_sem():
             return asyncio.Semaphore(25)
 
         fut = asyncio.run_coroutine_threadsafe(create_sem(), self._loop)
         self._sem = fut.result()
 
-    def _run_sync(self, coro):
-        """Bridge sync call to the background worker loop via the request queue."""
-        if not self._request_queue:
-            # Try to re-init if not ready
-            if not self._ready_event.is_set():
-                self._ready_event.wait(timeout=5)
-            if not self._request_queue:
-                raise RuntimeError("GitLabClient worker queue not initialized.")
+    def _run_sync(self, coro, timeout=60):
+        """Bridge sync call to the background event loop using run_coroutine_threadsafe."""
+        if not self._ready_event.is_set():
+            self._ready_event.wait(timeout=5)
 
-        future = concurrent.futures.Future()
+        # Submit the coroutine to the background loop
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
 
-        def _submit():
-            asyncio.run_coroutine_threadsafe(
-                asyncio.wait_for(asyncio.shield(self._submit_to_queue(coro, future)), timeout=60), self._loop
-            )
-
-        self._loop.call_soon_threadsafe(self._submit_to_queue_wrapper, coro, future)
-        return future.result()
-
-    def _submit_to_queue_wrapper(self, coro, future):
-        asyncio.create_task(self._submit_to_queue(coro, future))
-
-    async def _submit_to_queue(self, coro, future):
-        await self._request_queue.put((coro, future))
+        # Wait for the result in the main thread (blocking)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise TimeoutError(f"GitLab operation timed out after {timeout} seconds")
+        except Exception as e:
+            # Re-raise the exception caught in the background thread
+            raise e
 
     @property
     def client(self):
