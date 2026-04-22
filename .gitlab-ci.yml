@@ -21,8 +21,11 @@ before_script:
   - python -V
   - pip install --no-cache-dir uv
   - |
-    for i in {1..3}; do
-      uv sync --all-extras --frozen --no-progress && break || (echo "uv sync failed, retrying in 5s..." && sleep 5)
+    for i in 1 2 3; do
+      uv sync --all-extras --frozen --no-progress && break || {
+        echo "uv sync failed, retrying in 5s..."
+        sleep 5
+      }
     done
   - export VIRTUAL_ENV="$CI_PROJECT_DIR/.venv"
   - export PATH="$VIRTUAL_ENV/bin:$PATH"
@@ -30,11 +33,7 @@ before_script:
 setup_job:
   stage: setup
   script:
-    - pip install --no-cache-dir uv
-    - |
-      for i in {1..3}; do
-        uv sync --all-extras --frozen --no-progress && break || (echo "uv sync failed, retrying in 5s..." && sleep 5)
-      done
+    - uv tree --frozen > /dev/null
 
 lint_job:
   stage: lint

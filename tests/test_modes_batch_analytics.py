@@ -220,7 +220,7 @@ class TestRenderBatchAnalyticsUI:
         assert "user3" in usernames_processed
 
         rendered_df = mock_streamlit.dataframe.call_args.args[0]
-        college_by_user = dict(zip(rendered_df["Username"], rendered_df["College"]))
+        college_by_user = dict(zip(rendered_df["Username"], rendered_df["College"], strict=False))
         assert college_by_user["user2"] == "ABC College"
         assert college_by_user["user3"] == "XYZ University"
 

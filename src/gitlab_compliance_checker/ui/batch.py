@@ -16,12 +16,22 @@ def cached_process_batch_users(_client, usernames_tuple, project_ids=None):
 def _parse_uploaded_user_csv(uploaded_file) -> tuple[list[str], dict[str, str]]:
     """Extract usernames and optional college values from an uploaded CSV."""
     uploaded_file.seek(0)
-    csv_df = pd.read_csv(uploaded_file)
+    raw_csv = uploaded_file.read()
+    if isinstance(raw_csv, bytes):
+        csv_text = raw_csv.decode("utf-8-sig")
+    else:
+        csv_text = str(raw_csv)
+
+    csv_df = pd.read_csv(io.StringIO(csv_text))
     csv_df.columns = [str(col).strip() for col in csv_df.columns]
 
     lowered = {str(col).strip().lower(): col for col in csv_df.columns}
     username_col = next(
-        (lowered[key] for key in ("username", "gitlab username", "gitlab_username", "user", "user name", "user_name") if key in lowered),
+        (
+            lowered[key]
+            for key in ("username", "gitlab username", "gitlab_username", "user", "user name", "user_name")
+            if key in lowered
+        ),
         None,
     )
     college_col = next(
@@ -47,8 +57,7 @@ def _parse_uploaded_user_csv(uploaded_file) -> tuple[list[str], dict[str, str]]:
     )
 
     if username_col is None:
-        uploaded_file.seek(0)
-        csv_df = pd.read_csv(uploaded_file, header=None)
+        csv_df = pd.read_csv(io.StringIO(csv_text), header=None)
         username_col = csv_df.columns[0]
         college_col = csv_df.columns[1] if len(csv_df.columns) > 1 else None
 
@@ -83,7 +92,7 @@ def render_batch_analytics_ui(client):
                 "📂 Upload Usernames & Colleges (.csv)",
                 type=["csv"],
                 help="CSV with a 'username' column and an optional 'college' (or 'institution'/'university') column. "
-                     "If no header, column 1 = username, column 2 = college.",
+                "If no header, column 1 = username, column 2 = college.",
             )
 
         with col2:
@@ -239,5 +248,3 @@ def render_batch_analytics_ui(client):
             file_name=f"Unified_Batch_Report_{today}.csv",
             mime="text/csv",
         )
-
-

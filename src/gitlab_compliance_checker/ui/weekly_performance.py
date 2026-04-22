@@ -723,9 +723,7 @@ def render_weekly_performance_ui(gl_client) -> None:
         cache_key = (start_date.isoformat(), num_days, selected_intern["gitlab_username"])
         is_cached = cache_key in st.session_state.get("wp_activity_cache", {})
 
-        fetch_button_clicked = st.button(
-            f"🚀 Fetch Performance for {selected_intern['full_name']}", width="stretch"
-        )
+        fetch_button_clicked = st.button(f"🚀 Fetch Performance for {selected_intern['full_name']}", width="stretch")
 
         if not fetch_button_clicked and not is_cached:
             st.warning(f"👈 Click **Fetch Performance** to load the results for {selected_intern['full_name']}.")

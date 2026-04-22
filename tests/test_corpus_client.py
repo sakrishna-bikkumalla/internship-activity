@@ -1,5 +1,5 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
 
 
