@@ -9,6 +9,7 @@ variables:
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
   UV_HTTP_TIMEOUT: "600"
   UV_HTTP_RETRIES: "10"
+  PIP_DEFAULT_TIMEOUT: "120"
 
 default:
   image: python:${PYTHON_VERSION}-slim
@@ -18,22 +19,37 @@ cache:
     - .uv-cache/
 
 before_script:
-  - python -V
-  - pip install --no-cache-dir uv
-  - |
-    for i in 1 2 3; do
-      uv sync --all-extras --frozen --no-progress && break || {
-        echo "uv sync failed, retrying in 5s..."
-        sleep 5
-      }
-    done
   - export VIRTUAL_ENV="$CI_PROJECT_DIR/.venv"
   - export PATH="$VIRTUAL_ENV/bin:$PATH"
 
 setup_job:
   stage: setup
   script:
+    - python -V
+    - python -m pip install --no-cache-dir --retries 5 "uv==0.11.6"
+    - |
+      synced=0
+      for i in 1 2 3; do
+        if uv sync --all-extras --frozen --no-progress; then
+          synced=1
+          break
+        fi
+        if [ "$i" -lt 3 ]; then
+          echo "uv sync failed, retrying in 5s..."
+          sleep 5
+        fi
+      done
+      if [ "$synced" -ne 1 ]; then
+        echo "uv sync failed after 3 attempts"
+        exit 1
+      fi
+    - export VIRTUAL_ENV="$CI_PROJECT_DIR/.venv"
+    - export PATH="$VIRTUAL_ENV/bin:$PATH"
     - uv tree --frozen > /dev/null
+  artifacts:
+    paths:
+      - .venv/
+      - .uv-cache/
 
 lint_job:
   stage: lint
