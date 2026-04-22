@@ -90,7 +90,7 @@ def render_batch_analytics_ui(client):
             text_input = st.text_area(
                 "⌨️ Enter Usernames & Colleges (one per line)",
                 height=200,
-                placeholder="user1, college name\nuser2, college name\nuser3, college name",
+                placeholder="user1, college name\nuser2, college name\nuser3, college name\n.........",
                 help="Format: 'username' or 'username, college name' — one entry per line.",
             )
 
