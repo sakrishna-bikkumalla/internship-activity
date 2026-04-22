@@ -240,17 +240,4 @@ def render_batch_analytics_ui(client):
             mime="text/csv",
         )
 
-        # Excel download
-        try:
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                df.to_excel(writer, index=False, sheet_name="Unified_Report")
 
-            st.download_button(
-                label="📥 Download Unified Report (Excel)",
-                data=output.getvalue(),
-                file_name=f"Unified_Batch_Report_{today}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        except Exception as e:
-            st.error(f"Error creating Excel: {e}")
