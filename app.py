@@ -58,12 +58,9 @@ def check_login():
                 user_resp.raise_for_status()
                 user_data = user_resp.json()
 
-                st.session_state["user_info"] = {
-                    "is_logged_in": True,
-                    "access_token": access_token,
-                    "name": user_data.get("name"),
-                    "preferred_username": user_data.get("username"),
-                }
+                user_data["is_logged_in"] = True
+                user_data["access_token"] = access_token
+                st.session_state["user_info"] = user_data
 
                 st.success(f"✅ Logged in as {user_data.get('username')}")
                 st.query_params.clear()
@@ -102,15 +99,18 @@ if __name__ == "__main__":
 
     # RBAC Check
     user_info = st.session_state.get("user_info", {})
-    username = user_info.get("preferred_username")
-    allowed_users = st.secrets.get("rbac", {}).get("allowed_users", [])
+    username = user_info.get("username") or user_info.get("preferred_username")
+    rbac_users = st.secrets.get("rbac", {}).get("users", {})
 
-    if allowed_users and username not in allowed_users:
+    if rbac_users and username not in rbac_users:
         st.error(f"⛔ Access Denied: User '{username}' is not authorized.")
         if st.button("Logout"):
             st.session_state.clear()
             st.rerun()
         st.stop()
+
+    if username in rbac_users:
+        st.session_state["user_role"] = rbac_users[username]
 
     logging.getLogger("gitlab_compliance_checker").setLevel(logging.DEBUG)
     main()

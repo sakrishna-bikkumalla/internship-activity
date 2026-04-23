@@ -125,7 +125,7 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
                     dt = dt.replace(tzinfo=timezone.utc)
                 dt_ist = dt.astimezone(ist)
                 date_str = dt_ist.strftime("%Y-%m-%d")
-                time_str = dt_ist.strftime("%I:%M %p")
+                time_str = dt_ist.strftime("%H:%M:%S")
                 t_obj = dt_ist.time()
 
                 slot = "Other"
