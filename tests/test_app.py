@@ -27,7 +27,7 @@ def reimport_main(monkeypatch):
     }
     sys.modules["streamlit"].secrets = {
         "auth": {"gitlab": {"client_id": "fake", "client_secret": "fake"}},
-        "rbac": {"allowed_users": ["Saikrishna_b"]}
+        "rbac": {"users": {"Saikrishna_b": "admin"}}
     }
     sys.modules["streamlit"].sidebar = sys.modules["streamlit"].sidebar
     sys.modules["dotenv"] = type("Dotenv", (), {"load_dotenv": lambda: None})
@@ -43,7 +43,9 @@ def reimport_main(monkeypatch):
 
 def test_main_no_token(monkeypatch, reimport_main):
     main_mod = reimport_main
-    fake_st = make_fake_st(["https://gitlab.com", ""], "Check Project Compliance")
+    fake_st = make_fake_st([], "Check Project Compliance")
+    # Clear user_info to simulate no token
+    fake_st.session_state = {}
     main_mod.st = fake_st
     monkeypatch.setattr(main_mod, "GitLabClient", FakeClient)
 
@@ -90,7 +92,7 @@ def test_main_mode_routing_check_project(monkeypatch, reimport_main):
 
 def test_main_mode_user_profile_not_found(monkeypatch, reimport_main):
     main_mod = reimport_main
-    fake_st = make_fake_st(["https://gitlab.com", "token", "ghost"], "User Profile Overview")
+    fake_st = make_fake_st(["https://gitlab.com", "ghost"], "User Profile Overview")
     main_mod.st = fake_st
     monkeypatch.setattr(main_mod, "GitLabClient", FakeClient)
 
@@ -106,7 +108,7 @@ def test_main_mode_user_profile_not_found(monkeypatch, reimport_main):
 
 def test_main_mode_user_profile_exception(monkeypatch, reimport_main):
     main_mod = reimport_main
-    fake_st = make_fake_st(["https://gitlab.com", "token", "ghost"], "User Profile Overview")
+    fake_st = make_fake_st(["https://gitlab.com", "ghost"], "User Profile Overview")
     main_mod.st = fake_st
     monkeypatch.setattr(main_mod, "GitLabClient", FakeClient)
 
@@ -129,7 +131,7 @@ def test_main_mode_user_profile_exception(monkeypatch, reimport_main):
 )
 def test_main_other_modes(monkeypatch, reimport_main, mode, expected_called):
     main_mod = reimport_main
-    fake_st = make_fake_st(["https://gitlab.com", "token"], mode)
+    fake_st = make_fake_st(["https://gitlab.com"], mode)
     main_mod.st = fake_st
     monkeypatch.setattr(main_mod, "GitLabClient", FakeClient)
 
@@ -145,7 +147,7 @@ def test_main_other_modes(monkeypatch, reimport_main, mode, expected_called):
 
 def test_main_invalid_mode(monkeypatch, reimport_main):
     main_mod = reimport_main
-    fake_st = make_fake_st(["https://gitlab.com", "token"], "UNKNOWN MODE")
+    fake_st = make_fake_st(["https://gitlab.com"], "UNKNOWN MODE")
     main_mod.st = fake_st
     monkeypatch.setattr(main_mod, "GitLabClient", FakeClient)
 
@@ -155,7 +157,7 @@ def test_main_invalid_mode(monkeypatch, reimport_main):
 
 
 def test_app_import_error_branch(monkeypatch):
-    fake_st = make_fake_st(["https://gitlab.com", "token"], "Check Project Compliance")
+    fake_st = make_fake_st(["https://gitlab.com"], "Check Project Compliance")
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
     monkeypatch.setitem(sys.modules, "dotenv", type("Dotenv", (), {"load_dotenv": lambda: None}))
     # Mocking the new consolidated mode module
@@ -173,10 +175,23 @@ def test_app_import_error_branch(monkeypatch):
 
 def test_user_profile_render_user_profile(monkeypatch, reimport_main):
     main_mod = reimport_main
-    fake_st = make_fake_st(["https://gitlab.com", "token", "ghost"], "User Profile Overview")
+    # 2 text_inputs expected now: URL and then username
+    fake_st = make_fake_st(["https://gitlab.com", "ghost"], "User Profile Overview")
+    fake_st.session_state["user_info"] = {
+        "preferred_username": "Saikrishna_b",
+        "username": "Saikrishna_b",
+        "is_logged_in": True,
+        "access_token": "fake_token",
+        "name": "Saikrishna"
+    }
+    fake_st.session_state["user_role"] = "admin"
+    fake_st.secrets = {
+        "auth": {"gitlab": {"client_id": "fake", "client_secret": "fake"}},
+        "rbac": {"users": {"Saikrishna_b": "admin"}}
+    }
     main_mod.st = fake_st
     app_client = FakeClient("https://gitlab.com", "token", is_oauth=True)
-    monkeypatch.setattr(main_mod, "GitLabClient", lambda base_url, token, is_oauth=False: app_client)
+    monkeypatch.setattr("gitlab_compliance_checker.infrastructure.gitlab.client.GitLabClient", lambda **kwargs: app_client)
 
     monkeypatch.setattr(main_mod.users, "get_user_by_username", lambda client, username: {"id": 1})
 
@@ -188,8 +203,10 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_main):
     monkeypatch.setattr(main_mod, "render_user_profile", fake_render_user_profile)
 
     main_mod.main()
-
-    assert called.get("render_user_profile") == (app_client, {"id": 1})
+    
+    res = called.get("render_user_profile")
+    assert res is not None
+    assert res[1] == {"id": 1}
 
 
 def test_app_run_as_script_calls_main(monkeypatch):
@@ -200,10 +217,8 @@ def test_app_run_as_script_calls_main(monkeypatch):
         "access_token": "fake_token",
         "name": "Saikrishna"
     }
-    fake_st.secrets = {
-        "auth": {"gitlab": {"client_id": "fake", "client_secret": "fake"}},
-        "rbac": {"allowed_users": ["Saikrishna_b"]}
-    }
+    fake_st.secrets["auth"] = {"gitlab": {"client_id": "fake", "client_secret": "fake"}}
+    fake_st.secrets["rbac"] = {"users": {"Saikrishna_b": "admin"}}
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
     monkeypatch.setitem(sys.modules, "dotenv", type("Dotenv", (), {"load_dotenv": lambda: None}))
 

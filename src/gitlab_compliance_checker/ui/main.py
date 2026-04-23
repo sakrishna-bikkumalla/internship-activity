@@ -58,6 +58,8 @@ def main():
     default_url = os.getenv("GITLAB_URL", "https://code.swecha.org")
     gitlab_url = st.sidebar.text_input("GitLab URL", value=default_url).strip()
 
+    current_username = user_info.get("username") or user_info.get("preferred_username")
+
     # 2. GitLab Token (Priority: st.session_state -> env -> manual input)
     if user_info.get("is_logged_in") and user_info.get("access_token"):
         gitlab_token = user_info.get("access_token")
@@ -66,15 +68,27 @@ def main():
         default_token = os.getenv("GITLAB_TOKEN", "")
         gitlab_token = st.sidebar.text_input("GitLab Token", value=default_token, type="password").strip()
 
+    # --- Role-Based Filtering ---
+    role = st.session_state.get("user_role", "intern")
+    full_options = [
+        "Check Project Compliance",
+        "User Profile Overview",
+        "Team Leaderboard",
+        "Batch Analytics",
+        "Weekly Performance Tracker",
+    ]
+
+    if role == "intern":
+        # Interns see only specific modes
+        allowed_options = ["User Profile Overview", "Weekly Performance Tracker"]
+        # Filter while maintaining order
+        options = [o for o in full_options if o in allowed_options]
+    else:
+        options = full_options
+
     mode = st.sidebar.radio(
         "Select Mode",
-        [
-            "Check Project Compliance",
-            "User Profile Overview",
-            "Team Leaderboard",
-            "Batch Analytics",
-            "Weekly Performance Tracker",
-        ],
+        options,
     )
 
     if not gitlab_token:
@@ -97,24 +111,32 @@ def main():
 
     elif mode == "User Profile Overview":
         st.subheader("👤 User Profile Overview")
-        user_input = st.text_input("Enter Username", placeholder="username")
+        if role == "intern":
+            # Interns use their own pre-fetched session data
+            current_username = user_info.get("username") or user_info.get("preferred_username")
+            user_data = user_info
+            input_username = current_username
+            st.info(f"Viewing profile for: **{user_info.get('name')}**")
+            error_msg = None
+        else:
+            input_username = st.text_input("Enter GitLab Username", placeholder="username (e.g. jdoe)")
+            user_data = None
+            error_msg = None
+            if input_username:
+                input_username = input_username.strip()
+                with st.spinner(f"Finding user '{input_username}'..."):
+                    try:
+                        user_data = users.get_user_by_username(client, input_username)
+                    except Exception as e:
+                        user_data = None
+                        error_msg = str(e)
 
-        if user_input:
-            user_input = user_input.strip()
-            with st.spinner(f"Finding user '{user_input}'..."):
-                error_msg = None
-                try:
-                    user_info = users.get_user_by_username(client, user_input)
-                except Exception as e:
-                    user_info = None
-                    error_msg = str(e)
-
-            if error_msg:
-                st.error(f"Error: {error_msg}")
-            elif user_info:
-                render_user_profile(client, user_info)
-            else:
-                st.error(f"User '{user_input}' not found.")
+        if error_msg:
+            st.error(f"Error: {error_msg}")
+        elif user_data:
+            render_user_profile(client, user_data)
+        elif input_username:
+            st.error(f"User '{input_username}' not found.")
 
     elif mode == "Batch Analytics":
         render_batch_analytics_ui(client)

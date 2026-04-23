@@ -207,7 +207,8 @@ class GitLabClient:
 
         try:
             async with sem:
-                raw = await gl.get(path)
+                # Wrap in a task to satisfy asyncio.timeout (Python 3.11+) if needed by the underlying client
+                raw = await asyncio.create_task(gl.get(path))
             return _decode_json(raw)
         except glabflow.NotFoundError:
             return []
@@ -226,7 +227,7 @@ class GitLabClient:
             try:
                 # Use narrowed local 'sem'
                 async with sem:
-                    raw = await gl.get(path)
+                    raw = await asyncio.create_task(gl.get(path))
                 return _decode_json(raw)
             except Exception as e:
                 logger.error(f"Retry GET {path} failed: {e}")
@@ -256,11 +257,11 @@ class GitLabClient:
                         query = urlencode({k: v for k, v in params.items() if v is not None})
                         connector = "&" if "?" in path else "?"
                         path = f"{path}{connector}{query}"
-                    raw = await gl.get(path)
+                    raw = await asyncio.create_task(gl.get(path))
                 elif method.upper() == "POST":
-                    raw = await gl.post(path, json=params or {})
+                    raw = await asyncio.create_task(gl.post(path, json=params or {}))
                 else:
-                    raw = await gl.get(path)
+                    raw = await asyncio.create_task(gl.get(path))
             return _decode_json(raw)
         except glabflow.NotFoundError:
             return []

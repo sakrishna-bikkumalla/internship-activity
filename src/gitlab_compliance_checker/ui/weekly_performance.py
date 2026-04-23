@@ -131,6 +131,15 @@ STATUS_CARD_CSS = """
         pointer-events: none;
     }
 
+    /* Compact mode for extra hours */
+    .slot-box.compact {
+        height: 28px;
+        border-radius: 6px;
+    }
+    .slot-box.compact .slot-label {
+        font-size: 0.75rem;
+    }
+
     .slot-active {
         background-color: #22c55e;
         box-shadow: inset 0 0 20px rgba(255,255,255,0.2);
@@ -215,17 +224,22 @@ def _render_summary_card(mrs: int, issues: int, commits: int, time_str: str) -> 
     st.markdown(html, unsafe_allow_html=True)
 
 
-def _render_activity_slots(active_hours: list[int]) -> None:
-    """Render 8 vertical activity slots (9 AM - 5 PM) with streak-based coloring."""
-    slots = [9, 10, 11, 12, 13, 14, 15, 16]
+def _render_activity_slots(
+    active_hours: list[int],
+    slots: list[int],
+    title: str = "Activity Timeline",
+    use_strict_mode: bool = True,
+    compact: bool = False,
+) -> None:
+    """Render vertical activity slots with optional streak-based coloring."""
     is_active = [hour in active_hours for hour in slots]
+    num_slots = len(slots)
 
-    # Global State Check
-    is_total_idle = not any(is_active)
+    # Streak and Global Idle Detection (Only in Strict Mode)
+    yellow_slots = [False] * num_slots
+    is_total_idle = use_strict_mode and not any(is_active)
 
-    # Streak Detection (4-hour idle)
-    yellow_slots = [False] * 8
-    if not is_total_idle:
+    if use_strict_mode and not is_total_idle:
         consecutive_idle = 0
         for i, active in enumerate(is_active):
             if not active:
@@ -235,7 +249,7 @@ def _render_activity_slots(active_hours: list[int]) -> None:
                     for j in range(i - consecutive_idle, i):
                         yellow_slots[j] = True
                 consecutive_idle = 0
-        # Check end of day
+        # Check end of period
         if consecutive_idle >= 4:
             for j in range(len(is_active) - consecutive_idle, len(is_active)):
                 yellow_slots[j] = True
@@ -252,15 +266,16 @@ def _render_activity_slots(active_hours: list[int]) -> None:
         elif yellow_slots[i]:
             status_class = "slot-yellow"
 
+        compact_class = "compact" if compact else ""
         svg_html += f"""
-<div class="slot-box {status_class}" title="{slot_label}">
+<div class="slot-box {status_class} {compact_class}" title="{slot_label}">
     <div class="slot-label">{slot_label}</div>
 </div>
 """
 
     html = f"""
 <div class="activity-slots-container">
-    <div class="slots-title">Activity Timeline</div>
+    <div class="slots-title">{title}</div>
     {svg_html}
 </div>
 """
@@ -284,7 +299,8 @@ def _init_state() -> None:
         st.session_state["wp_view_mode"] = "7 Day Range"
 
     if "wp_start_date" not in st.session_state:
-        st.session_state["wp_start_date"] = date.today()
+        # Default to previous 6 days + today for the 7-day range
+        st.session_state["wp_start_date"] = date.today() - timedelta(days=6)
 
     if "wp_activity_cache" not in st.session_state:
         st.session_state["wp_activity_cache"] = {}
@@ -418,7 +434,17 @@ def _render_date_selector() -> tuple[Any, str]:
             key="wp_view_mode_radio",
             horizontal=True,
         )
-        st.session_state["wp_view_mode"] = view_mode
+        # Update session state and reset date defaults if mode changed
+        if view_mode != st.session_state.get("wp_view_mode"):
+            if view_mode == "7 Day Range":
+                new_date = date.today() - timedelta(days=6)
+                st.session_state["wp_start_date"] = new_date
+                st.session_state["wp_date_picker"] = new_date
+            elif view_mode == "Single Day":
+                new_date = date.today()
+                st.session_state["wp_start_date"] = new_date
+                st.session_state["wp_date_picker"] = new_date
+            st.session_state["wp_view_mode"] = view_mode
 
     with col_date:
         if view_mode == "Custom Range":
@@ -485,9 +511,26 @@ def _render_performance_grid(
 
             _render_summary_card(mrs, issues, commits, time_str)
 
-            # Activity Slots
+            # Activity Slots: Office Hours (9 AM - 5 PM)
             active_hours = gitlab.get("active_hours", [])
-            _render_activity_slots(active_hours)
+            _render_activity_slots(
+                active_hours,
+                slots=[9, 10, 11, 12, 13, 14, 15, 16],
+                title="Office Hours (9 am-5 pm)",
+                use_strict_mode=True,
+                compact=False,
+            )
+
+            # Activity Slots: Other Hours
+            other_slots = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23]
+            if any(h in active_hours for h in other_slots):
+                _render_activity_slots(
+                    active_hours,
+                    slots=other_slots,
+                    title="Extra Hours Activity",
+                    use_strict_mode=False,
+                    compact=True,
+                )
 
             if show_audio:
                 audio_entries = corpus.get("audio_urls", [])  # Now contains dicts
@@ -622,13 +665,24 @@ def render_weekly_performance_ui(gl_client) -> None:
     _init_state()
     _render_corpus_login()
 
-    with st.sidebar:
-        st.divider()
-        if st.button("🔄 Refresh Data", help="Clear cache and re-fetch from GitLab"):
-            st.session_state["wp_activity_cache"] = {}
-            st.rerun()
+    role = st.session_state.get("user_role", "intern")
+    user_info = st.session_state.get("user_info", {})
+    current_username = user_info.get("username") or user_info.get("preferred_username")
 
-    interns = _render_csv_upload()
+    if role == "intern":
+        # Interns don't upload CSVs or select others
+        interns: list[InternCSVRow] = [
+            {
+                "team_name": "Standard",
+                "full_name": user_info.get("name", current_username),
+                "gitlab_username": current_username,
+                "corpus_uid": current_username,
+            }
+        ]
+        st.info(f"Viewing performance for: **{user_info.get('name')}**")
+    else:
+        interns = _render_csv_upload()
+
     res, view_mode = _render_date_selector()
 
     if view_mode == "Custom Range":
@@ -654,7 +708,10 @@ def render_weekly_performance_ui(gl_client) -> None:
         _render_performance_grid(start_date, None, num_days=num_days, show_audio=True)
         return
 
-    selected_intern = _render_intern_selector(interns)
+    if role == "intern":
+        selected_intern: InternCSVRow | str = interns[0]
+    else:
+        selected_intern = _render_intern_selector(interns)
 
     if selected_intern == "ALL":
         is_all_cached = all(
@@ -719,7 +776,7 @@ def render_weekly_performance_ui(gl_client) -> None:
 
             st.divider()
 
-    elif selected_intern:
+    elif isinstance(selected_intern, dict):
         cache_key = (start_date.isoformat(), num_days, selected_intern["gitlab_username"])
         is_cached = cache_key in st.session_state.get("wp_activity_cache", {})
 

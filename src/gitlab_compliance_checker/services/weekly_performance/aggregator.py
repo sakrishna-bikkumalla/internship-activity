@@ -106,9 +106,11 @@ def _fetch_issues_by_date(
     logger.debug(f"[GitLab] Fetching assigned issues for user_id={user_id}, {start_date} to {end_date}")
     date_params = {
         "scope": "all",
-        "created_after": start_date.isoformat(),
+        "created_after": (start_date - timedelta(days=1)).isoformat(),
         "created_before": (end_date + timedelta(days=1)).isoformat(),
     }
+    start_date_str = start_date.isoformat()
+    end_date_str = end_date.isoformat()
     assigned = gl_client._get_paginated("/issues", params={"assignee_id": user_id, **date_params}, max_pages=10) or []
     logger.debug(f"[GitLab] Got {len(assigned)} assigned issues")
     counts: dict[str, int] = defaultdict(int)
@@ -117,7 +119,7 @@ def _fetch_issues_by_date(
         created_at = issue.get("created_at", "")
         if created_at:
             date_str = _parse_ist_date(created_at)
-            if date_str:
+            if date_str and start_date_str <= date_str <= end_date_str:
                 counts[date_str] += 1
                 hour = _get_ist_hour(created_at)
                 if hour is not None:
@@ -147,14 +149,15 @@ def _fetch_commits_by_date(
         return dict(counts), dict(active_hours)
 
     logger.debug(f"[GitLab] Fetching commits across {len(all_projs)} projects")
+    api_since = (start_date - timedelta(days=1)).isoformat()
     api_until = (end_date + timedelta(days=1)).isoformat()
-    all_commits, _, _ = commits.get_user_commits(
-        gl_client, user_obj, all_projs, since=start_date.isoformat(), until=api_until
-    )
+    all_commits, _, _ = commits.get_user_commits(gl_client, user_obj, all_projs, since=api_since, until=api_until)
+    start_date_str = start_date.isoformat()
+    end_date_str = end_date.isoformat()
 
     for commit in all_commits or []:
         commit_date = commit.get("date", "")
-        if commit_date and commit_date != "N/A":
+        if commit_date and commit_date != "N/A" and start_date_str <= commit_date <= end_date_str:
             counts[commit_date] += 1
             # Extract hour from the commit's 'time' field which is "HH:MM:SS"
             time_str = commit.get("time", "")
