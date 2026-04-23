@@ -12,8 +12,8 @@ TOKEN_URL = f"{GITLAB_URL}/oauth/token"
 USERINFO_URL = f"{GITLAB_URL}/api/v4/user"
 CLIENT_ID = st.secrets["auth"]["gitlab"]["client_id"]
 CLIENT_SECRET = st.secrets["auth"]["gitlab"]["client_secret"]
-# Simplified Redirect URI
-REDIRECT_URI = "http://localhost:8501"
+# Dynamic Redirect URI from secrets
+REDIRECT_URI = st.secrets["auth"].get("redirect_uri", "http://localhost:8501")
 
 
 def check_login():
