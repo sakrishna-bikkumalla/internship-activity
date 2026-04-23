@@ -68,3 +68,4 @@ reports/*
 repro_timeout*.py
 data/
 scripts/debug/*
+.gitlab-ci.yml
