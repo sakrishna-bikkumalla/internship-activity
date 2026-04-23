@@ -13,6 +13,72 @@ def cached_process_batch_users(_client, usernames_tuple, project_ids=None):
     return batch.process_batch_users(_client, list(usernames_tuple), project_ids=project_ids)
 
 
+def _parse_uploaded_user_csv(uploaded_file) -> tuple[list[str], dict[str, str]]:
+    """Extract usernames and optional college values from an uploaded CSV."""
+    uploaded_file.seek(0)
+    raw_csv = uploaded_file.read()
+    if isinstance(raw_csv, bytes):
+        csv_text = raw_csv.decode("utf-8-sig")
+    else:
+        csv_text = str(raw_csv)
+
+    csv_df = pd.read_csv(io.StringIO(csv_text))
+    csv_df.columns = [str(col).strip() for col in csv_df.columns]
+
+    lowered = {str(col).strip().lower(): col for col in csv_df.columns}
+    username_col = next(
+        (
+            lowered[key]
+            for key in ("username", "gitlab username", "gitlab_username", "user", "user name", "user_name")
+            if key in lowered
+        ),
+        None,
+    )
+    college_col = next(
+        (
+            lowered[key]
+            for key in (
+                "college",
+                "college name",
+                "college_name",
+                "institution",
+                "institution name",
+                "institution_name",
+                "university",
+                "university name",
+                "organization",
+                "organisation",
+                "org",
+                "school",
+            )
+            if key in lowered
+        ),
+        None,
+    )
+
+    if username_col is None:
+        csv_df = pd.read_csv(io.StringIO(csv_text), header=None)
+        username_col = csv_df.columns[0]
+        college_col = csv_df.columns[1] if len(csv_df.columns) > 1 else None
+
+    usernames: list[str] = []
+    # Keys are stored lowercase for case-insensitive lookup later
+    college_map: dict[str, str] = {}
+
+    for _, csv_row in csv_df.iterrows():
+        uname = str(csv_row.get(username_col, "")).strip() if pd.notna(csv_row.get(username_col, "")) else ""
+        college = (
+            str(csv_row.get(college_col, "")).strip()
+            if college_col is not None and pd.notna(csv_row.get(college_col, ""))
+            else ""
+        )
+        if uname:
+            usernames.append(uname)
+            college_map[uname.lower()] = college
+
+    return usernames, college_map
+
+
 def render_batch_analytics_ui(client):
     st.subheader("📊 Batch Analytics")
     st.caption("Comprehensive report combining General Stats, Authored Issue Quality, and Assigned MR Quality.")
@@ -22,14 +88,19 @@ def render_batch_analytics_ui(client):
         col1, col2 = st.columns(2)
 
         with col1:
-            uploaded_file = st.file_uploader("📂 Upload Usernames (.txt)", type=["txt"], help="One username per line.")
+            uploaded_file = st.file_uploader(
+                "📂 Upload Usernames & Colleges (.csv)",
+                type=["csv"],
+                help="CSV with a 'username' column and an optional 'college' (or 'institution'/'university') column. "
+                "If no header, column 1 = username, column 2 = college.",
+            )
 
         with col2:
             text_input = st.text_area(
-                "⌨️ Enter Usernames (one per line)",
+                "⌨️ Enter Usernames & Colleges (one per line)",
                 height=200,
-                placeholder="user1\nuser2\n...",
-                help="One username per line.",
+                placeholder="user1, college name\nuser2, college name\nuser3, college name\n.........",
+                help="Format: 'username' or 'username, college name' — one entry per line.",
             )
 
         st.markdown("#### 📂 Filter by Project Repos *(optional)*")
@@ -46,17 +117,36 @@ def render_batch_analytics_ui(client):
 
     # 2. Execution
     btn_label = "🚀 Run Unified Analysis"
-    if st.button(btn_label, type="primary", use_container_width=True):
-        # Collect usernames from both inputs
-        usernames = [line.strip() for line in text_input.splitlines() if line.strip()]
+    if st.button(btn_label, type="primary", width="stretch"):
+        # username -> college name mapping (populated from both text input and CSV)
+        college_map: dict[str, str] = {}
 
+        # Parse text area: each line is "username" or "username, college"
+        usernames: list[str] = []
+        for line in text_input.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if "," in line:
+                parts = line.split(",", 1)
+                uname = parts[0].strip()
+                college = parts[1].strip()
+            else:
+                uname = line
+                college = ""
+            if uname:
+                usernames.append(uname)
+                college_map[uname.lower()] = college
+
+        # Also parse uploaded CSV
         if uploaded_file is not None:
             try:
-                content = uploaded_file.read().decode("utf-8")
-                file_usernames = [line.strip() for line in content.splitlines() if line.strip()]
-                usernames.extend(file_usernames)
+                uploaded_usernames, uploaded_college_map = _parse_uploaded_user_csv(uploaded_file)
+                usernames.extend(uploaded_usernames)
+                # CSV entries take precedence over text-area entries for the same username
+                college_map.update(uploaded_college_map)
             except Exception as e:
-                st.error(f"Error reading uploaded file: {e}")
+                st.error(f"Error reading uploaded CSV file: {e}")
 
         # Deduplicate and sort
         usernames = sorted(set(usernames))
@@ -99,6 +189,7 @@ def render_batch_analytics_ui(client):
             # 1. Identity & Status
             row = {
                 "Username": u,
+                "College": college_map.get(u.lower(), ""),
                 "Status": status,
             }
 
@@ -144,19 +235,16 @@ def render_batch_analytics_ui(client):
             report_data.append(row)
 
         df = pd.DataFrame(report_data)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width="stretch")
 
         # Export
-        try:
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                df.to_excel(writer, index=False, sheet_name="Unified_Report")
+        today = datetime.date.today()
 
-            st.download_button(
-                label="📥 Download Unified Report (Excel)",
-                data=output.getvalue(),
-                file_name=f"Unified_Batch_Report_{datetime.date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        except Exception as e:
-            st.error(f"Error creating Excel: {e}")
+        # CSV download
+        csv_bytes = df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download Unified Report (CSV)",
+            data=csv_bytes,
+            file_name=f"Unified_Batch_Report_{today}.csv",
+            mime="text/csv",
+        )

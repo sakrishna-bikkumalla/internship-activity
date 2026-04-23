@@ -162,10 +162,12 @@ class TestRenderBatchAnalyticsUI:
         mock_streamlit.dataframe.assert_called()
 
     @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
-    def test_file_upload(self, mock_process, mock_client, mock_streamlit):
+    def test_csv_file_upload_first_column(self, mock_process, mock_client, mock_streamlit):
         mock_streamlit.text_area.side_effect = ["", ""]
         mock_file = MagicMock()
-        mock_file.read.return_value = b"user2\nuser3"
+        mock_file.name = "users.csv"
+        mock_file.seek = MagicMock()
+        mock_file.read.return_value = b"user2\nuser3\n"
         mock_streamlit.file_uploader.return_value = mock_file
         mock_process.return_value = []
 
@@ -176,3 +178,78 @@ class TestRenderBatchAnalyticsUI:
         usernames_processed = args[1]
         assert "user2" in usernames_processed
         assert "user3" in usernames_processed
+
+    @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
+    def test_csv_file_upload_with_header_and_college(self, mock_process, mock_client, mock_streamlit):
+        mock_streamlit.text_area.side_effect = ["", ""]
+        mock_file = MagicMock()
+        mock_file.name = "users.csv"
+        mock_file.seek = MagicMock()
+        mock_file.read.return_value = b"username,college\nuser2,ABC College\nuser3,XYZ University\n"
+        mock_streamlit.file_uploader.return_value = mock_file
+        mock_process.return_value = [
+            {
+                "username": "user2",
+                "status": "Success",
+                "data": {
+                    "projects": {"personal": [], "contributed": []},
+                    "commit_stats": {"total": 0, "morning_commits": 0, "afternoon_commits": 0},
+                    "groups": [],
+                    "mr_quality": {},
+                    "issue_quality": {},
+                },
+            },
+            {
+                "username": "user3",
+                "status": "Success",
+                "data": {
+                    "projects": {"personal": [], "contributed": []},
+                    "commit_stats": {"total": 0, "morning_commits": 0, "afternoon_commits": 0},
+                    "groups": [],
+                    "mr_quality": {},
+                    "issue_quality": {},
+                },
+            },
+        ]
+
+        batch_analytics.render_batch_analytics_ui(mock_client)
+
+        args, _ = mock_process.call_args
+        usernames_processed = args[1]
+        assert "user2" in usernames_processed
+        assert "user3" in usernames_processed
+
+        rendered_df = mock_streamlit.dataframe.call_args.args[0]
+        college_by_user = dict(zip(rendered_df["Username"], rendered_df["College"], strict=False))
+        assert college_by_user["user2"] == "ABC College"
+        assert college_by_user["user3"] == "XYZ University"
+
+    @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
+    def test_csv_file_upload_without_header_uses_first_column(self, mock_process, mock_client, mock_streamlit):
+        mock_streamlit.text_area.side_effect = ["", ""]
+        mock_file = MagicMock()
+        mock_file.name = "users.csv"
+        mock_file.seek = MagicMock()
+        mock_file.read.return_value = b"user2,ABC College\nuser3,XYZ University\n"
+        mock_streamlit.file_uploader.return_value = mock_file
+        mock_process.return_value = []
+
+        batch_analytics.render_batch_analytics_ui(mock_client)
+
+        args, _ = mock_process.call_args
+        usernames_processed = args[1]
+        assert "user2" in usernames_processed
+        assert "user3" in usernames_processed
+
+    @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
+    def test_malformed_upload_shows_error(self, mock_process, mock_client, mock_streamlit):
+        mock_streamlit.text_area.side_effect = ["", ""]
+        mock_file = MagicMock()
+        mock_file.name = "users.csv"
+        mock_streamlit.file_uploader.return_value = mock_file
+        mock_process.return_value = []
+
+        with patch("gitlab_compliance_checker.ui.batch._parse_uploaded_user_csv", side_effect=ValueError("Bad CSV")):
+            batch_analytics.render_batch_analytics_ui(mock_client)
+
+        mock_streamlit.error.assert_any_call("Error reading uploaded CSV file: Bad CSV")
