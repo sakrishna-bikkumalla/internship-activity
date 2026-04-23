@@ -19,6 +19,7 @@ cache:
     - .uv-cache/
 
 before_script:
+  - python -m pip install --no-cache-dir --retries 5 "uv==0.11.6"
   - export VIRTUAL_ENV="$CI_PROJECT_DIR/.venv"
   - export PATH="$VIRTUAL_ENV/bin:$PATH"
 
@@ -26,7 +27,6 @@ setup_job:
   stage: setup
   script:
     - python -V
-    - python -m pip install --no-cache-dir --retries 5 "uv==0.11.6"
     - |
       synced=0
       for i in 1 2 3; do
