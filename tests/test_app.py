@@ -6,9 +6,10 @@ from conftest import make_fake_st
 
 
 class FakeClient:
-    def __init__(self, url, token):
-        self.url = url
+    def __init__(self, base_url, token, is_oauth=False):
+        self.base_url = base_url
         self.token = token
+        self.is_oauth = is_oauth
         self.client = "fake-client"
 
 
@@ -18,6 +19,16 @@ def reimport_main(monkeypatch):
         del sys.modules["gitlab_compliance_checker.ui.main"]
 
     sys.modules["streamlit"] = make_fake_st(["https://gitlab.com", "token"], "Check Project Compliance")
+    sys.modules["streamlit"].session_state["user_info"] = {
+        "preferred_username": "Saikrishna_b",
+        "is_logged_in": True,
+        "access_token": "fake_token",
+        "name": "Saikrishna"
+    }
+    sys.modules["streamlit"].secrets = {
+        "auth": {"gitlab": {"client_id": "fake", "client_secret": "fake"}},
+        "rbac": {"allowed_users": ["Saikrishna_b"]}
+    }
     sys.modules["streamlit"].sidebar = sys.modules["streamlit"].sidebar
     sys.modules["dotenv"] = type("Dotenv", (), {"load_dotenv": lambda: None})
 
@@ -164,8 +175,8 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_main):
     main_mod = reimport_main
     fake_st = make_fake_st(["https://gitlab.com", "token", "ghost"], "User Profile Overview")
     main_mod.st = fake_st
-    app_client = FakeClient("https://gitlab.com", "token")
-    monkeypatch.setattr(main_mod, "GitLabClient", lambda url, token: app_client)
+    app_client = FakeClient("https://gitlab.com", "token", is_oauth=True)
+    monkeypatch.setattr(main_mod, "GitLabClient", lambda base_url, token, is_oauth=False: app_client)
 
     monkeypatch.setattr(main_mod.users, "get_user_by_username", lambda client, username: {"id": 1})
 
@@ -183,6 +194,16 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_main):
 
 def test_app_run_as_script_calls_main(monkeypatch):
     fake_st = make_fake_st(["https://gitlab.com", "token"], "Team Leaderboard")
+    fake_st.session_state["user_info"] = {
+        "preferred_username": "Saikrishna_b",
+        "is_logged_in": True,
+        "access_token": "fake_token",
+        "name": "Saikrishna"
+    }
+    fake_st.secrets = {
+        "auth": {"gitlab": {"client_id": "fake", "client_secret": "fake"}},
+        "rbac": {"allowed_users": ["Saikrishna_b"]}
+    }
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
     monkeypatch.setitem(sys.modules, "dotenv", type("Dotenv", (), {"load_dotenv": lambda: None}))
 

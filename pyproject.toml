@@ -9,12 +9,14 @@ readme = "README.md"
 license = { text = "GNU Affero General Public License v3.0" }
 requires-python = ">=3.13"
 dependencies = [
-  "streamlit>=1.33.0",
+  "streamlit>=1.42.0",
+  "Authlib>=1.3.2",
   "xlsxwriter",
   "glabflow>=0.1.0a4",
   "python-dotenv",
   "plotly",
   "pyyaml>=6.0.3",
+  "streamlit-oauth>=0.1.11",
 ]
 
 [project.optional-dependencies]

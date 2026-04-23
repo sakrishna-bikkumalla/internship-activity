@@ -10,6 +10,13 @@ class FakeStreamlitModule(types.ModuleType):
         super().__init__("streamlit")
 
         self.session_state = {}
+        self.query_params = {}
+        self.secrets = {
+            "auth": {
+                "gitlab": {"client_id": "fake", "client_secret": "fake"}
+            },
+            "allowed_users": ["Saikrishna_b"]
+        }
         self.messages = {"warning": [], "error": [], "info": []}
 
         self.sidebar = types.SimpleNamespace(
@@ -78,6 +85,7 @@ class FakeStreamlitModule(types.ModuleType):
         self.messages["info"].append(message)
 
     def _stop(self, *a, **k):
+        print(f"DEBUG: st.stop() called! session_state keys: {list(self.session_state.keys())}")
         raise SystemExit("stop")
 
 
@@ -124,6 +132,18 @@ def make_fake_st(text_inputs=None, mode=None):
 
         def info(self, text):
             return None
+
+        def write(self, text):
+            return None
+
+        def error(self, text):
+            return None
+
+        def success(self, text):
+            return None
+
+        def button(self, label, **kwargs):
+            return False
 
         def checkbox(self, label, value=True):
             return value

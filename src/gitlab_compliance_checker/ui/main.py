@@ -22,7 +22,7 @@ def cleanup_gitlab_client(client: GitLabClient):
 
 
 @st.cache_resource(on_release=cleanup_gitlab_client)
-def get_gitlab_client(url: str, token: str):
+def get_gitlab_client(url: str, token: str, is_oauth: bool = False):
     """
     Cached GitLab client initialization.
     Ensures only one instance (and one background thread) exists for a set of credentials.
@@ -32,24 +32,39 @@ def get_gitlab_client(url: str, token: str):
 
     logger = logging.getLogger(__name__)
     logger.info(f"Creating NEW GitLabClient resource for {url}")
-    return GitLabClient(url, token)
+    return GitLabClient(base_url=url, token=token, is_oauth=is_oauth)
 
 
 def main():
     # Load environment variables
     load_dotenv()
 
+    # User Identity in Sidebar
+    user_info = st.session_state.get("user_info", {})
+    if user_info.get("is_logged_in"):
+        st.sidebar.header("Account")
+        st.sidebar.write(f"Logged in as: **{user_info.get('name')}**")
+        if st.sidebar.button("Logout", icon="🚪"):
+            st.session_state.clear()
+            st.rerun()
+        st.sidebar.markdown("---")
+
     st.title("GitLab Compliance Checker")
 
     # Sidebar: Config & Mode
     st.sidebar.header("Configuration")
 
-    # Credentials (allow override or from env)
+    # 1. GitLab URL (Default to swecha if not in env)
     default_url = os.getenv("GITLAB_URL", "https://code.swecha.org")
-    default_token = os.getenv("GITLAB_TOKEN", "")
-
     gitlab_url = st.sidebar.text_input("GitLab URL", value=default_url).strip()
-    gitlab_token = st.sidebar.text_input("GitLab Token", value=default_token, type="password").strip()
+
+    # 2. GitLab Token (Priority: st.session_state -> env -> manual input)
+    if user_info.get("is_logged_in") and user_info.get("access_token"):
+        gitlab_token = user_info.get("access_token")
+        st.sidebar.success("✅ Authenticated via GitLab Login")
+    else:
+        default_token = os.getenv("GITLAB_TOKEN", "")
+        gitlab_token = st.sidebar.text_input("GitLab Token", value=default_token, type="password").strip()
 
     mode = st.sidebar.radio(
         "Select Mode",
@@ -63,12 +78,14 @@ def main():
     )
 
     if not gitlab_token:
-        st.warning("Please enter a GitLab Token in the sidebar or .env file.")
+        st.warning("Please enter a GitLab Token in the sidebar or login with GitLab.")
         st.stop()
 
     # Initialize Client (Persistent using st.cache_resource)
+    is_oauth = True if user_info.get("is_logged_in") else False
     try:
-        client = get_gitlab_client(gitlab_url, gitlab_token)
+        # Use the obtain token and URL
+        client = get_gitlab_client(gitlab_url, gitlab_token, is_oauth=is_oauth)
     except Exception as e:
         st.error(f"Critical Error initializing GitLab client: {e}")
         st.stop()

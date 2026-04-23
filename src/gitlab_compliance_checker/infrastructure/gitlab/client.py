@@ -91,10 +91,11 @@ def _decode_json(data) -> Any:
 
 
 class GitLabClient:
-    def __init__(self, base_url: str, private_token: str):
+    def __init__(self, base_url: str, token: str, is_oauth: bool = False):
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/v4"
-        self.private_token = private_token
+        self.token = token
+        self.is_oauth = is_oauth
         self.error_msg = None
         self.last_rate_limit: dict | None = None  # {endpoint, retry_after, timestamp}
         self._gl: glabflow.Client | None = None
@@ -115,7 +116,8 @@ class GitLabClient:
             try:
                 self._gl = glabflow.Client(
                     base_url=self.api_base,
-                    token=self.private_token,
+                    token=self.token,
+                    auth_type="bearer" if self.is_oauth else "token",
                     concurrency=25,
                     timeout=30.0,
                 )
@@ -127,7 +129,8 @@ class GitLabClient:
                 logger.error(f"Client initialization failure: {e}")
                 self._ready_event.set()
 
-        asyncio.run_coroutine_threadsafe(_setup(), self._loop)
+        # Execute setup in the dedicated background loop via a Task
+        self._loop.call_soon_threadsafe(lambda: self._loop.create_task(_setup()))
 
         # Wait for the background thread to be ready
         if not self._ready_event.wait(timeout=10):
