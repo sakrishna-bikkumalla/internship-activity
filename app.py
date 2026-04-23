@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import quote
 
 import httpx
 import streamlit as st
@@ -6,14 +7,24 @@ import streamlit as st
 from gitlab_compliance_checker.ui.main import main
 
 # --- Configuration ---
+# Safely fetch auth secrets to avoid KeyError in Production
+auth_secrets = st.secrets.get("auth", {})
+gitlab_secrets = auth_secrets.get("gitlab", {})
+
 GITLAB_URL = "https://code.swecha.org"
 AUTHORIZE_URL = f"{GITLAB_URL}/oauth/authorize"
 TOKEN_URL = f"{GITLAB_URL}/oauth/token"
 USERINFO_URL = f"{GITLAB_URL}/api/v4/user"
-CLIENT_ID = st.secrets["auth"]["gitlab"]["client_id"]
-CLIENT_SECRET = st.secrets["auth"]["gitlab"]["client_secret"]
-# Dynamic Redirect URI from secrets
-REDIRECT_URI = st.secrets["auth"].get("redirect_uri", "http://localhost:8501")
+
+CLIENT_ID = gitlab_secrets.get("client_id")
+CLIENT_SECRET = gitlab_secrets.get("client_secret")
+REDIRECT_URI = auth_secrets.get("redirect_uri", "http://localhost:8501")
+
+if not CLIENT_ID or not CLIENT_SECRET:
+    st.error(
+        "❌ **Critical Error**: GitLab Client ID or Secret is missing in st.secrets. Please check your configuration."
+    )
+    st.stop()
 
 
 def check_login():
@@ -74,22 +85,14 @@ def check_login():
     st.title("🔒 GitLab Compliance Checker")
     st.write("Please sign in with your Swecha GitLab account to access the compliance dashboard.")
 
-    auth_link = f"{AUTHORIZE_URL}?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=openid+profile+email+api"
-
-    st.markdown(
-        f"""
-        <a href="{auth_link}" target="_self" style="
-            background-color: #fc6d26;
-            color: white;
-            padding: 10px 20px;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
-            display: inline-block;
-        ">🦊 Login with Swecha GitLab</a>
-    """,
-        unsafe_allow_html=True,
+    auth_link = (
+        f"{AUTHORIZE_URL}?client_id={CLIENT_ID}"
+        f"&redirect_uri={quote(REDIRECT_URI, safe='')}"
+        f"&response_type=code"
+        f"&scope=openid+profile+email+api"
     )
+
+    st.link_button("🦊 Login with Swecha GitLab", auth_link, use_container_width=True)
     st.stop()
 
 
