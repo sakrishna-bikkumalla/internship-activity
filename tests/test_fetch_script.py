@@ -18,15 +18,11 @@ class TestAsyncFetchPatterns:
         from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
 
         client = GitLabClient("https://gitlab.com", "test_token")
-        assert hasattr(client, "private_token")
-        assert hasattr(client, "base_url")
-
-    def test_gitlab_client_headers_contains_token(self):
-        """Test GitLabClient private_token is stored."""
-        from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
+        assert hasattr(client, "token")
+        assert hasattr(client, "api_base")
 
         client = GitLabClient("https://gitlab.com", "my_secret_token")
-        assert client.private_token == "my_secret_token"
+        assert client.token == "my_secret_token"
 
     @pytest.mark.asyncio
     async def test_coroutine_function_detection(self):

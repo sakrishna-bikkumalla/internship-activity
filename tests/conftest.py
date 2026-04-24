@@ -10,6 +10,15 @@ class FakeStreamlitModule(types.ModuleType):
         super().__init__("streamlit")
 
         self.session_state = {}
+        self.query_params = {}
+        self.secrets = {
+            "auth": {
+                "gitlab": {"client_id": "fake", "client_secret": "fake"}
+            },
+            "rbac": {
+                "users": {"Saikrishna_b": "admin"}
+            }
+        }
         self.messages = {"warning": [], "error": [], "info": []}
 
         self.sidebar = types.SimpleNamespace(
@@ -78,6 +87,7 @@ class FakeStreamlitModule(types.ModuleType):
         self.messages["info"].append(message)
 
     def _stop(self, *a, **k):
+        print(f"DEBUG: st.stop() called! session_state keys: {list(self.session_state.keys())}")
         raise SystemExit("stop")
 
 
@@ -102,6 +112,20 @@ class _DummyContextManager:
 
 def make_fake_st(text_inputs=None, mode=None):
     fake_st = FakeStreamlitModule()
+    # Default authenticated state for tests
+    fake_st.session_state = {
+        "user_role": "admin",
+        "user_info": {
+            "preferred_username": "Saikrishna_b",
+            "username": "Saikrishna_b",
+            "is_logged_in": True,
+            "access_token": "fake_token",
+            "name": "Saikrishna",
+            "id": 1,
+            "avatar_url": "http://avatar",
+            "web_url": "http://web"
+        }
+    }
 
     class Sidebar:
         def __init__(self, text_inputs, mode):
@@ -111,7 +135,7 @@ def make_fake_st(text_inputs=None, mode=None):
         def text_input(self, label, value=None, type=None, placeholder=None):
             if self._text_inputs:
                 return self._text_inputs.pop(0)
-            return ""
+            return value or ""
 
         def radio(self, label, options):
             return self._mode
@@ -124,6 +148,18 @@ def make_fake_st(text_inputs=None, mode=None):
 
         def info(self, text):
             return None
+
+        def write(self, text):
+            return None
+
+        def error(self, text):
+            return None
+
+        def success(self, text):
+            return None
+
+        def button(self, label, **kwargs):
+            return False
 
         def checkbox(self, label, value=True):
             return value

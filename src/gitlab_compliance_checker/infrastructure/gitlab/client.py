@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import logging
 import re
 import threading
@@ -10,7 +11,6 @@ import msgspec
 
 # Set up logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 async def safe_api_call_async(coro_factory, *args, **kwargs):
@@ -25,6 +25,8 @@ async def safe_api_call_async(coro_factory, *args, **kwargs):
         except glabflow.RateLimitError as e:
             wait_time = getattr(e, "retry_after", None) or 5 * (attempt + 1)
             logger.warning(f"Rate limited (429). Waiting {wait_time}s...")
+            if wait_time > 10:
+                raise Exception(f"GitLab API Rate Limit: Please wait {int(wait_time)}s.") from e
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait_time)
                 continue
@@ -89,65 +91,91 @@ def _decode_json(data) -> Any:
 
 
 class GitLabClient:
-    def __init__(self, base_url: str, private_token: str, ssl_verify: bool = True):
+    def __init__(self, base_url: str, token: str, is_oauth: bool = False):
         self.base_url = base_url.rstrip("/")
-        # glabflow expects the API base (with /api/v4)
         self.api_base = f"{self.base_url}/api/v4"
-        self.private_token = private_token
-        self.ssl_verify = ssl_verify
+        self.token = token
+        self.is_oauth = is_oauth
         self.error_msg = None
+        self.last_rate_limit: dict | None = None  # {endpoint, retry_after, timestamp}
         self._gl: glabflow.Client | None = None
 
         # A background thread runs a dedicated event loop.
-        # This keeps glabflow's async client isolated from Streamlit's loop.
         self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
+        self._thread = threading.Thread(target=self._run_event_loop, name=f"GitLabClient-{id(self)}", daemon=True)
         self._thread.start()
-        logger.info(f"GitLabClient initialized. Background thread started: {self._thread.name}")
 
-        self._sem: asyncio.Semaphore | None = None
-        self._init_sem()
+        self._ready_event = threading.Event()
+        self._init_worker()
 
-        # Enter glabflow client context in the background loop
-        self._init_gl_client()
+    def _init_worker(self):
+        """Initialize the background client and semaphore."""
+
+        async def _setup():
+            nonlocal self
+            try:
+                self._gl = glabflow.Client(
+                    base_url=self.api_base,
+                    token=self.token,
+                    auth_type="bearer" if self.is_oauth else "token",
+                    concurrency=25,
+                    timeout=30.0,
+                )
+                await self._gl.__aenter__()
+                self._sem = asyncio.Semaphore(25)
+                self._ready_event.set()
+            except Exception as e:
+                self.error_msg = str(e)
+                logger.error(f"Client initialization failure: {e}")
+                self._ready_event.set()
+
+        # Execute setup in the dedicated background loop via a Task
+        self._loop.call_soon_threadsafe(lambda: self._loop.create_task(_setup()))
+
+        # Wait for the background thread to be ready
+        if not self._ready_event.wait(timeout=10):
+            logger.error("GitLabClient failed to initialize in 10s")
 
     def _run_event_loop(self):
+        """Dedicated thread target to run the internal event loop."""
+        # Ensure this thread uses the dedicated loop we created
         asyncio.set_event_loop(self._loop)
+
+        # Explicitly set the policy for this thread to avoid uvloop inheritance
+        try:
+            asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        except Exception:
+            pass
+
+        logger.debug(f"[GitLabClient] Event loop {id(self._loop)} starting in thread {threading.current_thread().name}")
         self._loop.run_forever()
 
     def _init_sem(self):
+        """Re-initialize semaphore if needed (rare)."""
+
         async def create_sem():
             return asyncio.Semaphore(25)
 
         fut = asyncio.run_coroutine_threadsafe(create_sem(), self._loop)
         self._sem = fut.result()
 
-    def _run_sync(self, coro):
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return fut.result()
+    def _run_sync(self, coro, timeout=60):
+        """Bridge sync call to the background event loop using run_coroutine_threadsafe."""
+        if not self._ready_event.is_set():
+            self._ready_event.wait(timeout=5)
 
-    def _init_gl_client(self):
-        """Initialize and enter glabflow.Client as async context manager in background loop."""
+        # Submit the coroutine to the background loop
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
 
-        async def _enter():
-            gl = glabflow.Client(
-                base_url=self.api_base,
-                token=self.private_token,
-                ssl=self.ssl_verify,
-                concurrency=25,
-                timeout=30.0,
-            )
-            # CRITICAL: Disable global connector to prevent cross-loop Lock boundary errors in Streamlit
-            await gl.__aenter__()
-            return gl
-
+        # Wait for the result in the main thread (blocking)
         try:
-            fut = asyncio.run_coroutine_threadsafe(_enter(), self._loop)
-            self._gl = fut.result(timeout=30)
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise TimeoutError(f"GitLab operation timed out after {timeout} seconds")
         except Exception as e:
-            self.error_msg = str(e)
-            logger.error(f"Failed to initialize glabflow client: {e}")
-            self._gl = None
+            # Re-raise the exception caught in the background thread
+            raise e
 
     @property
     def client(self):
@@ -179,25 +207,34 @@ class GitLabClient:
 
         try:
             async with sem:
-                raw = await gl.get(path)
+                # Wrap in a task to satisfy asyncio.timeout (Python 3.11+) if needed by the underlying client
+                raw = await asyncio.create_task(gl.get(path))
             return _decode_json(raw)
         except glabflow.NotFoundError:
             return []
         except glabflow.RateLimitError as e:
             wait = getattr(e, "retry_after", None) or 5
+            self.last_rate_limit = {
+                "endpoint": path,
+                "retry_after": wait,
+                "timestamp": datetime.now(timezone.utc),
+            }
             logger.warning(f"Rate limited on GET {path}. Waiting {wait}s...")
+            if wait > 10:
+                raise Exception(f"GitLab API Rate Limit reached. Please wait {int(wait)}s.")
+
             await asyncio.sleep(wait)
             try:
                 # Use narrowed local 'sem'
                 async with sem:
-                    raw = await gl.get(path)
+                    raw = await asyncio.create_task(gl.get(path))
                 return _decode_json(raw)
             except Exception as e:
                 logger.error(f"Retry GET {path} failed: {e}")
                 return []
         except Exception as e:
             logger.error(f"GET {path} failed: {type(e).__name__} - {e}")
-            return []
+            raise e
 
     async def _async_request(self, method, endpoint, params=None):
         """Full HTTP request dispatcher (GET/POST/PUT/DELETE)."""
@@ -220,17 +257,17 @@ class GitLabClient:
                         query = urlencode({k: v for k, v in params.items() if v is not None})
                         connector = "&" if "?" in path else "?"
                         path = f"{path}{connector}{query}"
-                    raw = await gl.get(path)
+                    raw = await asyncio.create_task(gl.get(path))
                 elif method.upper() == "POST":
-                    raw = await gl.post(path, json=params or {})
+                    raw = await asyncio.create_task(gl.post(path, json=params or {}))
                 else:
-                    raw = await gl.get(path)
+                    raw = await asyncio.create_task(gl.get(path))
             return _decode_json(raw)
         except glabflow.NotFoundError:
             return []
         except Exception as e:
             logger.error(f"{method} {path} failed: {type(e).__name__} - {e}")
-            return []
+            raise e
 
     async def _async_get_paginated(self, endpoint, params=None, per_page=100, max_pages=10):
         """Paginated GET using glabflow's paginate() async generator."""
@@ -254,10 +291,12 @@ class GitLabClient:
                     all_items.extend(page_data)
                 elif isinstance(page_data, dict):
                     all_items.append(page_data)
+
                 if page_count >= max_pages:
                     break
         except Exception as e:
             logger.error(f"Paginated GET {path} failed: {type(e).__name__} - {e}")
+            raise e
 
         return all_items
 
@@ -821,12 +860,15 @@ class GitLabClient:
         try:
             # Exit glabflow client context
             if self._gl is not None:
+                # We need to run this on the loop
                 fut = asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
                 try:
                     fut.result(timeout=5)
                 except Exception:
                     pass
                 self._gl = None
+
+            # Stop the request queue worker (if we had a sentinel, we'd use it)
 
             # Stop the event loop
             if self._loop and self._loop.is_running():
