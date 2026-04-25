@@ -616,7 +616,7 @@ dev = [
 requires-dist = [
     { name = "authlib", specifier = ">=1.3.2" },
     { name = "babel", marker = "extra == 'dev'" },
-    { name = "glabflow", specifier = ">=0.1.0a4" },
+    { name = "glabflow", specifier = ">=0.1.0a5" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "nest-asyncio", marker = "extra == 'dev'" },
     { name = "openpyxl", marker = "extra == 'dev'" },
@@ -664,11 +664,13 @@ wheels = [
 
 [[package]]
 name = "glabflow"
-version = "0.1.0a4"
+version = "0.1.0a5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiodns" },
     { name = "aiohttp" },
+    { name = "cachetools" },
+    { name = "graphql-core" },
     { name = "msgspec" },
     { name = "stamina" },
     { name = "tqdm" },
@@ -676,9 +678,18 @@ dependencies = [
     { name = "uvloop", marker = "sys_platform != 'win32'" },
     { name = "zstandard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/34/42/8c5ed1503f9fdf230bf4c2a55f12d7398ab973d39ff0d95e6e25a9fa672f/glabflow-0.1.0a4.tar.gz", hash = "sha256:ac6dfff065cdd99f9b9ef459995c6b6d7ee4149d3b389649052d2752a9be9619", size = 209698, upload-time = "2026-04-10T22:02:32.295Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/60/24a5df649394893052b62d45b70219aeff2baf80b7aca161b5dd0bdb7a14/glabflow-0.1.0a5.tar.gz", hash = "sha256:b7f39bf1de6fda59978a961d4abaef40899382e0d0c98c93660564cb135fa512", size = 247255, upload-time = "2026-04-23T17:54:51.006Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/78/61/fae47aa91fa9cf8dbff5132f74c2dda3ed43c64668efdc2db8768c894d1e/glabflow-0.1.0a4-py3-none-any.whl", hash = "sha256:4a4519a324f2875c8f73472d3f28994f1cb566a39495cdd277d40cd8c63ce2c3", size = 327943, upload-time = "2026-04-10T22:02:29.989Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/28/c4dc8a98d33dd3427d085f6e8e3b9bedea6720f88abc58c2a823ecf1a3fc/glabflow-0.1.0a5-py3-none-any.whl", hash = "sha256:bdf3b32b901dccb3404f8e31cec6e9c9874b2807e0cacdf28920c378e288df74", size = 352081, upload-time = "2026-04-23T17:54:45.735Z" },
+]
+
+[[package]]
+name = "graphql-core"
+version = "3.2.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/68/c5/36aa96205c3ecbb3d34c7c24189e4553c7ca2ebc7e1dd07432339b980272/graphql_core-3.2.8.tar.gz", hash = "sha256:015457da5d996c924ddf57a43f4e959b0b94fb695b85ed4c29446e508ed65cf3", size = 513181, upload-time = "2026-03-05T19:55:37.332Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/86/41/cb887d9afc5dabd78feefe6ccbaf83ff423c206a7a1b7aeeac05120b2125/graphql_core-3.2.8-py3-none-any.whl", hash = "sha256:cbee07bee1b3ed5e531723685369039f32ff815ef60166686e0162f540f1520c", size = 207349, upload-time = "2026-03-05T19:55:35.911Z" },
 ]
 
 [[package]]

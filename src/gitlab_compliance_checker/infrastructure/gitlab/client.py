@@ -1,5 +1,4 @@
 import asyncio
-import concurrent.futures
 import logging
 import re
 import threading
@@ -8,6 +7,8 @@ from typing import Any
 
 import glabflow
 import msgspec
+
+from .bridge import get_global_loop, run_on_loop
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -100,11 +101,8 @@ class GitLabClient:
         self.last_rate_limit: dict | None = None  # {endpoint, retry_after, timestamp}
         self._gl: glabflow.Client | None = None
 
-        # A background thread runs a dedicated event loop.
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run_event_loop, name=f"GitLabClient-{id(self)}", daemon=True)
-        self._thread.start()
-
+        # All operations are now bridged to a single, persistent global loop.
+        self._loop = get_global_loop()
         self._ready_event = threading.Event()
         self._init_worker()
 
@@ -136,46 +134,17 @@ class GitLabClient:
         if not self._ready_event.wait(timeout=10):
             logger.error("GitLabClient failed to initialize in 10s")
 
-    def _run_event_loop(self):
-        """Dedicated thread target to run the internal event loop."""
-        # Ensure this thread uses the dedicated loop we created
-        asyncio.set_event_loop(self._loop)
-
-        # Explicitly set the policy for this thread to avoid uvloop inheritance
-        try:
-            asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-        except Exception:
-            pass
-
-        logger.debug(f"[GitLabClient] Event loop {id(self._loop)} starting in thread {threading.current_thread().name}")
-        self._loop.run_forever()
-
     def _init_sem(self):
         """Re-initialize semaphore if needed (rare)."""
 
         async def create_sem():
             return asyncio.Semaphore(25)
 
-        fut = asyncio.run_coroutine_threadsafe(create_sem(), self._loop)
-        self._sem = fut.result()
+        self._sem = run_on_loop(create_sem())
 
     def _run_sync(self, coro, timeout=60):
-        """Bridge sync call to the background event loop using run_coroutine_threadsafe."""
-        if not self._ready_event.is_set():
-            self._ready_event.wait(timeout=5)
-
-        # Submit the coroutine to the background loop
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-
-        # Wait for the result in the main thread (blocking)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            future.cancel()
-            raise TimeoutError(f"GitLab operation timed out after {timeout} seconds")
-        except Exception as e:
-            # Re-raise the exception caught in the background thread
-            raise e
+        """Bridge sync call to the background global event loop."""
+        return run_on_loop(coro, timeout=timeout)
 
     @property
     def client(self):
@@ -856,35 +825,18 @@ class GitLabClient:
         return self._run_sync(self._async_get_paginated(endpoint, params, per_page, max_pages))
 
     def close(self):
-        """Shut down the background loop and thread gracefully."""
+        """Exit the GitLab client context gracefully."""
         try:
             # Exit glabflow client context
             if self._gl is not None:
                 # We need to run this on the loop
-                fut = asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
-                try:
-                    fut.result(timeout=5)
-                except Exception:
-                    pass
+                run_on_loop(self._gl.__aexit__(None, None, None))
                 self._gl = None
-
-            # Stop the request queue worker (if we had a sentinel, we'd use it)
-
-            # Stop the event loop
-            if self._loop and self._loop.is_running():
-                logger.info("Stopping GitLabClient background event loop...")
-                self._loop.call_soon_threadsafe(self._loop.stop)
-
-            # Wait for thread to finish
-            if self._thread and self._thread.is_alive():
-                self._thread.join(timeout=2)
-                logger.info(f"GitLabClient background thread joined: {self._thread.name}")
         except Exception as e:
             logger.error(f"Error during GitLabClient closure: {e}")
         finally:
             self._gl = None
             self._loop = None
-            self._thread = None
 
     def __del__(self):
         self.close()
