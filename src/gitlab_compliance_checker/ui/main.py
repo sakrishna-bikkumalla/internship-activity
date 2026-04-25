@@ -37,7 +37,10 @@ def get_gitlab_client(url: str, token: str, is_oauth: bool = False):
 
 def main():
     # Load environment variables
-    load_dotenv()
+    try:
+        load_dotenv(override=True)
+    except TypeError:
+        load_dotenv()
 
     # User Identity in Sidebar
     user_info = st.session_state.get("user_info", {})

@@ -1,4 +1,12 @@
+import asyncio
 import logging
+from urllib.parse import quote
+
+# Ensure a stable event loop policy is set globally for Streamlit's multi-threaded environment
+try:
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+except Exception:
+    pass
 from urllib.parse import quote
 
 import httpx

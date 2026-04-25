@@ -12,7 +12,7 @@ dependencies = [
   "streamlit>=1.42.0",
   "Authlib>=1.3.2",
   "xlsxwriter",
-  "glabflow>=0.1.0a4",
+  "glabflow>=0.1.0a5",
   "python-dotenv",
   "plotly",
   "pyyaml>=6.0.3",

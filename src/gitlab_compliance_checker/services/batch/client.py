@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Union
 import glabflow
 import msgspec
 
+from gitlab_compliance_checker.infrastructure.gitlab.bridge import get_global_loop, run_on_loop
+
 _JSON_DECODER = msgspec.json.Decoder()
 
 
@@ -31,16 +33,15 @@ class GitLabClient:
         self.private_token = private_token
         self._gl: glabflow.Client | None = None
 
-        # Background event loop — same pattern as infrastructure/gitlab/client.py
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
-        self._thread.start()
+        # All operations are now bridged to a single, persistent global loop.
+        self._loop = get_global_loop()
+        self._init_gl_client()
 
         self._init_gl_client()
         self.users = GitLabUsersAPI(self)
 
     def _run_sync(self, coro):
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+        return run_on_loop(coro)
 
     def _init_gl_client(self):
         async def _enter():
@@ -123,13 +124,16 @@ class GitLabClient:
 
         return all_items
 
-    def __del__(self):
+    def close(self):
         try:
             if self._gl is not None:
-                asyncio.run_coroutine_threadsafe(self._gl.__aexit__(None, None, None), self._loop)
-            self._loop.stop()
+                run_on_loop(self._gl.__aexit__(None, None, None))
+                self._gl = None
         except Exception:
             pass
+
+    def __del__(self):
+        self.close()
 
 
 class GitLabUsersAPI:
