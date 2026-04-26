@@ -17,6 +17,9 @@ class FakeStreamlitModule(types.ModuleType):
             },
             "rbac": {
                 "users": {"Saikrishna_b": "admin"}
+            },
+            "database": {
+                "url": "sqlite:///:memory:"
             }
         }
         self.messages = {"warning": [], "error": [], "info": []}
@@ -29,52 +32,62 @@ class FakeStreamlitModule(types.ModuleType):
             header=lambda *a, **k: None,
             markdown=lambda *a, **k: None,
             info=lambda *a, **k: None,
+            write=lambda *a, **k: None,
+            error=lambda *a, **k: None,
+            success=lambda *a, **k: None,
+            button=lambda *a, **k: False,
+            checkbox=lambda label, value=True: value,
+            expander=lambda *a, **k: _DummyContextManager()
         )
 
         self.set_page_config = lambda *a, **k: None
         self.title = lambda *a, **k: None
+        self.header = lambda *a, **k: None
         self.subheader = lambda *a, **k: None
         self.text_input = lambda *a, **k: ""
         self.text_area = lambda *a, **k: ""
         self.radio = lambda *a, **k: ""
         self.markdown = lambda *a, **k: None
         self.caption = lambda *a, **k: None
-
+        self.divider = lambda *a, **k: None
+        self.date_input = lambda *a, **k: None
+        self.file_uploader = lambda *a, **k: None
+        self.selectbox = lambda label, options, index=0, **k: options[index] if options and index < len(options) else None
+        self.multiselect = lambda label, options, default=None, **k: default or []
+        self.number_input = lambda *a, **k: 0
+        self.button = lambda *a, **k: False
+        self.form_submit_button = lambda *a, **k: False
+        self.form = lambda *a, **k: _DummyContextManager()
         self.spinner = lambda *a, **k: _DummyContextManager()
         self.progress = lambda *a, **k: _DummyContextManager()
-        self.button = lambda *a, **k: False
+        self.columns = lambda *a, **k: [MagicMock() for _ in range(2 if not a or not isinstance(a[0], int) else a[0])]
+        self.tabs = lambda *a, **k: [MagicMock(), MagicMock(), MagicMock(), MagicMock()] # Default 4 tabs for admin
+        self.expander = lambda *a, **k: _DummyContextManager()
         self.write = lambda *a, **k: None
         self.dataframe = lambda *a, **k: None
         self.download_button = lambda *a, **k: None
-        self.columns = lambda *a, **k: [_DummyContextManager() for _ in range(2)]
-        self.tabs = lambda *a, **k: [MagicMock(), MagicMock()]
-        self.selectbox = lambda label, options, index=0, **k: options[index] if options else None
-        self.expander = lambda *a, **k: _DummyContextManager()
-        self.divider = lambda *a, **k: None
-        self.number_input = lambda *a, **k: 0
         self.rerun = lambda *a, **k: None
         self.image = lambda *a, **k: None
         self.metric = lambda *a, **k: None
         self.code = lambda *a, **k: None
         self.success = lambda *a, **k: None
-
-        # as functions that record messages and stop behavior
         self.warning = self._record_warning
         self.error = self._record_error
         self.info = self._record_info
         self.stop = self._stop
-        self.caption = lambda *a, **k: None
 
     def cache_data(self, *a, **k):
+        if len(a) == 1 and callable(a[0]):
+            return CachedFunction(a[0])
         def deco(func):
             return CachedFunction(func)
-
         return deco
 
     def cache_resource(self, *a, **k):
+        if len(a) == 1 and callable(a[0]):
+            return CachedFunction(a[0])
         def deco(func):
             return CachedFunction(func)
-
         return deco
 
     def _record_warning(self, message):
@@ -87,7 +100,6 @@ class FakeStreamlitModule(types.ModuleType):
         self.messages["info"].append(message)
 
     def _stop(self, *a, **k):
-        print(f"DEBUG: st.stop() called! session_state keys: {list(self.session_state.keys())}")
         raise SystemExit("stop")
 
 
@@ -112,7 +124,6 @@ class _DummyContextManager:
 
 def make_fake_st(text_inputs=None, mode=None):
     fake_st = FakeStreamlitModule()
-    # Default authenticated state for tests
     fake_st.session_state = {
         "user_role": "admin",
         "user_info": {
@@ -122,8 +133,6 @@ def make_fake_st(text_inputs=None, mode=None):
             "access_token": "fake_token",
             "name": "Saikrishna",
             "id": 1,
-            "avatar_url": "http://avatar",
-            "web_url": "http://web"
         }
     }
 
@@ -131,8 +140,17 @@ def make_fake_st(text_inputs=None, mode=None):
         def __init__(self, text_inputs, mode):
             self._text_inputs = list(text_inputs or [])
             self._mode = mode
+            self.header = lambda *a, **k: None
+            self.markdown = lambda *a, **k: None
+            self.info = lambda *a, **k: None
+            self.write = lambda *a, **k: None
+            self.error = lambda *a, **k: None
+            self.success = lambda *a, **k: None
+            self.button = lambda *a, **k: False
+            self.checkbox = lambda label, value=True: value
+            self.expander = lambda *a, **k: _DummyContextManager()
 
-        def text_input(self, label, value=None, type=None, placeholder=None):
+        def text_input(self, label, value=None, type=None, placeholder=None, key=None):
             if self._text_inputs:
                 return self._text_inputs.pop(0)
             return value or ""
@@ -140,50 +158,16 @@ def make_fake_st(text_inputs=None, mode=None):
         def radio(self, label, options):
             return self._mode
 
-        def header(self, text):
-            return None
-
-        def markdown(self, text):
-            return None
-
-        def info(self, text):
-            return None
-
-        def write(self, text):
-            return None
-
-        def error(self, text):
-            return None
-
-        def success(self, text):
-            return None
-
-        def button(self, label, **kwargs):
-            return False
-
-        def checkbox(self, label, value=True):
-            return value
-
     fake_st.sidebar = Sidebar(text_inputs, mode)
 
-    # mirror real usage for st.text_input and st.cache_data
-    def st_text_input(label, placeholder=None, value=None, type=None):
-        # use sidebar text inputs for stepwise navigation
+    def st_text_input(label, placeholder=None, value=None, type=None, key=None):
         return fake_st.sidebar.text_input(label, value=value, type=type, placeholder=placeholder)
 
-    def st_cache_data(ttl=None):
-        def deco(func):
-            return func
-
-        return deco
-
     fake_st.text_input = st_text_input
-    fake_st.cache_data = st_cache_data
-
+    
     return fake_st
 
 
-# Pre-insert the fake streamlit module during test collection, so all imports use this stub.
 fake_st = FakeStreamlitModule()
 if "streamlit" not in sys.modules or sys.modules.get("streamlit") is not fake_st:
     sys.modules["streamlit"] = fake_st
@@ -191,12 +175,10 @@ if "streamlit" not in sys.modules or sys.modules.get("streamlit") is not fake_st
 
 @pytest.fixture(autouse=True)
 def patch_streamlit_module(monkeypatch):
-    # Keep a stable module object across tests so st alias in imported modules stays valid.
     fake_st.session_state = {}
+    fake_st.messages = {"warning": [], "error": [], "info": []}
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
 
-    # Globally mock get_single_user_live_mr_compliance to avoid un-awaited coroutine warnings
-    # from its inner function evaluate_all() if it's ever called by accident or through imports.
     from gitlab_compliance_checker.infrastructure.gitlab import merge_requests
 
     def global_mock_compliance(*a, **k):

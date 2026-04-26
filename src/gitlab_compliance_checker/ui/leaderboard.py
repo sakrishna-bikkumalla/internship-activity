@@ -19,37 +19,24 @@ Session state keys (all prefixed _lb_ except "teams" and "edit_team_index"):
 import copy
 import datetime
 import io
-import json
-import os
 import statistics
 from html import escape
 from pathlib import Path
-from typing import Any, Dict, List, cast
+from typing import Any
 
 import dateutil.parser
 import pandas as pd
 import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
-from gitlab_compliance_checker.infrastructure.gitlab.config import DATA_DIR
-from gitlab_compliance_checker.ui.csv_common import group_by_team, render_csv_upload_section
+from gitlab_compliance_checker.services.roster_service import get_all_teams_with_members
 
 # ---------------------------------------------------------------------------
 # Default Teams (loaded from data/teams.json)
 # ---------------------------------------------------------------------------
 
 
-def _load_default_teams() -> list[dict]:
-    """Load default teams from data/teams.json if it exists."""
-    teams_file = os.path.join(DATA_DIR, "teams.json")
-    if os.path.exists(teams_file):
-        try:
-            with open(teams_file, "r") as f:
-                data = json.load(f)
-                return cast(List[Dict[Any, Any]], data.get("teams", []))
-        except Exception as e:
-            st.error(f"Error loading teams from {teams_file}: {e}")
-    return []
+# Removed _load_default_teams - now using database
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +46,8 @@ def _load_default_teams() -> list[dict]:
 
 def _init_state() -> None:
     """Initialise all session-state keys used by this module. Safe to call repeatedly."""
-    if "teams" not in st.session_state:
-        st.session_state["teams"] = copy.deepcopy(_load_default_teams())
+    if st.session_state.get("_lb_page") != "Workspace":  # Only reload if not already analyzed or if forced
+        st.session_state["teams"] = get_all_teams_with_members()
 
     defaults: dict = {
         "edit_team_index": None,
@@ -336,49 +323,7 @@ def _build_excel_export(team_data: dict) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def _render_csv_upload() -> None:
-    """
-    Render the CSV bulk-upload section inside an expander.
-    Appends validated teams to st.session_state["teams"].
-    """
-    with st.expander("📂 Upload CSV File", expanded=True):
-        rows = render_csv_upload_section(
-            key="_lb_csv_uploader",
-            label="Choose a CSV file",
-            description="Upload a `.csv` file to import multiple teams at once. Existing teams will **not** be overwritten.",
-        )
-
-        if not rows:
-            return
-
-        # Group by team name using standardized helper
-        teams_map = group_by_team(rows)
-
-        existing_names = {t["team_name"].strip().lower() for t in st.session_state["teams"]}
-
-        new_teams = []
-        for tname, members in teams_map.items():
-            if tname.strip().lower() in existing_names:
-                st.warning(f"⚠️ Team **{tname}** already exists. Skipping.")
-                continue
-
-            new_teams.append(
-                {
-                    "team_name": tname.strip(),
-                    "project_name": "",  # Project name is optional
-                    "members": members,
-                }
-            )
-
-        if new_teams:
-            st.session_state["teams"].extend(new_teams)
-            st.session_state["_lb_show_upload_form"] = False
-            st.session_state["_lb_triggered"] = False
-            st.success(
-                f"✅ {len(new_teams)} team(s) imported successfully: "
-                + ", ".join(f"**{t['team_name']}**" for t in new_teams)
-            )
-            st.rerun()
+# Removed _render_csv_upload
 
 
 # ---------------------------------------------------------------------------
@@ -387,116 +332,7 @@ def _render_csv_upload() -> None:
 
 
 def _render_create_team_form(scope: str = "all") -> None:
-    """Expandable form for creating a brand-new team. scope='all' for All Teams context, 'specific' for No Team context."""
-    # Don't show either form while an edit is active
-    if st.session_state.get("edit_team_index") is not None:
-        return
-
-    # Two-button header: Create | Upload JSON
-    btn_col1, btn_col2 = st.columns([1, 1])
-
-    with btn_col1:
-        create_label = "✖ Cancel" if st.session_state["_lb_show_create_form"] else "➕ Create New Team"
-        if st.button(create_label, key="_lb_toggle_form", width="stretch"):
-            st.session_state["_lb_show_create_form"] = not st.session_state["_lb_show_create_form"]
-            st.session_state["_lb_show_upload_form"] = False  # close the other panel
-            st.session_state["_lb_draft_members"] = []
-            st.rerun()
-
-    with btn_col2:
-        upload_label = "✖ Cancel Upload" if st.session_state["_lb_show_upload_form"] else "📂 Add All Teams Using CSV"
-        if st.button(upload_label, key="_lb_toggle_upload", width="stretch"):
-            st.session_state["_lb_show_upload_form"] = not st.session_state["_lb_show_upload_form"]
-            st.session_state["_lb_show_create_form"] = False  # close the other panel
-            st.session_state["_lb_draft_members"] = []
-            st.rerun()
-
-    # Show whichever panel is active
-    if st.session_state["_lb_show_upload_form"]:
-        _render_csv_upload()
-        return
-
-    if not st.session_state["_lb_show_create_form"]:
-        return
-
-    st.markdown("#### 🆕 New Team")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        team_name = st.text_input("Team Name *", key="_lb_new_team_name", placeholder="e.g. Team Alpha")
-    with col_b:
-        project_name = st.text_input("Project Name", key="_lb_new_project_name", placeholder="e.g. Project Phoenix")
-
-    st.markdown("##### ➕ Add Members")
-    mc1, mc2, mc3 = st.columns([2, 2, 1])
-    with mc1:
-        m_name = st.text_input("Member Name", key="_lb_c_m_name", placeholder="John Doe")
-    with mc2:
-        m_user = st.text_input("GitLab Username *", key="_lb_c_m_user", placeholder="john_doe")
-    with mc3:
-        m_id = st.number_input("User ID (opt.)", key="_lb_c_m_id", min_value=0, step=1, value=0)
-
-    if st.button("➕ Add Member", key="_lb_create_add_member"):
-        if not m_user.strip():
-            st.warning("GitLab Username is required.")
-        elif m_user.strip().lower() in [x["username"].lower() for x in st.session_state["_lb_draft_members"]]:
-            st.warning(f"**{m_user}** is already in the list.")
-        else:
-            st.session_state["_lb_draft_members"].append(
-                {
-                    "name": m_name.strip(),
-                    "username": m_user.strip(),
-                    "user_id": int(m_id) if m_id else None,
-                }
-            )
-            st.rerun()
-
-    if st.session_state["_lb_draft_members"]:
-        st.markdown("**Members added so far:**")
-        st.dataframe(
-            pd.DataFrame(st.session_state["_lb_draft_members"]),
-            width="stretch",
-            hide_index=True,
-        )
-        rm_user = st.selectbox(
-            "Remove a member",
-            key="_lb_create_rm_select",
-            options=["— select —"] + [m["username"] for m in st.session_state["_lb_draft_members"]],
-        )
-        if st.button("🗑 Remove Selected Member", key="_lb_create_rm_btn"):
-            if rm_user != "— select —":
-                st.session_state["_lb_draft_members"] = [
-                    m for m in st.session_state["_lb_draft_members"] if m["username"] != rm_user
-                ]
-                st.rerun()
-    else:
-        st.info("No members added yet.")
-
-    st.markdown("---")
-    if st.button("💾 Save Team", type="primary", key="_lb_save_team"):
-        if not team_name.strip():
-            st.error("Team Name is required.")
-        elif not st.session_state["_lb_draft_members"]:
-            st.error("Add at least one member before saving.")
-        elif _team_name_exists(team_name):
-            st.error(f'A team named **"{team_name}"** already exists.')
-        else:
-            st.session_state["teams"].append(
-                {
-                    "team_name": team_name.strip(),
-                    "project_name": project_name.strip(),
-                    "members": list(st.session_state["_lb_draft_members"]),
-                    "scope": scope,  # 'all' or 'specific'
-                }
-            )
-            st.session_state["_lb_draft_members"] = []
-            st.session_state["_lb_show_create_form"] = False
-            st.session_state["_lb_triggered"] = False
-            st.session_state["_lb_cached_results"] = None  # invalidate cache
-            st.session_state["_lb_last_filters"] = None
-            # Queue new team for auto-selection on the next rerun
-            st.session_state["_lb_pending_team_select"] = team_name.strip()
-            st.success(f'✅ Team **"{team_name}"** saved!')
-            st.rerun()
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -1922,43 +1758,29 @@ def render_team_leaderboard(client) -> None:
         _render_ranking_page()
         return
 
-    # Load teams to build the dropdown options
+    # Load teams from database if state is empty
+    if not st.session_state.get("teams"):
+        st.session_state["teams"] = get_all_teams_with_members()
     all_teams: list[dict] = st.session_state["teams"]
-    # Dropdown shows All Teams + specific teams only (scope != 'no_team')
-    global_teams = [t for t in all_teams if t.get("scope", "all") == "all"]
     team_names = [t["team_name"] for t in all_teams]
 
-    # If a new team was just created, apply the queued auto-selection before the widget is instantiated
-    if "_lb_pending_team_select" in st.session_state:
-        st.session_state["_lb_selected_team_dropdown"] = st.session_state.pop("_lb_pending_team_select")
-
-    # --- Team Filter Dropdown ---
+    # Dropdown shows All Teams + specific teams only
     st.markdown("### 🎯 Team Filter")
     selected_team = st.selectbox(
         "Select Team to Analyze",
-        options=["No Team", "All Teams"] + team_names,
+        options=["All Teams"] + team_names,
         index=0,
         key="_lb_selected_team_dropdown",
         help="Choose a specific team to view detailed metrics, or 'All Teams' for an overall comparison.",
     )
     st.divider()
 
-    # ── Section 1: Create Team ────────────────────────────────────────────
-    _render_create_team_form(scope="specific" if selected_team == "No Team" else "all")
-    st.divider()
-
-    if selected_team == "No Team":
-        return
-
-    # ── Section 2: Teams Overview (with inline edit) ──────────────────────
-    st.markdown("### 📋 Configured Teams")
-    _render_teams_overview(selected_team)
-    st.divider()
+    # Removed Sections 1 & 2 (Team creation/management)
 
     # ── Section 3: Analysis ───────────────────────────────────────────────
     # Only use teams corresponding to the current scope
     if selected_team == "All Teams":
-        teams = global_teams
+        teams = all_teams
     else:
         teams = [t for t in all_teams if t["team_name"] == selected_team]
 

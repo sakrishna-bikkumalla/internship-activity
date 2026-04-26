@@ -6,6 +6,10 @@ from typing import Any, cast
 import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
+from gitlab_compliance_checker.services.roster_service import (
+    get_all_members_with_teams,
+    get_member_by_username,
+)
 from gitlab_compliance_checker.services.weekly_performance.aggregator import (
     _get_ist_hour,
     _parse_ist_date,
@@ -16,7 +20,6 @@ from gitlab_compliance_checker.services.weekly_performance.models import (
     InternCSVRow,
     WeeklyActivity,
 )
-from gitlab_compliance_checker.ui.csv_common import render_csv_upload_section
 
 logger = logging.getLogger(__name__)
 
@@ -383,11 +386,7 @@ def fetch_team_audio_urls(
     return audio_data
 
 
-def _render_csv_upload() -> list[InternCSVRow]:
-    rows = render_csv_upload_section(key="wp_csv_uploader", label="Upload Interns CSV")
-    if rows:
-        st.session_state["wp_interns"] = rows
-    return rows
+# Removed _render_csv_upload - functionality moved to Admin Management
 
 
 def _render_date_selector() -> tuple[Any, str]:
@@ -432,7 +431,7 @@ def _render_date_selector() -> tuple[Any, str]:
 
 def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
     if not interns:
-        st.info("Upload a CSV to see intern data.")
+        st.info("No interns found. Please add members in the Admin panel.")
         return None
 
     options = ["All Interns"] + [f"{r['name']} (@{r['gitlab_username']})" for r in interns]
@@ -628,28 +627,39 @@ def render_weekly_performance_ui(gl_client) -> None:
     _init_state()
     _render_corpus_login()
 
+    if not st.session_state.get("wp_corpus_token"):
+        st.warning(
+            "📻 **Corpus Audio Missing**: Please login with your Corpus credentials in the sidebar to fetch audio contributions."
+        )
+
     role = st.session_state.get("user_role", "intern")
     user_info = st.session_state.get("user_info", {})
     current_username = user_info.get("username") or user_info.get("preferred_username")
 
     if role == "intern":
-        # Interns don't upload CSVs or select others
-        interns: list[InternCSVRow] = [
-            {
-                "team_name": "Standard",
-                "name": str(user_info.get("name", current_username)),
-                "gitlab_username": str(current_username),
-                "gitlab_email": str(user_info.get("email", "")),
-                "corpus_username": str(current_username),
-                "global_username": "",
-                "global_email": "",
-                "date_of_joining": "",
-                "college_name": "",
-            }
-        ]
-        st.info(f"Viewing performance for: **{user_info.get('name')}**")
+        # Fetch the complete intern profile from the database to get the correct corpus_username
+        db_member = get_member_by_username(current_username)
+        if db_member:
+            interns = [db_member]
+            st.info(f"Viewing performance for: **{db_member['name']}**")
+        else:
+            # Fallback to session info if DB lookup fails (though RBAC should prevent this)
+            interns = [
+                {
+                    "team_name": "Standard",
+                    "name": str(user_info.get("name", current_username)),
+                    "gitlab_username": str(current_username),
+                    "gitlab_email": str(user_info.get("email", "")),
+                    "corpus_username": str(current_username),
+                    "global_username": "",
+                    "global_email": "",
+                    "date_of_joining": "",
+                    "college_name": "",
+                }
+            ]
+            st.info(f"Viewing performance for: **{user_info.get('name')}** (Roster info missing)")
     else:
-        interns = _render_csv_upload()
+        interns = get_all_members_with_teams()
 
     res, view_mode = _render_date_selector()
 
@@ -670,7 +680,9 @@ def render_weekly_performance_ui(gl_client) -> None:
         num_days = 1
 
     if not interns:
-        st.info("Upload a CSV file to view intern performance data.")
+        st.info("No intern data found in the database.")
+        if role == "admin":
+            st.info("💡 **Admin Tip**: Go to the **Admin: Roster Management** mode to upload a CSV or add members.")
         st.divider()
         st.markdown("**Preview Grid (no data):**")
         _render_performance_grid(start_date, None, num_days=num_days, show_audio=True)
@@ -679,7 +691,8 @@ def render_weekly_performance_ui(gl_client) -> None:
     if role == "intern":
         selected_intern: InternCSVRow | str = interns[0]
     else:
-        selected_intern = _render_intern_selector(interns)
+        intern_raw = _render_intern_selector(interns)
+        selected_intern = cast(InternCSVRow | str, intern_raw)
 
     if selected_intern == "ALL":
         is_all_cached = all(
