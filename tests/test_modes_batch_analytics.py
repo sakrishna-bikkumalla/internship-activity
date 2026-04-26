@@ -46,16 +46,11 @@ def mock_streamlit():
         col1, col2 = MagicMock(), MagicMock()
         mock_st.columns = MagicMock(return_value=(col1, col2))
 
-        # Mock file_uploader (col1)
-        mock_st.file_uploader.return_value = None
-        col1.file_uploader.side_effect = lambda *args, **kwargs: mock_st.file_uploader(*args, **kwargs)
-
         # Mock text_area (col2 and main)
-        # Default text_area side effect: first call "user1" (usernames), second call "" (no repos)
         mock_st.text_area.side_effect = ["user1", ""]
         col2.text_area.side_effect = lambda *args, **kwargs: mock_st.text_area(*args, **kwargs)
 
-        # Mock button to return True for the analysis button specifically
+        # Mock button
         def button_side_effect(label, **kwargs):
             if label == "🚀 Run Unified Analysis":
                 return True
@@ -71,7 +66,11 @@ def mock_streamlit():
         mock_st.dataframe = MagicMock()
         mock_st.download_button = MagicMock()
         mock_st.markdown = MagicMock()
-        yield mock_st
+
+        # Patch render_csv_upload_section to avoid streamlit attribute errors inside csv_common
+        with patch("gitlab_compliance_checker.ui.batch.render_csv_upload_section", return_value=[]) as mock_csv:
+            mock_st.render_csv_upload_section = mock_csv
+            yield mock_st
 
 
 @pytest.fixture
@@ -164,11 +163,10 @@ class TestRenderBatchAnalyticsUI:
     @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
     def test_csv_file_upload_first_column(self, mock_process, mock_client, mock_streamlit):
         mock_streamlit.text_area.side_effect = ["", ""]
-        mock_file = MagicMock()
-        mock_file.name = "users.csv"
-        mock_file.seek = MagicMock()
-        mock_file.read.return_value = b"user2\nuser3\n"
-        mock_streamlit.file_uploader.return_value = mock_file
+        mock_streamlit.render_csv_upload_section.return_value = [
+            {"gitlab_username": "user2", "name": "User Two"},
+            {"gitlab_username": "user3", "name": "User Three"},
+        ]
         mock_process.return_value = []
 
         batch_analytics.render_batch_analytics_ui(mock_client)
@@ -182,11 +180,10 @@ class TestRenderBatchAnalyticsUI:
     @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
     def test_csv_file_upload_with_header_and_college(self, mock_process, mock_client, mock_streamlit):
         mock_streamlit.text_area.side_effect = ["", ""]
-        mock_file = MagicMock()
-        mock_file.name = "users.csv"
-        mock_file.seek = MagicMock()
-        mock_file.read.return_value = b"username,college\nuser2,ABC College\nuser3,XYZ University\n"
-        mock_streamlit.file_uploader.return_value = mock_file
+        mock_streamlit.render_csv_upload_section.return_value = [
+            {"gitlab_username": "user2", "college_name": "ABC College"},
+            {"gitlab_username": "user3", "college_name": "XYZ University"},
+        ]
         mock_process.return_value = [
             {
                 "username": "user2",
@@ -227,11 +224,10 @@ class TestRenderBatchAnalyticsUI:
     @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
     def test_csv_file_upload_without_header_uses_first_column(self, mock_process, mock_client, mock_streamlit):
         mock_streamlit.text_area.side_effect = ["", ""]
-        mock_file = MagicMock()
-        mock_file.name = "users.csv"
-        mock_file.seek = MagicMock()
-        mock_file.read.return_value = b"user2,ABC College\nuser3,XYZ University\n"
-        mock_streamlit.file_uploader.return_value = mock_file
+        mock_streamlit.render_csv_upload_section.return_value = [
+            {"gitlab_username": "user2"},
+            {"gitlab_username": "user3"},
+        ]
         mock_process.return_value = []
 
         batch_analytics.render_batch_analytics_ui(mock_client)
@@ -244,12 +240,9 @@ class TestRenderBatchAnalyticsUI:
     @patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users")
     def test_malformed_upload_shows_error(self, mock_process, mock_client, mock_streamlit):
         mock_streamlit.text_area.side_effect = ["", ""]
-        mock_file = MagicMock()
-        mock_file.name = "users.csv"
-        mock_streamlit.file_uploader.return_value = mock_file
+        mock_streamlit.render_csv_upload_section.side_effect = ValueError("Bad CSV")
         mock_process.return_value = []
 
-        with patch("gitlab_compliance_checker.ui.batch._parse_uploaded_user_csv", side_effect=ValueError("Bad CSV")):
-            batch_analytics.render_batch_analytics_ui(mock_client)
+        batch_analytics.render_batch_analytics_ui(mock_client)
 
         mock_streamlit.error.assert_any_call("Error reading uploaded CSV file: Bad CSV")

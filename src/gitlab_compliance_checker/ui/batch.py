@@ -1,82 +1,16 @@
 import datetime
-import io
 
 import pandas as pd
 import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.gitlab import batch
+from gitlab_compliance_checker.ui.csv_common import map_row_to_member, render_csv_upload_section
 
 
 @st.cache_data(ttl=3600)
 def cached_process_batch_users(_client, usernames_tuple, project_ids=None):
     """Cache the unified batch results for 1 hour."""
     return batch.process_batch_users(_client, list(usernames_tuple), project_ids=project_ids)
-
-
-def _parse_uploaded_user_csv(uploaded_file) -> tuple[list[str], dict[str, str]]:
-    """Extract usernames and optional college values from an uploaded CSV."""
-    uploaded_file.seek(0)
-    raw_csv = uploaded_file.read()
-    if isinstance(raw_csv, bytes):
-        csv_text = raw_csv.decode("utf-8-sig")
-    else:
-        csv_text = str(raw_csv)
-
-    csv_df = pd.read_csv(io.StringIO(csv_text))
-    csv_df.columns = [str(col).strip() for col in csv_df.columns]
-
-    lowered = {str(col).strip().lower(): col for col in csv_df.columns}
-    username_col = next(
-        (
-            lowered[key]
-            for key in ("username", "gitlab username", "gitlab_username", "user", "user name", "user_name")
-            if key in lowered
-        ),
-        None,
-    )
-    college_col = next(
-        (
-            lowered[key]
-            for key in (
-                "college",
-                "college name",
-                "college_name",
-                "institution",
-                "institution name",
-                "institution_name",
-                "university",
-                "university name",
-                "organization",
-                "organisation",
-                "org",
-                "school",
-            )
-            if key in lowered
-        ),
-        None,
-    )
-
-    if username_col is None:
-        csv_df = pd.read_csv(io.StringIO(csv_text), header=None)
-        username_col = csv_df.columns[0]
-        college_col = csv_df.columns[1] if len(csv_df.columns) > 1 else None
-
-    usernames: list[str] = []
-    # Keys are stored lowercase for case-insensitive lookup later
-    college_map: dict[str, str] = {}
-
-    for _, csv_row in csv_df.iterrows():
-        uname = str(csv_row.get(username_col, "")).strip() if pd.notna(csv_row.get(username_col, "")) else ""
-        college = (
-            str(csv_row.get(college_col, "")).strip()
-            if college_col is not None and pd.notna(csv_row.get(college_col, ""))
-            else ""
-        )
-        if uname:
-            usernames.append(uname)
-            college_map[uname.lower()] = college
-
-    return usernames, college_map
 
 
 def render_batch_analytics_ui(client):
@@ -88,12 +22,11 @@ def render_batch_analytics_ui(client):
         col1, col2 = st.columns(2)
 
         with col1:
-            uploaded_file = st.file_uploader(
-                "📂 Upload Usernames & Colleges (.csv)",
-                type=["csv"],
-                help="CSV with a 'username' column and an optional 'college' (or 'institution'/'university') column. "
-                "If no header, column 1 = username, column 2 = college.",
-            )
+            try:
+                csv_rows = render_csv_upload_section(key="batch_roster_upload")
+            except Exception as e:
+                st.error(f"Error reading uploaded CSV file: {e}")
+                csv_rows = []
 
         with col2:
             text_input = st.text_area(
@@ -124,29 +57,29 @@ def render_batch_analytics_ui(client):
         # Parse text area: each line is "username" or "username, college"
         usernames: list[str] = []
         for line in text_input.splitlines():
-            line = line.strip()
-            if not line:
+            line_str: str = line.strip()
+            if not line_str:
                 continue
-            if "," in line:
-                parts = line.split(",", 1)
+            if "," in line_str:
+                parts = line_str.split(",", 1)
                 uname = parts[0].strip()
                 college = parts[1].strip()
             else:
-                uname = line
+                uname = line_str
                 college = ""
             if uname:
                 usernames.append(uname)
                 college_map[uname.lower()] = college
 
-        # Also parse uploaded CSV
-        if uploaded_file is not None:
-            try:
-                uploaded_usernames, uploaded_college_map = _parse_uploaded_user_csv(uploaded_file)
-                usernames.extend(uploaded_usernames)
-                # CSV entries take precedence over text-area entries for the same username
-                college_map.update(uploaded_college_map)
-            except Exception as e:
-                st.error(f"Error reading uploaded CSV file: {e}")
+        # Also add parsed CSV entries
+        if csv_rows:
+            for row in csv_rows:
+                member = map_row_to_member(row)
+                uname = member.get("username")
+                if uname:
+                    usernames.append(uname)
+                    # CSV entries take precedence over text-area entries for same username
+                    college_map[uname.lower()] = member.get("college", "")
 
         # Deduplicate and sort
         usernames = sorted(set(usernames))

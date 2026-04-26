@@ -15,8 +15,8 @@ from gitlab_compliance_checker.services.weekly_performance.models import (
     DailyData,
     InternCSVRow,
     WeeklyActivity,
-    parse_intern_csv,
 )
+from gitlab_compliance_checker.ui.csv_common import render_csv_upload_section
 
 logger = logging.getLogger(__name__)
 
@@ -350,18 +350,18 @@ def fetch_team_audio_urls(
     audio_data: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
     for member in team_members:
-        corpus_uid = member.get("corpus_uid")
-        if not corpus_uid:
+        corpus_username = member.get("corpus_username")
+        if not corpus_username:
             continue
 
-        audio_data[corpus_uid] = {}
-        logger.debug(f"[UI] Fetching records for member: {member['full_name']} (corpus_uid={corpus_uid})")
+        audio_data[corpus_username] = {}
+        logger.debug(f"[UI] Fetching records for member: {member['name']} (corpus_username={corpus_username})")
         try:
-            records = corpus_client.fetch_records(corpus_uid, start_date, end_date)
-            logger.debug(f"[UI] Got {len(records)} records for {member['full_name']}")
+            records = corpus_client.fetch_records(corpus_username, start_date, end_date)
+            logger.debug(f"[UI] Got {len(records)} records for {member['name']}")
 
             audio_urls = corpus_client.extract_audio_urls(records)
-            logger.debug(f"[UI] Extracted {len(audio_urls)} audio URLs for {member['full_name']}")
+            logger.debug(f"[UI] Extracted {len(audio_urls)} audio URLs for {member['name']}")
 
             for url in audio_urls:
                 record = next((r for r in records if r.get("file_url") == url), None)
@@ -370,59 +370,24 @@ def fetch_team_audio_urls(
                 created_at = record.get("created_at", "")
                 date_str = _parse_ist_date(created_at) if created_at else None
                 if date_str:
-                    if date_str not in audio_data[corpus_uid]:
-                        audio_data[corpus_uid][date_str] = []
+                    if date_str not in audio_data[corpus_username]:
+                        audio_data[corpus_username][date_str] = []
 
                     # Store as dict to allow for more metadata if needed
                     audio_entry = {"url": url, "filename": record.get("file_name", "audio"), "created_at": created_at}
-                    audio_data[corpus_uid][date_str].append(audio_entry)
+                    audio_data[corpus_username][date_str].append(audio_entry)
         except Exception as e:
-            logger.error(f"[UI] Failed to fetch records for {member['full_name']}: {e}")
-            st.warning(f"Failed to fetch records for {member['full_name']}: {e}")
+            logger.error(f"[UI] Failed to fetch records for {member['name']}: {e}")
+            st.warning(f"Failed to fetch records for {member['name']}: {e}")
 
     return audio_data
 
 
 def _render_csv_upload() -> list[InternCSVRow]:
-    with st.expander("📋 CSV Format Guide", expanded=False):
-        st.markdown(
-            "**Expected CSV Structure:**\n\n"
-            "| Column | Description | Example |\n"
-            "|--------|-------------|---------|\n"
-            "| `Team Name` | Name of the team | `Backend` |\n"
-            "| `Full Name` | Intern's full name | `John Doe` |\n"
-            "| `GitLab Username` | GitLab username (used for MRs, issues, commits, timelogs) | `johndoe` |\n"
-            "| `Corpus UID` | Corpus username or user ID (used for standup audio - separate from GitLab) | `johndoe` |\n\n"
-            "**Note:** GitLab Username and Corpus UID are separate systems. "
-            "GitLab tracks code activity; Corpus tracks standup audio.\n\n"
-            "**Sample CSV:**\n\n"
-            "```csv\n"
-            "Team Name,Full Name,GitLab Username,Corpus UID\n"
-            "Backend,John Doe,johndoe,johndoe\n"
-            "Frontend,Jane Smith,janesmith,janesmith\n"
-            "```"
-        )
-
-    uploaded = st.file_uploader(
-        "Upload Interns CSV",
-        type=["csv"],
-        key="wp_csv_uploader",
-        help="CSV must have columns: Team Name, Full Name, GitLab Username, Corpus UID",
-    )
-
-    if uploaded is None:
-        return []
-
-    try:
-        rows = parse_intern_csv(uploaded.read())
-        if not rows:
-            st.warning("CSV file is empty.")
-            return []
+    rows = render_csv_upload_section(key="wp_csv_uploader", label="Upload Interns CSV")
+    if rows:
         st.session_state["wp_interns"] = rows
-        return rows
-    except Exception as e:
-        st.error(f"Failed to parse CSV: {e}")
-        return []
+    return rows
 
 
 def _render_date_selector() -> tuple[Any, str]:
@@ -470,8 +435,8 @@ def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
         st.info("Upload a CSV to see intern data.")
         return None
 
-    options = ["All Interns"] + [f"{r['full_name']} (@{r['gitlab_username']})" for r in interns]
-    intern_map = {f"{r['full_name']} (@{r['gitlab_username']})": r for r in interns}
+    options = ["All Interns"] + [f"{r['name']} (@{r['gitlab_username']})" for r in interns]
+    intern_map = {f"{r['name']} (@{r['gitlab_username']})": r for r in interns}
 
     selected = st.selectbox("Select Intern", options=options, key="wp_intern_select")
     if selected == "All Interns":
@@ -576,11 +541,9 @@ def _fetch_all_activity(
         activity = cast(WeeklyActivity, st.session_state["wp_activity_cache"][cache_key])
 
         if corpus_client and not activity.audio_fetched:
-            logger.debug(f"[UI] Cache enrichment required for {selected_intern['full_name']}")
+            logger.debug(f"[UI] Cache enrichment required for {selected_intern['name']}")
         else:
-            logger.debug(
-                f"[UI] Cache hit for {selected_intern['full_name']} on {start_date.isoformat()} ({num_days} days)"
-            )
+            logger.debug(f"[UI] Cache hit for {selected_intern['name']} on {start_date.isoformat()} ({num_days} days)")
             return activity
 
     # If we are here, either it's a new entry OR we need enrichment
@@ -588,11 +551,11 @@ def _fetch_all_activity(
         activity = st.session_state["wp_activity_cache"][cache_key]
         is_enrichment = True
     else:
-        logger.debug(f"[UI] _fetch_all_activity for intern: {selected_intern['full_name']} ({num_days} days)")
+        logger.debug(f"[UI] _fetch_all_activity for intern: {selected_intern['name']} ({num_days} days)")
         activity = WeeklyActivity(
-            intern_name=selected_intern["full_name"],
+            intern_name=selected_intern["name"],
             gitlab_username=selected_intern["gitlab_username"],
-            corpus_uid=selected_intern["corpus_uid"],
+            corpus_uid=selected_intern["corpus_username"],
         )
         is_enrichment = False
 
@@ -608,13 +571,13 @@ def _fetch_all_activity(
     # GitLab Data Fetch (Skip if enrichment)
     if not is_enrichment:
         logger.debug(f"[UI] Fetching GitLab data for {selected_intern['gitlab_username']}")
-        with st.spinner(f"Fetching GitLab data for {selected_intern['full_name']}..."):
+        with st.spinner(f"Fetching GitLab data for {selected_intern['name']}..."):
             end_date = start_date + timedelta(days=num_days - 1)
             gitlab_activity = aggregate_intern_data(
                 gl_client,
                 gitlab_username=selected_intern["gitlab_username"],
-                corpus_uid=selected_intern["corpus_uid"],
-                intern_name=selected_intern["full_name"],
+                corpus_uid=selected_intern["corpus_username"],
+                intern_name=selected_intern["name"],
                 start_date=start_date,
                 end_date=end_date,
             )
@@ -626,18 +589,18 @@ def _fetch_all_activity(
     # Corpus Audio Fetch
     if corpus_client:
         if pre_fetched_audio:
-            logger.debug(f"[UI] Using pre-fetched audio for: {selected_intern['full_name']}")
+            logger.debug(f"[UI] Using pre-fetched audio for: {selected_intern['name']}")
             for date_str, urls in pre_fetched_audio.items():
                 if date_str in activity.daily_data:
                     activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
         else:
-            logger.debug(f"[UI] Fetching Corpus audio for: {selected_intern['full_name']}")
+            logger.debug(f"[UI] Fetching Corpus audio for: {selected_intern['name']}")
             start_date_str: str = start_date.isoformat()
             end_date_str: str = (start_date + timedelta(days=num_days - 1)).isoformat()
 
-            with st.spinner(f"Fetching audio for {selected_intern['full_name']}..."):
+            with st.spinner(f"Fetching audio for {selected_intern['name']}..."):
                 audio_batch = fetch_team_audio_urls(corpus_client, [selected_intern], start_date_str, end_date_str)
-                user_audio = audio_batch.get(selected_intern["corpus_uid"], {})
+                user_audio = audio_batch.get(selected_intern["corpus_username"], {})
                 for date_str, urls in user_audio.items():
                     if date_str in activity.daily_data:
                         activity.daily_data[date_str]["corpus"]["audio_urls"] = urls
@@ -674,9 +637,14 @@ def render_weekly_performance_ui(gl_client) -> None:
         interns: list[InternCSVRow] = [
             {
                 "team_name": "Standard",
-                "full_name": user_info.get("name", current_username),
-                "gitlab_username": current_username,
-                "corpus_uid": current_username,
+                "name": str(user_info.get("name", current_username)),
+                "gitlab_username": str(current_username),
+                "gitlab_email": str(user_info.get("email", "")),
+                "corpus_username": str(current_username),
+                "global_username": "",
+                "global_email": "",
+                "date_of_joining": "",
+                "college_name": "",
             }
         ]
         st.info(f"Viewing performance for: **{user_info.get('name')}**")
@@ -739,15 +707,15 @@ def render_weekly_performance_ui(gl_client) -> None:
                 team_audio_data = fetch_team_audio_urls(corpus_client, interns, start_date_str, end_date_str)
 
         for intern in interns:
-            st.markdown(f"### {intern['full_name']}")
-            st.caption(f"GitLab: @{intern['gitlab_username']} | Corpus UID: {intern['corpus_uid']}")
+            st.markdown(f"### {intern['name']}")
+            st.caption(f"GitLab: @{intern['gitlab_username']} | Corpus UID: {intern['corpus_username']}")
 
             if (start_date.isoformat(), num_days, intern["gitlab_username"]) not in st.session_state.get(
                 "wp_activity_cache", {}
             ):
                 time.sleep(1)
 
-            intern_audio = team_audio_data.get(intern["corpus_uid"], {})
+            intern_audio = team_audio_data.get(intern["corpus_username"], {})
             try:
                 activity = _fetch_all_activity(
                     gl_client,
@@ -762,17 +730,17 @@ def render_weekly_performance_ui(gl_client) -> None:
                 error_str = str(e)
                 if "Rate Limit" in error_str:
                     st.error(
-                        f"🛑 **GitLab Rate Limit Reached** for {intern['full_name']}\n\n{error_str}\n\nPlease wait a few minutes."
+                        f"🛑 **GitLab Rate Limit Reached** for {intern['name']}\n\n{error_str}\n\nPlease wait a few minutes."
                     )
                     # We might want to break here if it's a global rate limit
                     if "429" in error_str:
                         break
                 elif "Timeout context manager" in error_str:
                     st.error(
-                        f"⚠️ **Async Context Error** for {intern['full_name']}\n\nThe background event loop encountered a synchronization issue. Please try clicking 'Refresh Data' in the sidebar."
+                        f"⚠️ **Async Context Error** for {intern['name']}\n\nThe background event loop encountered a synchronization issue. Please try clicking 'Refresh Data' in the sidebar."
                     )
                 else:
-                    st.error(f"❌ **Error fetching data** for {intern['full_name']}\n\n{error_str}")
+                    st.error(f"❌ **Error fetching data** for {intern['name']}\n\n{error_str}")
 
             st.divider()
 
@@ -780,15 +748,15 @@ def render_weekly_performance_ui(gl_client) -> None:
         cache_key = (start_date.isoformat(), num_days, selected_intern["gitlab_username"])
         is_cached = cache_key in st.session_state.get("wp_activity_cache", {})
 
-        fetch_button_clicked = st.button(f"🚀 Fetch Performance for {selected_intern['full_name']}", width="stretch")
+        fetch_button_clicked = st.button(f"🚀 Fetch Performance for {selected_intern['name']}", width="stretch")
 
         if not fetch_button_clicked and not is_cached:
-            st.warning(f"👈 Click **Fetch Performance** to load the results for {selected_intern['full_name']}.")
+            st.warning(f"👈 Click **Fetch Performance** to load the results for {selected_intern['name']}.")
             return
 
         st.divider()
-        st.markdown(f"### {selected_intern['full_name']}")
-        st.caption(f"GitLab: @{selected_intern['gitlab_username']} | Corpus UID: {selected_intern['corpus_uid']}")
+        st.markdown(f"### {selected_intern['name']}")
+        st.caption(f"GitLab: @{selected_intern['gitlab_username']} | Corpus UID: {selected_intern['corpus_username']}")
 
         corpus_client = st.session_state.get("wp_corpus_client")
         try:

@@ -32,6 +32,7 @@ import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
 from gitlab_compliance_checker.infrastructure.gitlab.config import DATA_DIR
+from gitlab_compliance_checker.ui.csv_common import group_by_team, render_csv_upload_section
 
 # ---------------------------------------------------------------------------
 # Default Teams (loaded from data/teams.json)
@@ -251,6 +252,67 @@ def _team_name_exists(name: str, exclude_index: int | None = None) -> bool:
     return False
 
 
+def _validate_json_teams(data: dict) -> tuple[list[dict], str]:
+    """Validate teams.json structure. Returns (teams_list, error_msg)."""
+    if not isinstance(data, dict) or "teams" not in data:
+        return [], "Invalid JSON: missing 'teams' key."
+
+    teams = data["teams"]
+    if not isinstance(teams, list) or not teams:
+        return [], "Invalid JSON: 'teams' must be a non-empty list."
+
+    validated = []
+    seen_names = set()
+    existing_names = {t["team_name"].strip().lower() for t in st.session_state.get("teams", [])}
+
+    for idx, t in enumerate(teams):
+        tname = t.get("team_name")
+        pname = t.get("project_name")
+        members = t.get("members")
+
+        if not tname or not isinstance(tname, str):
+            return [], f"Team #{idx + 1} is missing a valid 'team_name'."
+        if pname is None or not isinstance(pname, str):
+            return [], f"Team '{tname}' is missing a valid 'project_name'."
+        if not members or not isinstance(members, list):
+            return [], f"Team '{tname}' must have a non-empty 'members' list."
+
+        lower_name = tname.strip().lower()
+        if lower_name in seen_names:
+            return [], f"Duplicate team name in JSON: '{tname}'."
+        if lower_name in existing_names:
+            return [], f"Team '{tname}' already exists in session."
+
+        seen_names.add(lower_name)
+
+        valid_members = []
+        for midx, m in enumerate(members):
+            muser = m.get("username")
+            if not muser or not isinstance(muser, str):
+                return [], f"Member #{midx + 1} in team '{tname}' is missing a valid 'username'."
+            valid_members.append(
+                {
+                    "name": m.get("name", ""),
+                    "username": muser,
+                    "user_id": m.get("user_id"),
+                    "global_username": m.get("global_username", ""),
+                    "global_email": m.get("global_email", ""),
+                    "date_of_joining": m.get("date_of_joining", ""),
+                }
+            )
+
+        validated.append(
+            {
+                "team_name": tname.strip(),
+                "project_name": (pname or "").strip(),
+                "members": valid_members,
+                "scope": t.get("scope", "all"),
+            }
+        )
+
+    return validated, ""
+
+
 def _build_excel_export(team_data: dict) -> bytes:
     """Multi-sheet Excel: Sheet 1 = leaderboard, Sheet N = per-team member details."""
     output = io.BytesIO()
@@ -270,141 +332,53 @@ def _build_excel_export(team_data: dict) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# UI: JSON Bulk Upload
+# UI: CSV Bulk Upload
 # ---------------------------------------------------------------------------
 
 
-def _validate_json_teams(raw: dict) -> tuple[list[dict] | None, str]:
+def _render_csv_upload() -> None:
     """
-    Validate parsed JSON against the expected teams schema.
-    Returns (teams_list, "") on success or (None, error_message) on failure.
-    """
-    if not isinstance(raw, dict) or "teams" not in raw:
-        return None, 'JSON must be an object containing a "teams" key.'
-
-    teams = raw["teams"]
-    if not isinstance(teams, list):
-        return None, '"teams" must be a list.'
-    if not teams:
-        return None, '"teams" list is empty.'
-
-    existing_names = {t["team_name"].strip().lower() for t in st.session_state["teams"]}
-    seen_names: set[str] = set()
-
-    for ti, team in enumerate(teams, start=1):
-        tname = team.get("team_name", "")
-        pname = team.get("project_name", "")
-        members = team.get("members", [])
-
-        if not isinstance(tname, str) or not tname.strip():
-            return None, f'Team #{ti}: "team_name" is missing or empty.'
-        if not isinstance(pname, str) or not pname.strip():
-            return None, f'Team #{ti} ({tname}): "project_name" is missing or empty.'
-        if not isinstance(members, list) or not members:
-            return None, f'Team #{ti} ({tname}): "members" must be a non-empty list.'
-
-        norm = tname.strip().lower()
-        if norm in existing_names:
-            return None, f'Team "{tname}" already exists in the current session.'
-        if norm in seen_names:
-            return None, f'Duplicate team name "{tname}" found in the uploaded file.'
-        seen_names.add(norm)
-
-        seen_usernames: set[str] = set()
-        for mi, member in enumerate(members, start=1):
-            mname = member.get("name", "")
-            musername = member.get("username", "")
-            if not isinstance(musername, str) or not musername.strip():
-                return None, (f'Team "{tname}", member #{mi}: "username" is missing or empty.')
-            if not isinstance(mname, str):
-                return None, (f'Team "{tname}", member #{mi}: "name" must be a string.')
-            ukey = musername.strip().lower()
-            if ukey in seen_usernames:
-                return None, (f'Team "{tname}": duplicate username "{musername}".')
-            seen_usernames.add(ukey)
-
-    return teams, ""
-
-
-def _render_json_upload() -> None:
-    """
-    Render the JSON bulk-upload section inside an expander.
+    Render the CSV bulk-upload section inside an expander.
     Appends validated teams to st.session_state["teams"].
     """
-    import json
-
-    with st.expander("📂 Upload JSON File", expanded=True):
-        st.markdown(
-            "Upload a `.json` file to import multiple teams at once. Existing teams will **not** be overwritten."
-        )
-        _SAMPLE_JSON = (
-            "{"
-            + '\n  "teams": ['
-            + "\n    {"
-            + '\n      "team_name": "Team Alpha",'
-            + '\n      "project_name": "Project A",'
-            + '\n      "members": ['
-            + '\n        { "name": "John", "username": "john123" }'
-            + "\n      ]"
-            + "\n    }"
-            + "\n  ]"
-            + "\n}"
-        )
-        st.code(_SAMPLE_JSON, language="json")
-
-        uploaded = st.file_uploader(
-            "Choose a JSON file",
-            type=["json"],
-            key="_lb_json_uploader",
-            label_visibility="collapsed",
+    with st.expander("📂 Upload CSV File", expanded=True):
+        rows = render_csv_upload_section(
+            key="_lb_csv_uploader",
+            label="Choose a CSV file",
+            description="Upload a `.csv` file to import multiple teams at once. Existing teams will **not** be overwritten.",
         )
 
-        if uploaded is None:
+        if not rows:
             return
 
-        st.caption(f"📄 Uploaded: **{uploaded.name}**")
+        # Group by team name using standardized helper
+        teams_map = group_by_team(rows)
 
-        raw_bytes = uploaded.read()
-        if not raw_bytes:
-            st.error("The uploaded file is empty.")
-            return
+        existing_names = {t["team_name"].strip().lower() for t in st.session_state["teams"]}
 
-        try:
-            raw_data = json.loads(raw_bytes.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            st.error(f"Could not parse JSON: {exc}")
-            return
+        new_teams = []
+        for tname, members in teams_map.items():
+            if tname.strip().lower() in existing_names:
+                st.warning(f"⚠️ Team **{tname}** already exists. Skipping.")
+                continue
 
-        teams_to_add, err = _validate_json_teams(raw_data)
-        if err:
-            st.error(f"Validation error: {err}")
-            return
+            new_teams.append(
+                {
+                    "team_name": tname.strip(),
+                    "project_name": "",  # Project name is optional
+                    "members": members,
+                }
+            )
 
-        # Normalise member dicts (ensure user_id key exists)
-        clean_teams = [
-            {
-                "team_name": t["team_name"].strip(),
-                "project_name": t["project_name"].strip(),
-                "members": [
-                    {
-                        "name": m.get("name", "").strip(),
-                        "username": m["username"].strip(),
-                        "user_id": m.get("user_id") or None,
-                    }
-                    for m in t["members"]
-                ],
-            }
-            for t in teams_to_add or []
-        ]
-
-        st.session_state["teams"].extend(clean_teams)
-        st.session_state["_lb_show_upload_form"] = False
-        st.session_state["_lb_triggered"] = False
-        st.success(
-            f"✅ {len(clean_teams)} team(s) imported successfully: "
-            + ", ".join(f"**{t['team_name']}**" for t in clean_teams)
-        )
-        st.rerun()
+        if new_teams:
+            st.session_state["teams"].extend(new_teams)
+            st.session_state["_lb_show_upload_form"] = False
+            st.session_state["_lb_triggered"] = False
+            st.success(
+                f"✅ {len(new_teams)} team(s) imported successfully: "
+                + ", ".join(f"**{t['team_name']}**" for t in new_teams)
+            )
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -423,15 +397,15 @@ def _render_create_team_form(scope: str = "all") -> None:
 
     with btn_col1:
         create_label = "✖ Cancel" if st.session_state["_lb_show_create_form"] else "➕ Create New Team"
-        if st.button(create_label, key="_lb_toggle_form", use_container_width=True):
+        if st.button(create_label, key="_lb_toggle_form", width="stretch"):
             st.session_state["_lb_show_create_form"] = not st.session_state["_lb_show_create_form"]
             st.session_state["_lb_show_upload_form"] = False  # close the other panel
             st.session_state["_lb_draft_members"] = []
             st.rerun()
 
     with btn_col2:
-        upload_label = "✖ Cancel Upload" if st.session_state["_lb_show_upload_form"] else "📂 Add All Teams Using JSON"
-        if st.button(upload_label, key="_lb_toggle_upload", use_container_width=True):
+        upload_label = "✖ Cancel Upload" if st.session_state["_lb_show_upload_form"] else "📂 Add All Teams Using CSV"
+        if st.button(upload_label, key="_lb_toggle_upload", width="stretch"):
             st.session_state["_lb_show_upload_form"] = not st.session_state["_lb_show_upload_form"]
             st.session_state["_lb_show_create_form"] = False  # close the other panel
             st.session_state["_lb_draft_members"] = []
@@ -439,7 +413,7 @@ def _render_create_team_form(scope: str = "all") -> None:
 
     # Show whichever panel is active
     if st.session_state["_lb_show_upload_form"]:
-        _render_json_upload()
+        _render_csv_upload()
         return
 
     if not st.session_state["_lb_show_create_form"]:
@@ -480,7 +454,7 @@ def _render_create_team_form(scope: str = "all") -> None:
         st.markdown("**Members added so far:**")
         st.dataframe(
             pd.DataFrame(st.session_state["_lb_draft_members"]),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         rm_user = st.selectbox(
@@ -561,7 +535,7 @@ def _render_edit_form(edit_idx: int) -> None:
         st.info("No members. Add one below.")
     else:
         for m_idx, member in enumerate(members):
-            mc1, mc2, mc3, mc4 = st.columns([2, 2, 1, 1])
+            mc1, mc2, mc3, mc4, mc5 = st.columns([2, 2, 2, 2, 0.5])
             with mc1:
                 members[m_idx]["name"] = st.text_input(
                     "Name", value=member.get("name", ""), key=f"_lb_edit_m_name_{m_idx}"
@@ -573,12 +547,18 @@ def _render_edit_form(edit_idx: int) -> None:
                     key=f"_lb_edit_m_user_{m_idx}",
                 )
             with mc3:
-                uid = member.get("user_id") or 0
-                members[m_idx]["user_id"] = (
-                    st.number_input("User ID", value=int(uid), min_value=0, step=1, key=f"_lb_edit_m_id_{m_idx}")
-                    or None
+                members[m_idx]["global_username"] = st.text_input(
+                    "Global Username",
+                    value=member.get("global_username", ""),
+                    key=f"_lb_edit_m_global_{m_idx}",
                 )
             with mc4:
+                members[m_idx]["date_of_joining"] = st.text_input(
+                    "DOJ",
+                    value=member.get("date_of_joining", ""),
+                    key=f"_lb_edit_m_doj_{m_idx}",
+                )
+            with mc5:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🗑", key=f"_lb_edit_rm_{m_idx}", help="Remove this member"):
                     st.session_state["_lb_edit_draft"]["members"].pop(m_idx)
@@ -752,14 +732,14 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
     ]
     df = pd.DataFrame(member_rows)
     available = [c for c in display_cols if c in df.columns]
-    st.dataframe(df[available], use_container_width=True, hide_index=True)
+    st.dataframe(df[available], width="stretch", hide_index=True)
 
     group_rows = [
         {"Username": r["Username"], "Groups": r.get("Groups", 0)} for r in member_rows if r.get("Status") == "Success"
     ]
     if group_rows:
         with st.expander("👥 Group Breakdown"):
-            st.dataframe(pd.DataFrame(group_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(group_rows), width="stretch", hide_index=True)
 
     _render_detailed_contributions(member_rows)
 
@@ -1120,7 +1100,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                                 title_x=0.5,
                             )
                             fig.update_traces(textposition="inside", textinfo="percent+label")
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width="stretch")
                         else:
                             st.markdown(
                                 f"<div style='text-align:center; padding:15px; border:1px dashed #555; border-radius:10px; margin-top:5px;'><h6 style='color:#ccc;margin:0;font-size:12px;'>{title}</h6><span style='color:#888;font-size:11px;'>No Data</span></div>",
@@ -1279,11 +1259,11 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 # Load More / See Less buttons (placed closely below the card)
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 if len(mrs) > limit:
-                    if st.button("➕ Load more MRs", key=f"btn_more_mr_{username}", use_container_width=True):
+                    if st.button("➕ Load more MRs", key=f"btn_more_mr_{username}", width="stretch"):
                         st.session_state[mr_limit_key] = limit + INCREMENT
                         st.rerun()
                 if limit > DEFAULT_LIMIT:
-                    if st.button("➖ See less MRs", key=f"btn_less_mr_{username}", use_container_width=True):
+                    if st.button("➖ See less MRs", key=f"btn_less_mr_{username}", width="stretch"):
                         st.session_state[mr_limit_key] = DEFAULT_LIMIT
                         st.rerun()
 
@@ -1305,11 +1285,11 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 # Load More / See Less buttons
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 if len(issues) > limit:
-                    if st.button("➕ Load more Issues", key=f"btn_more_iss_{username}", use_container_width=True):
+                    if st.button("➕ Load more Issues", key=f"btn_more_iss_{username}", width="stretch"):
                         st.session_state[issue_limit_key] = limit + INCREMENT
                         st.rerun()
                 if limit > DEFAULT_LIMIT:
-                    if st.button("➖ See less Issues", key=f"btn_less_iss_{username}", use_container_width=True):
+                    if st.button("➖ See less Issues", key=f"btn_less_iss_{username}", width="stretch"):
                         st.session_state[issue_limit_key] = DEFAULT_LIMIT
                         st.rerun()
 
@@ -1331,11 +1311,11 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 # Load More / See Less buttons
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 if len(commits) > limit:
-                    if st.button("➕ Load more Commits", key=f"btn_more_com_{username}", use_container_width=True):
+                    if st.button("➕ Load more Commits", key=f"btn_more_com_{username}", width="stretch"):
                         st.session_state[commit_limit_key] = limit + INCREMENT
                         st.rerun()
                 if limit > DEFAULT_LIMIT:
-                    if st.button("➖ See less Commits", key=f"btn_less_com_{username}", use_container_width=True):
+                    if st.button("➖ See less Commits", key=f"btn_less_com_{username}", width="stretch"):
                         st.session_state[commit_limit_key] = DEFAULT_LIMIT
                         st.rerun()
 
@@ -1380,7 +1360,7 @@ def _render_specific_team_analytics(
         for col in user_perf_cols:
             if col not in df_users.columns:
                 df_users[col] = 0
-        st.dataframe(df_users[user_perf_cols], use_container_width=True, hide_index=True)
+        st.dataframe(df_users[user_perf_cols], width="stretch", hide_index=True)
     else:
         st.info("No member data available.")
 
@@ -1430,7 +1410,7 @@ def _render_specific_team_analytics(
             column_config={
                 "Link": st.column_config.LinkColumn("GitLab Link"),
             },
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
     else:
@@ -1463,7 +1443,7 @@ def _render_overall_leaderboard(team_data: dict) -> None:
     ]
     df_lb = pd.DataFrame(lb_rows).sort_values("Team Score", ascending=False).reset_index(drop=True)
     df_lb.insert(0, "Rank", range(1, len(df_lb) + 1))
-    st.dataframe(df_lb, use_container_width=True, hide_index=True)
+    st.dataframe(df_lb, width="stretch", hide_index=True)
     st.divider()
 
 
@@ -1504,6 +1484,10 @@ def _build_individual_rows(team_data: dict) -> list[dict]:
             all_members.append(
                 {
                     "Username": row.get("Username", "unknown"),
+                    "Name": row.get("Name", ""),
+                    "Global Username": row.get("Global Username", ""),
+                    "Global Email": row.get("Global Email", ""),
+                    "Date of Joining": row.get("Date of Joining", ""),
                     "Team Name": team_name,
                     "Total Commits": row.get("Total Commits", 0),
                     "MRs Merged": row.get("MR Merged", 0),
@@ -1806,8 +1790,11 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
             "<tr>"
             f'<td class="lb-rank">{int(row.get("S.No", 0))}</td>'
             f'<td class="lb-badge-cell">{badge_html}</td>'
+            f'<td class="lb-team">{escape(str(row.get("Name", "")))}</td>'
             f'<td class="lb-team">{escape(str(row.get("Username", "")))}</td>'
+            f'<td class="lb-team">{escape(str(row.get("Global Username", "")))}</td>'
             f'<td class="lb-team">{escape(str(row.get("Team Name", "")))}</td>'
+            f'<td class="lb-team">{escape(str(row.get("Date of Joining", "")))}</td>'
             f'<td class="lb-num">{int(row.get("Total Commits", 0))}</td>'
             f'<td class="lb-num">{int(row.get("MRs Merged", 0))}</td>'
             f'<td class="lb-num">{int(row.get("Issues Closed", 0))}</td>'
@@ -1821,11 +1808,14 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
       <tr>
         <th>S.No</th>
         <th>Badge</th>
+        <th>Name</th>
         <th>Username</th>
+        <th>Global User</th>
         <th>Team Name</th>
-        <th>Total Commits</th>
-        <th>MRs Merged</th>
-        <th>Issues Closed</th>
+        <th>DOJ</th>
+        <th>Commits</th>
+        <th>MRs</th>
+        <th>Issues</th>
       </tr>
     </thead>
     <tbody>
@@ -1907,7 +1897,7 @@ def render_team_leaderboard(client) -> None:
     with col1:
         if st.button(
             "Workspace",
-            use_container_width=True,
+            width="stretch",
             key="_btn_workspace",
             type="secondary" if current_page == "Leaderboard Ranking" else "primary",
         ):
@@ -1917,7 +1907,7 @@ def render_team_leaderboard(client) -> None:
     with col2:
         if st.button(
             "Leaderboard Ranking",
-            use_container_width=True,
+            width="stretch",
             key="_btn_ranking",
             type="secondary" if current_page == "Workspace" else "primary",
         ):
@@ -2063,7 +2053,24 @@ def render_team_leaderboard(client) -> None:
                     st.warning(f"⚠️ Could not fetch data for **{team_name}**: {exc}")
                     results = []
 
-            member_rows = [_extract_member_row(r) for r in results if r]
+            member_rows = []
+            for r in results:
+                if not r:
+                    continue
+                mrow = _extract_member_row(r)
+                # Enrich with metadata from the roster
+                found_meta: dict[str, Any] = next(
+                    (m for m in team.get("members", []) if m["username"] == r.get("username")), {}
+                )
+                mrow.update(
+                    {
+                        "Name": found_meta.get("name", mrow.get("Name", "")),
+                        "Global Username": found_meta.get("global_username", ""),
+                        "Global Email": found_meta.get("global_email", ""),
+                        "Date of Joining": found_meta.get("date_of_joining", ""),
+                    }
+                )
+                member_rows.append(mrow)
             totals = _aggregate_team_totals(member_rows)
             team_data[team_name] = (team, member_rows, totals)
             progress.progress((idx + 1) / len(teams_to_process), text=f"Done: {team_name}")

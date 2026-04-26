@@ -37,7 +37,6 @@ class GitLabClient:
         self._loop = get_global_loop()
         self._init_gl_client()
 
-        self._init_gl_client()
         self.users = GitLabUsersAPI(self)
 
     def _run_sync(self, coro):
@@ -78,7 +77,7 @@ class GitLabClient:
             if method.upper() == "GET":
                 raw = await gl.get(path, **(params or {}))
             elif method.upper() == "POST":
-                raw = await gl.post(path, json=params or {})
+                raw = await gl.post(path, **(params or {}))
             else:
                 raw = await gl.get(path, **(params or {}))
             return _decode(raw)

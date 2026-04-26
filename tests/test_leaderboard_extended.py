@@ -1,0 +1,40 @@
+import pytest
+from unittest.mock import MagicMock, patch
+import streamlit as st
+from gitlab_compliance_checker.ui import leaderboard
+
+def test_init_state_extended():
+    # Test initialization when some keys exist but others don't
+    state = {"teams": ["existing"]}
+    with patch("gitlab_compliance_checker.ui.leaderboard.st.session_state", state):
+        leaderboard._init_state()
+        assert state["teams"] == ["existing"]
+        assert "_lb_show_create_form" in state
+        assert state["_lb_show_create_form"] is False
+
+def test_calculate_score():
+    # score = total_commits * 1 + merged_mrs * 5 + total_mrs * 2 + issues_closed * 3
+    # 10*1 + 2*5 + 5*2 + 3*3 = 10 + 10 + 10 + 9 = 39
+    assert leaderboard._calculate_score(10, 2, 5, 3) == 39
+
+@patch("gitlab_compliance_checker.ui.leaderboard.st")
+def test_render_sidebar_controls(mock_st):
+    import datetime
+    # Mock columns to return 3 mocks
+    mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+    mock_st.date_input.side_effect = [datetime.date(2024, 1, 1), datetime.date(2024, 1, 10)]
+    
+    state = {"_lb_from_date": None, "_lb_to_date": None, "_lb_clear_dates_requested": False}
+    with patch("gitlab_compliance_checker.ui.leaderboard.st.session_state", state):
+        leaderboard._render_date_filter()
+        # Verify date_input was called for From and To dates
+        assert mock_st.date_input.call_count >= 2
+
+@patch("gitlab_compliance_checker.ui.leaderboard.st")
+def test_load_default_teams_invalid_json(mock_st):
+    with patch("os.path.exists", return_value=True):
+        with patch("builtins.open", MagicMock()):
+            with patch("json.load", side_effect=ValueError("Invalid JSON")):
+                res = leaderboard._load_default_teams()
+                assert res == []
+                mock_st.error.assert_called()
