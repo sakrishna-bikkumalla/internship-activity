@@ -1,19 +1,10 @@
-import asyncio
 import os
-import threading
 from typing import Any, Dict, List, Union
 
 import glabflow
 import msgspec
 
-_GLOBAL_LOOP = asyncio.new_event_loop()
-_GLOBAL_LOOP_THREAD = threading.Thread(target=_GLOBAL_LOOP.run_forever, daemon=True)
-_GLOBAL_LOOP_THREAD.start()
-
-
-def _run_sync(coro):
-    return asyncio.run_coroutine_threadsafe(coro, _GLOBAL_LOOP).result()
-
+from .bridge import run_on_loop as _run_sync
 
 DEFAULT_TIMEOUT = 15
 
