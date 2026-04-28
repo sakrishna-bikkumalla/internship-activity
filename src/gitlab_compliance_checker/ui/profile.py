@@ -85,8 +85,14 @@ def render_user_profile(client, simple_user_info):
         with st.expander("View Recent Commits"):
             # Use pandas for table
             df_commits = pd.DataFrame(all_commits)
-            # Display updated columns
-            st.dataframe(df_commits[["project_name", "message", "date", "time", "slot"]], width="stretch")
+            # Display updated columns, including web_url rendered as a link
+            st.dataframe(
+                df_commits[["project_name", "message", "date", "time", "slot", "web_url"]],
+                column_config={
+                    "web_url": st.column_config.LinkColumn("Commit Link", display_text="View Commit")
+                },
+                width="stretch"
+            )
 
     # Groups
     st.markdown("---")

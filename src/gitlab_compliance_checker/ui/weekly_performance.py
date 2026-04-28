@@ -259,7 +259,8 @@ def _render_activity_slots(
 
     svg_html = ""
     for i, hour in enumerate(slots):
-        slot_label = f"{hour:02d}:00"
+        end_hour = (hour + 1) % 24
+        slot_label = f"{hour:02d}:00 - {end_hour:02d}:00"
         status_class = "slot-idle"
 
         if is_total_idle:
@@ -487,10 +488,11 @@ def _render_performance_grid(
 
             # Activity Slots: Other Hours
             other_slots = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23]
-            if any(h in active_hours for h in other_slots):
+            active_extra_slots = [h for h in other_slots if h in active_hours]
+            if active_extra_slots:
                 _render_activity_slots(
                     active_hours,
-                    slots=other_slots,
+                    slots=active_extra_slots,
                     title="Extra Hours Activity",
                     use_strict_mode=False,
                     compact=True,
