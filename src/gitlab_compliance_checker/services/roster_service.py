@@ -32,6 +32,8 @@ def get_all_members_with_teams() -> List[InternCSVRow]:
         for m in members:
             result.append(
                 {
+                    "id": m.id,
+                    "batch_name": m.team.batch.name if m.team and m.team.batch else "No Batch",
                     "team_name": m.team.name if m.team else "No Team",
                     "name": m.name,
                     "gitlab_username": m.gitlab_username,

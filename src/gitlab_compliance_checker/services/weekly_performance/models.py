@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class GitLabDailyData(TypedDict):
@@ -39,6 +39,8 @@ class InternCSVRow(TypedDict):
     global_email: str
     date_of_joining: str
     college_name: str
+    id: NotRequired[int]
+    batch_name: NotRequired[str]
 
 
 def parse_intern_csv(csv_content: bytes) -> list[InternCSVRow]:

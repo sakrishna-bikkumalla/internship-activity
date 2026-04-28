@@ -11,14 +11,6 @@ This project helps teams and mentors quickly evaluate whether repositories follo
 
 ## Features
 
-- ✅ **Project Compliance Checks**
-  - README / CONTRIBUTING / CHANGELOG presence
-  - LICENSE validation (AGPLv3-focused)
-  - `.gitignore`, `pyproject.toml`, `uv.lock`
-  - `.vscode` setup checks (`settings.json`, `extensions.json`, etc.)
-  - Issue & merge request template presence
-  - Project description and tags checks
-
 - 👤 **User Profile Overview**
   - Personal vs contributed projects
   - Commit activity (including time-slot stats)
@@ -38,7 +30,6 @@ This project helps teams and mentors quickly evaluate whether repositories follo
 gitlab-compliance-checker/
 ├── app.py
 ├── modes/
-│   ├── compliance_mode.py
 │   ├── user_profile.py
 │   └── batch_analytics.py
 ├── gitlab_utils/
