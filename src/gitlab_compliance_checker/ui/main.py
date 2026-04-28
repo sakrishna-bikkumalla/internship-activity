@@ -77,7 +77,6 @@ def main():
     # --- Role-Based Filtering ---
     role = st.session_state.get("user_role", "intern")
     full_options = [
-        # "Check Project Compliance",
         "User Profile Overview",
         "Team Leaderboard",
         "Batch Analytics",
@@ -114,9 +113,6 @@ def main():
         st.stop()
 
     # Routing
-    # if mode == "Check Project Compliance":
-    #     # Compliance mode expects the client wrapper
-    #     render_compliance_mode(client)
 
     if mode == "User Profile Overview":
         st.subheader("👤 User Profile Overview")
