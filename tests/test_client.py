@@ -47,6 +47,19 @@ def test_gitlab_client_init():
 
 
 @pytest.mark.asyncio
+async def test_async_request_post_passes_payload_fields():
+    client = GitLabClient("http://test", "token")
+    mock_gl = AsyncMock()
+    mock_gl.post.return_value = b'{"ok": true}'
+    client._gl = mock_gl
+
+    result = await client._async_request("POST", "/projects", {"name": "demo"})
+
+    assert result == {"ok": True}
+    mock_gl.post.assert_awaited_once_with("/projects", name="demo")
+
+
+@pytest.mark.asyncio
 async def test_evaluate_single_mr_success():
     """Test _evaluate_single_mr with mocked API calls."""
     client = GitLabClient("http://test", "token")

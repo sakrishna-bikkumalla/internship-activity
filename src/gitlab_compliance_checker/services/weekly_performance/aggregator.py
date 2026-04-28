@@ -251,8 +251,8 @@ def aggregate_batch_interns(
         activity = aggregate_intern_data(
             gl_client,
             gitlab_username=row.get("gitlab_username", ""),
-            corpus_uid=row.get("corpus_uid", ""),
-            intern_name=row.get("full_name", ""),
+            corpus_uid=row.get("corpus_username", ""),
+            intern_name=row.get("name", ""),
             start_date=start_date,
             end_date=end_date,
         )

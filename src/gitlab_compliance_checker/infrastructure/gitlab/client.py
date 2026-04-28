@@ -228,7 +228,7 @@ class GitLabClient:
                         path = f"{path}{connector}{query}"
                     raw = await asyncio.create_task(gl.get(path))
                 elif method.upper() == "POST":
-                    raw = await asyncio.create_task(gl.post(path, json=params or {}))
+                    raw = await asyncio.create_task(gl.post(path, **(params or {})))
                 else:
                     raw = await asyncio.create_task(gl.get(path))
             return _decode_json(raw)

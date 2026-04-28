@@ -3,10 +3,12 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
+from gitlab_compliance_checker.infrastructure.database import init_db
 from gitlab_compliance_checker.infrastructure.gitlab import users
 from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
+from gitlab_compliance_checker.services.roster_service import get_all_members_with_teams
+from gitlab_compliance_checker.ui.admin import render_admin_management
 from gitlab_compliance_checker.ui.batch import render_batch_analytics_ui
-from gitlab_compliance_checker.ui.compliance import render_compliance_mode
 from gitlab_compliance_checker.ui.leaderboard import render_team_leaderboard
 from gitlab_compliance_checker.ui.profile import render_user_profile
 from gitlab_compliance_checker.ui.weekly_performance import render_weekly_performance_ui
@@ -42,6 +44,9 @@ def main():
     except TypeError:
         load_dotenv()
 
+    # Initialize Database Tables
+    init_db()
+
     # User Identity in Sidebar
     user_info = st.session_state.get("user_info", {})
     if user_info.get("is_logged_in"):
@@ -61,8 +66,6 @@ def main():
     default_url = os.getenv("GITLAB_URL", "https://code.swecha.org")
     gitlab_url = st.sidebar.text_input("GitLab URL", value=default_url).strip()
 
-    current_username = user_info.get("username") or user_info.get("preferred_username")
-
     # 2. GitLab Token (Priority: st.session_state -> env -> manual input)
     if user_info.get("is_logged_in") and user_info.get("access_token"):
         gitlab_token = user_info.get("access_token")
@@ -74,7 +77,7 @@ def main():
     # --- Role-Based Filtering ---
     role = st.session_state.get("user_role", "intern")
     full_options = [
-        "Check Project Compliance",
+        # "Check Project Compliance",
         "User Profile Overview",
         "Team Leaderboard",
         "Batch Analytics",
@@ -86,6 +89,9 @@ def main():
         allowed_options = ["User Profile Overview", "Weekly Performance Tracker"]
         # Filter while maintaining order
         options = [o for o in full_options if o in allowed_options]
+    elif role == "admin":
+        # Admins see everything + the new management page
+        options = full_options + ["Admin: Roster Management"]
     else:
         options = full_options
 
@@ -108,38 +114,65 @@ def main():
         st.stop()
 
     # Routing
-    if mode == "Check Project Compliance":
-        # Compliance mode expects the client wrapper
-        render_compliance_mode(client)
+    # if mode == "Check Project Compliance":
+    #     # Compliance mode expects the client wrapper
+    #     render_compliance_mode(client)
 
-    elif mode == "User Profile Overview":
+    if mode == "User Profile Overview":
         st.subheader("👤 User Profile Overview")
         if role == "intern":
-            # Interns use their own pre-fetched session data
+            # Interns view their own profile - let's add a button as requested
             current_username = user_info.get("username") or user_info.get("preferred_username")
-            user_data = user_info
-            input_username = current_username
-            st.info(f"Viewing profile for: **{user_info.get('name')}**")
-            error_msg = None
-        else:
-            input_username = st.text_input("Enter GitLab Username", placeholder="username (e.g. jdoe)")
-            user_data = None
-            error_msg = None
-            if input_username:
-                input_username = input_username.strip()
-                with st.spinner(f"Finding user '{input_username}'..."):
-                    try:
-                        user_data = users.get_user_by_username(client, input_username)
-                    except Exception as e:
-                        user_data = None
-                        error_msg = str(e)
+            st.info(f"Ready to fetch profile for: **{user_info.get('name')}**")
 
-        if error_msg:
-            st.error(f"Error: {error_msg}")
-        elif user_data:
-            render_user_profile(client, user_data)
-        elif input_username:
-            st.error(f"User '{input_username}' not found.")
+            if st.button("🔍 Fetch My Profile", key="profile_fetch_btn_intern"):
+                with st.spinner("Fetching your profile..."):
+                    try:
+                        st.session_state["active_profile_data"] = users.get_user_by_username(client, current_username)
+                        st.session_state["active_profile_error"] = None
+                    except Exception as e:
+                        st.session_state["active_profile_data"] = None
+                        st.session_state["active_profile_error"] = str(e)
+        else:
+            # Admins/Mentors can choose from DB or manual entry
+            lookup_mode = st.radio("Lookup Method", ["Select from Roster", "Manual Username Input"], horizontal=True)
+
+            input_username = None
+            if lookup_mode == "Select from Roster":
+                members = get_all_members_with_teams()
+                if not members:
+                    st.warning("No interns found in database.")
+                else:
+                    user_options = {f"{m['name']} (@{m['gitlab_username']})": m["gitlab_username"] for m in members}
+                    selected_label = st.selectbox(
+                        "Choose an Intern", options=["-- Select --"] + list(user_options.keys())
+                    )
+                    if selected_label != "-- Select --":
+                        input_username = user_options[selected_label]
+            else:
+                input_username = st.text_input("Enter GitLab Username", placeholder="username (e.g. jdoe)")
+
+            if st.button("🔍 Fetch Profile", key="profile_fetch_btn_admin"):
+                if not input_username or (lookup_mode == "Select from Roster" and input_username == "-- Select --"):
+                    st.warning("Please select or enter a username first.")
+                else:
+                    input_username = input_username.strip()
+                    with st.spinner(f"Fetching profile for '{input_username}'..."):
+                        try:
+                            st.session_state["active_profile_data"] = users.get_user_by_username(client, input_username)
+                            st.session_state["active_profile_error"] = None
+                        except Exception as e:
+                            st.session_state["active_profile_data"] = None
+                            st.session_state["active_profile_error"] = str(e)
+
+        # Rendering results from session state
+        profile_data = st.session_state.get("active_profile_data")
+        profile_error = st.session_state.get("active_profile_error")
+
+        if profile_error:
+            st.error(f"Error: {profile_error}")
+        elif profile_data:
+            render_user_profile(client, profile_data)
 
     elif mode == "Batch Analytics":
         render_batch_analytics_ui(client)
@@ -149,6 +182,9 @@ def main():
 
     elif mode == "Weekly Performance Tracker":
         render_weekly_performance_ui(client)
+
+    elif mode == "Admin: Roster Management":
+        render_admin_management()
 
     else:
         st.error(f"Routing Error: Unknown mode '{mode}' selected.")

@@ -11,7 +11,7 @@ def test_fetch_team_audio_urls():
     ]
     mock_corpus.extract_audio_urls.return_value = ["url1"]
 
-    interns = [{"full_name": "Test", "corpus_uid": "uid1"}]
+    interns = [{"name": "Test", "corpus_username": "uid1"}]
     data = weekly_performance.fetch_team_audio_urls(mock_corpus, interns, "2024-04-15", "2024-04-19")
 
     assert "uid1" in data
@@ -26,7 +26,7 @@ def test_fetch_team_audio_urls():
 def test_fetch_all_activity_new(mock_agg, mock_fetch_audio, mock_spinner):
     mock_gl = MagicMock()
     mock_corpus = MagicMock()
-    intern = {"full_name": "Test", "gitlab_username": "user", "corpus_uid": "uid"}
+    intern = {"name": "Test", "gitlab_username": "user", "corpus_username": "uid"}
     start = date(2024, 4, 15)
 
     # Mocking aggregate_intern_data return
@@ -55,4 +55,4 @@ def test_parse_intern_csv_integration():
     content = b"Team Name,Full Name,GitLab Username,Corpus UID\nBackend,John Doe,jdo,juid"
     rows = parse_intern_csv(content)
     assert len(rows) == 1
-    assert rows[0]["full_name"] == "John Doe"
+    assert rows[0]["name"] == "John Doe"

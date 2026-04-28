@@ -1,10 +1,10 @@
 import datetime
-import io
 
 import pandas as pd
 import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.gitlab import batch
+from gitlab_compliance_checker.services.roster_service import get_all_members_with_teams
 
 
 @st.cache_data(ttl=3600)
@@ -13,95 +13,36 @@ def cached_process_batch_users(_client, usernames_tuple, project_ids=None):
     return batch.process_batch_users(_client, list(usernames_tuple), project_ids=project_ids)
 
 
-def _parse_uploaded_user_csv(uploaded_file) -> tuple[list[str], dict[str, str]]:
-    """Extract usernames and optional college values from an uploaded CSV."""
-    uploaded_file.seek(0)
-    raw_csv = uploaded_file.read()
-    if isinstance(raw_csv, bytes):
-        csv_text = raw_csv.decode("utf-8-sig")
-    else:
-        csv_text = str(raw_csv)
-
-    csv_df = pd.read_csv(io.StringIO(csv_text))
-    csv_df.columns = [str(col).strip() for col in csv_df.columns]
-
-    lowered = {str(col).strip().lower(): col for col in csv_df.columns}
-    username_col = next(
-        (
-            lowered[key]
-            for key in ("username", "gitlab username", "gitlab_username", "user", "user name", "user_name")
-            if key in lowered
-        ),
-        None,
-    )
-    college_col = next(
-        (
-            lowered[key]
-            for key in (
-                "college",
-                "college name",
-                "college_name",
-                "institution",
-                "institution name",
-                "institution_name",
-                "university",
-                "university name",
-                "organization",
-                "organisation",
-                "org",
-                "school",
-            )
-            if key in lowered
-        ),
-        None,
-    )
-
-    if username_col is None:
-        csv_df = pd.read_csv(io.StringIO(csv_text), header=None)
-        username_col = csv_df.columns[0]
-        college_col = csv_df.columns[1] if len(csv_df.columns) > 1 else None
-
-    usernames: list[str] = []
-    # Keys are stored lowercase for case-insensitive lookup later
-    college_map: dict[str, str] = {}
-
-    for _, csv_row in csv_df.iterrows():
-        uname = str(csv_row.get(username_col, "")).strip() if pd.notna(csv_row.get(username_col, "")) else ""
-        college = (
-            str(csv_row.get(college_col, "")).strip()
-            if college_col is not None and pd.notna(csv_row.get(college_col, ""))
-            else ""
-        )
-        if uname:
-            usernames.append(uname)
-            college_map[uname.lower()] = college
-
-    return usernames, college_map
-
-
 def render_batch_analytics_ui(client):
     st.subheader("📊 Batch Analytics")
     st.caption("Comprehensive report combining General Stats, Authored Issue Quality, and Assigned MR Quality.")
 
-    # 1. Configuration Section
-    with st.expander("🛠️ Configuration", expanded=True):
-        col1, col2 = st.columns(2)
+    # 1. Fetch Users from Database
+    db_members = get_all_members_with_teams()
+    if not db_members:
+        st.warning("⚠️ No interns found in the Roster Database. Please add users in the Admin panel first.")
+        return
 
-        with col1:
-            uploaded_file = st.file_uploader(
-                "📂 Upload Usernames & Colleges (.csv)",
-                type=["csv"],
-                help="CSV with a 'username' column and an optional 'college' (or 'institution'/'university') column. "
-                "If no header, column 1 = username, column 2 = college.",
-            )
+    # Map for easy selection
+    # format: "Name (username)"
+    user_options = {f"{m['name']} (@{m['gitlab_username']})": m for m in db_members}
 
-        with col2:
-            text_input = st.text_area(
-                "⌨️ Enter Usernames & Colleges (one per line)",
-                height=200,
-                placeholder="user1, college name\nuser2, college name\nuser3, college name\n.........",
-                help="Format: 'username' or 'username, college name' — one entry per line.",
-            )
+    # 2. Configuration Section
+    with st.expander("🛠️ Selection & Configuration", expanded=True):
+        selection_mode = st.radio(
+            "Target Selection",
+            ["All Registered Interns", "Select Specific Interns"],
+            horizontal=True,
+            help="Choose whether to analyze everyone in the roster or just a few.",
+        )
+
+        selected_members = []
+        if selection_mode == "All Registered Interns":
+            selected_members = db_members
+            st.info(f"📍 Analysis will include all **{len(db_members)}** interns from the database.")
+        else:
+            selected_labels = st.multiselect("Select Interns", options=list(user_options.keys()), default=[])
+            selected_members = [user_options[label] for label in selected_labels]
 
         st.markdown("#### 📂 Filter by Project Repos *(optional)*")
         st.caption(
@@ -109,51 +50,21 @@ def render_batch_analytics_ui(client):
         )
         repo_input = st.text_area(
             "Project Repo Paths",
-            height=100,
+            height=80,
             placeholder="tools/gitlab-compliance-checker\ngroup/another-repo",
             key="batch_repo_input",
         )
         repo_paths = [line.strip() for line in repo_input.splitlines() if line.strip()]
 
-    # 2. Execution
-    btn_label = "🚀 Run Unified Analysis"
-    if st.button(btn_label, type="primary", width="stretch"):
-        # username -> college name mapping (populated from both text input and CSV)
-        college_map: dict[str, str] = {}
-
-        # Parse text area: each line is "username" or "username, college"
-        usernames: list[str] = []
-        for line in text_input.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            if "," in line:
-                parts = line.split(",", 1)
-                uname = parts[0].strip()
-                college = parts[1].strip()
-            else:
-                uname = line
-                college = ""
-            if uname:
-                usernames.append(uname)
-                college_map[uname.lower()] = college
-
-        # Also parse uploaded CSV
-        if uploaded_file is not None:
-            try:
-                uploaded_usernames, uploaded_college_map = _parse_uploaded_user_csv(uploaded_file)
-                usernames.extend(uploaded_usernames)
-                # CSV entries take precedence over text-area entries for the same username
-                college_map.update(uploaded_college_map)
-            except Exception as e:
-                st.error(f"Error reading uploaded CSV file: {e}")
-
-        # Deduplicate and sort
-        usernames = sorted(set(usernames))
-
-        if not usernames:
-            st.warning("Please enter at least one username or upload a file.")
+    # 3. Execution
+    btn_label = f"🚀 Run Analysis for {len(selected_members)} User(s)"
+    if st.button(btn_label, type="primary", use_container_width=True):
+        if not selected_members:
+            st.warning("Please select at least one intern.")
             return
+
+        usernames = sorted([m["gitlab_username"] for m in selected_members])
+        college_map = {m["gitlab_username"].lower(): m.get("college_name", "") for m in selected_members}
 
         project_ids = None
         if repo_paths:
@@ -219,9 +130,7 @@ def render_batch_analytics_ui(client):
 
                 # 4. Issue Quality (Authored)
                 is_q = data.get("issue_quality", {})
-                row["Issue Total (Auth)"] = is_q.get(
-                    "Total Assigned", 0
-                )  # This is actually Total Authored because of the filter in batch.py
+                row["Issue Total (Auth)"] = is_q.get("Total Assigned", 0)
                 row["Issue Closed"] = is_q.get("Closed Issues", 0)
                 row["Issue No Desc"] = is_q.get("No Desc", 0)
                 row["Issue No Labels"] = is_q.get("No Labels", 0)
@@ -235,7 +144,7 @@ def render_batch_analytics_ui(client):
             report_data.append(row)
 
         df = pd.DataFrame(report_data)
-        st.dataframe(df, width="stretch")
+        st.dataframe(df, use_container_width=True)
 
         # Export
         today = datetime.date.today()

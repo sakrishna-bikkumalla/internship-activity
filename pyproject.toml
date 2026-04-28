@@ -17,6 +17,8 @@ dependencies = [
   "plotly",
   "pyyaml>=6.0.3",
   "streamlit-oauth>=0.1.11",
+  "sqlalchemy>=2.0.0",
+  "psycopg2-binary>=2.9.0",
 ]
 
 [project.optional-dependencies]
