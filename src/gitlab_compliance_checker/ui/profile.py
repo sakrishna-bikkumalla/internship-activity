@@ -64,14 +64,32 @@ def render_user_profile(client, simple_user_info):
         st.metric("Personal Projects", len(personal_projects))
         if personal_projects:
             with st.expander("View Personal Projects"):
-                for p in personal_projects:
-                    st.write(f"- [{p['name_with_namespace']}]({p['web_url']})")
+                df_pers = pd.DataFrame(personal_projects)
+                st.dataframe(
+                    df_pers[["name_with_namespace", "web_url"]],
+                    column_config={
+                        "name_with_namespace": "Project Name",
+                        "web_url": st.column_config.LinkColumn("Link", display_text="View Repo"),
+                    },
+                    hide_index=True,
+                    width="stretch",
+                    height=350,
+                )
     with p_col2:
         st.metric("Contributed Projects", len(verified_contributed))
         if verified_contributed:
             with st.expander("View Contributed Projects"):
-                for p in verified_contributed:
-                    st.write(f"- [{p['name_with_namespace']}]({p['web_url']})")
+                df_cont = pd.DataFrame(verified_contributed)
+                st.dataframe(
+                    df_cont[["name_with_namespace", "web_url"]],
+                    column_config={
+                        "name_with_namespace": "Project Name",
+                        "web_url": st.column_config.LinkColumn("Link", display_text="View Repo"),
+                    },
+                    hide_index=True,
+                    width="stretch",
+                    height=350,
+                )
 
     # Commits
     st.markdown("---")
@@ -88,10 +106,8 @@ def render_user_profile(client, simple_user_info):
             # Display updated columns, including web_url rendered as a link
             st.dataframe(
                 df_commits[["project_name", "message", "date", "time", "slot", "web_url"]],
-                column_config={
-                    "web_url": st.column_config.LinkColumn("Commit Link", display_text="View Commit")
-                },
-                width="stretch"
+                column_config={"web_url": st.column_config.LinkColumn("Commit Link", display_text="View Commit")},
+                width="stretch",
             )
 
     # Groups
@@ -117,7 +133,8 @@ def render_user_profile(client, simple_user_info):
         with st.expander("View MR Details"):
             df_mrs = pd.DataFrame(user_mrs)
             st.dataframe(
-                df_mrs[["title", "role", "state", "created_at"]],
+                df_mrs[["title", "role", "state", "created_at", "web_url"]],
+                column_config={"web_url": st.column_config.LinkColumn("MR Link", display_text="View MR")},
                 width="stretch",
             )
 
@@ -132,7 +149,11 @@ def render_user_profile(client, simple_user_info):
     if user_issues:
         with st.expander("View Issue Details"):
             df_issues = pd.DataFrame(user_issues)
-            st.dataframe(df_issues[["title", "state", "created_at"]], width="stretch")
+            st.dataframe(
+                df_issues[["title", "role", "state", "created_at", "web_url"]],
+                column_config={"web_url": st.column_config.LinkColumn("Issue Link", display_text="View Issue")},
+                width="stretch",
+            )
 
     # ---------------- Profile README Status ----------------
     st.markdown("---")

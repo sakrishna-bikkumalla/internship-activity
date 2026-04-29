@@ -107,12 +107,20 @@ def _render_roster_upload():
         if st.button("🚀 Process and Save to Database", type="primary"):
             with st.spinner("Processing CSV..."):
                 content = uploaded_file.read()
-                count = bulk_import_members(content, target_batch_id)
+                count, errors = bulk_import_members(content, target_batch_id)
+                
                 if count > 0:
-                    st.success(f"✅ Successfully processed {count} records into the batch!")
+                    st.success("✅ Database upload is successful!")
+                
+                if errors:
+                    st.error(f"❌ Encountered {len(errors)} error(s) during import:")
+                    for error in errors:
+                        st.write(f"- {error}")
+                
+                if count > 0 and not errors:
                     st.rerun()
-                else:
-                    st.error("❌ No valid records found in CSV.")
+                elif count == 0 and not errors:
+                    st.warning("⚠️ No valid records were processed.")
 
 
 def _render_roster_table():
@@ -238,5 +246,8 @@ def _render_member_form():
                         },
                         target_batch_id,
                     )
-                st.success(f"Member {'updated' if mode == 'Edit Existing' else 'saved'} successfully!")
+                if mode == "Edit Existing":
+                    st.success("✅ The edit has been successfully done.")
+                else:
+                    st.success("✅ The intern has been added to the database successfully.")
                 st.rerun()

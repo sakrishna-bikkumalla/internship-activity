@@ -163,25 +163,40 @@ def delete_member(member_id: int):
             session.commit()
 
 
-def bulk_import_members(csv_content: bytes, batch_id: int) -> int:
+def bulk_import_members(csv_content: bytes, batch_id: int) -> tuple[int, list[str]]:
     """
     Parses CSV and imports members into a specific batch.
+    Returns a tuple containing the number of successful imports and a list of error messages.
     """
     from .weekly_performance.models import parse_intern_csv
+    import logging
 
     rows = parse_intern_csv(csv_content)
     if not rows:
-        return 0
+        return 0, ["No valid records found in the CSV or empty file."]
 
+    errors = []
     with get_session() as session:
         count = 0
-        for row in rows:
+        for i, row in enumerate(rows, start=1):
             try:
                 add_or_update_member(session, row, batch_id)
+                # Flush immediately to catch database constraint errors like UniqueViolation on this specific row
+                session.flush()
                 count += 1
             except Exception as e:
-                import logging
-
+                session.rollback()
+                error_str = str(e)
+                if "UniqueViolation" in error_str or "duplicate key value" in error_str:
+                    msg = f"Upload terminated at Row {i} (User: {row.get('gitlab_username', 'Unknown')}): A duplicate entry exists (likely the GitLab email or username)."
+                else:
+                    msg = f"Upload terminated at Row {i} (User: {row.get('gitlab_username', 'Unknown')}): {error_str}"
+                
                 logging.error(f"Failed to import row {row}: {e}")
+                errors.append(msg)
+                # Terminate the upload completely, returning 0 successful imports
+                return 0, errors
+        
+        # If all rows succeed, commit the entire batch
         session.commit()
-        return count
+        return count, errors

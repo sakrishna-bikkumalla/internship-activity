@@ -7,8 +7,7 @@ async def get_user_mrs_async(client, user_id, username=None, since=None, until=N
     """
     Async fetch Merge Requests.
     """
-    mrs_list = []
-    seen_ids = set()
+    mrs_dict = {}
     pid_set = set(project_ids) if project_ids else None
 
     stats = {
@@ -44,32 +43,33 @@ async def get_user_mrs_async(client, user_id, username=None, since=None, until=N
             if role_label == "Assigned":
                 stats["assigned"] += 1
 
-            if item["id"] not in seen_ids:
+            if item["id"] in mrs_dict:
+                existing_role = mrs_dict[item["id"]]["role"]
+                if existing_role != role_label and existing_role != "Authored & Assigned":
+                    mrs_dict[item["id"]]["role"] = "Authored & Assigned"
+            else:
                 state = item.get("state")
                 desc_quality = analyze_description(item.get("description", ""))
-                mrs_list.append(
-                    {
-                        "title": item.get("title"),
-                        "description": item.get("description"),
-                        "project_id": item.get("project_id"),
-                        "iid": item.get("iid"),
-                        "web_url": item.get("web_url"),
-                        "state": state,
-                        "created_at": item.get("created_at"),
-                        "merged_at": item.get("merged_at"),
-                        "closed_at": item.get("closed_at"),
-                        "role": role_label,
-                        "upvotes": item.get("upvotes", 0),
-                        "user_notes_count": item.get("user_notes_count", 0),
-                        "time_stats": item.get("time_stats", {}),
-                        "head_pipeline": item.get("head_pipeline"),
-                        "desc_score": desc_quality["description_score"],
-                        "quality": desc_quality["quality_label"],
-                        "feedback": desc_quality["feedback"],
-                        "_username": username,
-                    }
-                )
-                seen_ids.add(item["id"])
+                mrs_dict[item["id"]] = {
+                    "title": item.get("title"),
+                    "description": item.get("description"),
+                    "project_id": item.get("project_id"),
+                    "iid": item.get("iid"),
+                    "web_url": item.get("web_url"),
+                    "state": state,
+                    "created_at": item.get("created_at"),
+                    "merged_at": item.get("merged_at"),
+                    "closed_at": item.get("closed_at"),
+                    "role": role_label,
+                    "upvotes": item.get("upvotes", 0),
+                    "user_notes_count": item.get("user_notes_count", 0),
+                    "time_stats": item.get("time_stats", {}),
+                    "head_pipeline": item.get("head_pipeline"),
+                    "desc_score": desc_quality["description_score"],
+                    "quality": desc_quality["quality_label"],
+                    "feedback": desc_quality["feedback"],
+                    "_username": username,
+                }
                 stats["total"] += 1
                 if state == "merged":
                     stats["merged"] += 1
@@ -79,7 +79,7 @@ async def get_user_mrs_async(client, user_id, username=None, since=None, until=N
                     stats["opened"] += 1
                     stats["pending"] += 1
 
-    return mrs_list, stats
+    return list(mrs_dict.values()), stats
 
 
 def get_user_mrs(client, user_id, username=None, since=None, until=None, project_ids=None):
@@ -92,8 +92,7 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
       - mrs_list: List of MR dicts
       - stats: Dict {total, merged, closed, opened, pending, assigned}
     """
-    mrs_list = []
-    seen_ids = set()
+    mrs_dict = {}
     pid_set = set(project_ids) if project_ids else None
 
     stats = {
@@ -122,32 +121,33 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
                 if role_label == "Assigned":
                     stats["assigned"] += 1
 
-                if item["id"] not in seen_ids:
+                if item["id"] in mrs_dict:
+                    existing_role = mrs_dict[item["id"]]["role"]
+                    if existing_role != role_label and existing_role != "Authored & Assigned":
+                        mrs_dict[item["id"]]["role"] = "Authored & Assigned"
+                else:
                     state = item.get("state")
                     desc_quality = analyze_description(item.get("description", ""))
-                    mrs_list.append(
-                        {
-                            "title": item.get("title"),
-                            "description": item.get("description"),
-                            "project_id": item.get("project_id"),
-                            "iid": item.get("iid"),
-                            "web_url": item.get("web_url"),
-                            "state": state,
-                            "created_at": item.get("created_at"),
-                            "merged_at": item.get("merged_at"),
-                            "closed_at": item.get("closed_at"),
-                            "role": role_label,
-                            "upvotes": item.get("upvotes", 0),
-                            "user_notes_count": item.get("user_notes_count", 0),
-                            "time_stats": item.get("time_stats", {}),
-                            "head_pipeline": item.get("head_pipeline"),
-                            "desc_score": desc_quality["description_score"],
-                            "quality": desc_quality["quality_label"],
-                            "feedback": desc_quality["feedback"],
-                            "_username": username,
-                        }
-                    )
-                    seen_ids.add(item["id"])
+                    mrs_dict[item["id"]] = {
+                        "title": item.get("title"),
+                        "description": item.get("description"),
+                        "project_id": item.get("project_id"),
+                        "iid": item.get("iid"),
+                        "web_url": item.get("web_url"),
+                        "state": state,
+                        "created_at": item.get("created_at"),
+                        "merged_at": item.get("merged_at"),
+                        "closed_at": item.get("closed_at"),
+                        "role": role_label,
+                        "upvotes": item.get("upvotes", 0),
+                        "user_notes_count": item.get("user_notes_count", 0),
+                        "time_stats": item.get("time_stats", {}),
+                        "head_pipeline": item.get("head_pipeline"),
+                        "desc_score": desc_quality["description_score"],
+                        "quality": desc_quality["quality_label"],
+                        "feedback": desc_quality["feedback"],
+                        "_username": username,
+                    }
 
                     stats["total"] += 1
                     if state == "merged":
@@ -166,7 +166,7 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
     # 2. Assigned
     fetch_and_add({"assignee_id": user_id, "scope": "all"}, "Assigned")
 
-    return mrs_list, stats
+    return list(mrs_dict.values()), stats
 
 
 def get_single_user_live_mr_compliance(client, project_ids, selected_user_name):

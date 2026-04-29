@@ -2,12 +2,18 @@ from dataclasses import dataclass, field
 from typing import Any, NotRequired, TypedDict
 
 
+class EventDetail(TypedDict):
+    type: str
+    title: str
+    url: str
+
 class GitLabDailyData(TypedDict):
     mrs: int
     issues: int
     commits: int
     time_spent_seconds: int
     active_hours: list[int]
+    events_by_hour: dict[int, list[EventDetail]]
 
 
 class CorpusDailyData(TypedDict):

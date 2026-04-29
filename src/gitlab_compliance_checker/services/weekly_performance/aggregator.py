@@ -11,6 +11,7 @@ from gitlab_compliance_checker.services.weekly_performance.models import (
     DailyData,
     GitLabDailyData,
     WeeklyActivity,
+    EventDetail,
 )
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -60,10 +61,11 @@ def _get_user_id(gl_client, username: str) -> int | None:
 
 def _fetch_mrs_by_date(
     gl_client, user_id: int, start_date: date, end_date: date
-) -> tuple[dict[str, int], dict[str, set[int]]]:
+) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
     logger.debug(f"[GitLab] Fetching merged MRs for user_id={user_id}, {start_date} to {end_date}")
     counts: dict[str, int] = defaultdict(int)
     active_hours: dict[str, set[int]] = defaultdict(set)
+    events: dict[str, dict[int, list[EventDetail]]] = defaultdict(lambda: defaultdict(list))
     seen_ids: set[int] = set()
 
     date_params = {
@@ -95,14 +97,15 @@ def _fetch_mrs_by_date(
                     hour = _get_ist_hour(merged_at)
                     if hour is not None:
                         active_hours[date_str].add(hour)
+                        events[date_str][hour].append({"type": "mr", "title": mr.get("title", ""), "url": mr.get("web_url", "")})
 
     logger.debug(f"[GitLab] Merged MRs by date: {dict(counts)}")
-    return dict(counts), dict(active_hours)
+    return dict(counts), dict(active_hours), dict(events)
 
 
 def _fetch_issues_by_date(
     gl_client, user_id: int, start_date: date, end_date: date
-) -> tuple[dict[str, int], dict[str, set[int]]]:
+) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
     logger.debug(f"[GitLab] Fetching assigned issues for user_id={user_id}, {start_date} to {end_date}")
     date_params = {
         "scope": "all",
@@ -115,6 +118,8 @@ def _fetch_issues_by_date(
     logger.debug(f"[GitLab] Got {len(assigned)} assigned issues")
     counts: dict[str, int] = defaultdict(int)
     active_hours: dict[str, set[int]] = defaultdict(set)
+    events: dict[str, dict[int, list[EventDetail]]] = defaultdict(lambda: defaultdict(list))
+    
     for issue in assigned:
         created_at = issue.get("created_at", "")
         if created_at:
@@ -124,29 +129,32 @@ def _fetch_issues_by_date(
                 hour = _get_ist_hour(created_at)
                 if hour is not None:
                     active_hours[date_str].add(hour)
+                    events[date_str][hour].append({"type": "issue", "title": issue.get("title", ""), "url": issue.get("web_url", "")})
+                    
     logger.debug(f"[GitLab] Issues by date: {dict(counts)}")
-    return dict(counts), dict(active_hours)
+    return dict(counts), dict(active_hours), dict(events)
 
 
 def _fetch_commits_by_date(
     gl_client, user_id: int, gitlab_username: str, start_date: date, end_date: date
-) -> tuple[dict[str, int], dict[str, set[int]]]:
+) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
     logger.debug(
         f"[GitLab] Fetching commits for user_id={user_id}, gitlab_username={gitlab_username}, {start_date} to {end_date}"
     )
     counts: dict[str, int] = defaultdict(int)
     active_hours: dict[str, set[int]] = defaultdict(set)
+    events: dict[str, dict[int, list[EventDetail]]] = defaultdict(lambda: defaultdict(list))
 
     user_obj = users.get_user_by_username(gl_client, gitlab_username)
     if not user_obj:
         logger.debug(f"[GitLab] Could not find user object for {gitlab_username}")
-        return dict(counts), dict(active_hours)
+        return dict(counts), dict(active_hours), dict(events)
 
     user_projects = gitlab_projects.get_user_projects(gl_client, user_id, gitlab_username)
     all_projs = user_projects.get("all", [])
     if not all_projs:
         logger.debug(f"[GitLab] No projects found for user {gitlab_username}")
-        return dict(counts), dict(active_hours)
+        return dict(counts), dict(active_hours), dict(events)
 
     logger.debug(f"[GitLab] Fetching commits across {len(all_projs)} projects")
     api_since = (start_date - timedelta(days=1)).isoformat()
@@ -165,11 +173,13 @@ def _fetch_commits_by_date(
                 try:
                     hour = int(time_str.split(":")[0])
                     active_hours[commit_date].add(hour)
+                    c_title = commit.get("message", "Commit").split("\n")[0]
+                    events[commit_date][hour].append({"type": "commit", "title": c_title, "url": commit.get("web_url", "")})
                 except Exception:
                     pass
 
     logger.debug(f"[GitLab] Commits by date: {dict(counts)}")
-    return dict(counts), dict(active_hours)
+    return dict(counts), dict(active_hours), dict(events)
 
 
 def aggregate_intern_data(
@@ -196,9 +206,9 @@ def aggregate_intern_data(
     logger.debug(f"[Aggregator] Got {len(timelogs)} timelogs")
     daily_times = aggregate_daily_time(timelogs)
 
-    mr_counts, mr_hours = _fetch_mrs_by_date(gl_client, user_id, start_date, end_date)
-    issue_counts, issue_hours = _fetch_issues_by_date(gl_client, user_id, start_date, end_date)
-    commit_counts, commit_hours = _fetch_commits_by_date(gl_client, user_id, gitlab_username, start_date, end_date)
+    mr_counts, mr_hours, mr_events = _fetch_mrs_by_date(gl_client, user_id, start_date, end_date)
+    issue_counts, issue_hours, issue_events = _fetch_issues_by_date(gl_client, user_id, start_date, end_date)
+    commit_counts, commit_hours, commit_events = _fetch_commits_by_date(gl_client, user_id, gitlab_username, start_date, end_date)
 
     all_dates: set[str] = set()
     all_dates.update(daily_times.keys())
@@ -217,12 +227,21 @@ def aggregate_intern_data(
         combined_hours.update(issue_hours.get(date_str, []))
         combined_hours.update(commit_hours.get(date_str, []))
 
+        combined_events: dict[int, list[EventDetail]] = defaultdict(list)
+        for hr in mr_events.get(date_str, {}):
+            combined_events[hr].extend(mr_events[date_str][hr])
+        for hr in issue_events.get(date_str, {}):
+            combined_events[hr].extend(issue_events[date_str][hr])
+        for hr in commit_events.get(date_str, {}):
+            combined_events[hr].extend(commit_events[date_str][hr])
+
         gitlab: GitLabDailyData = {
             "mrs": mr_counts.get(date_str, 0),
             "issues": issue_counts.get(date_str, 0),
             "commits": commit_counts.get(date_str, 0),
             "time_spent_seconds": daily_times.get(date_str, 0),
             "active_hours": sorted(combined_hours),
+            "events_by_hour": dict(combined_events),
         }
         corpus: CorpusDailyData = {"audio_urls": []}
 

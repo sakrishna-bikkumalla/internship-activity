@@ -21,6 +21,7 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
     if api_username:
         try:
             from gitlab_compliance_checker.services import roster_service
+
             db_member = roster_service.get_member_by_username(api_username)
             if db_member:
                 db_g_username = db_member.get("global_username") or ""
@@ -175,6 +176,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
     if api_username:
         try:
             from gitlab_compliance_checker.services import roster_service
+
             db_member = roster_service.get_member_by_username(api_username)
             if db_member:
                 db_g_username = db_member.get("global_username") or ""
