@@ -168,8 +168,9 @@ def bulk_import_members(csv_content: bytes, batch_id: int) -> tuple[int, list[st
     Parses CSV and imports members into a specific batch.
     Returns a tuple containing the number of successful imports and a list of error messages.
     """
-    from .weekly_performance.models import parse_intern_csv
     import logging
+
+    from .weekly_performance.models import parse_intern_csv
 
     rows = parse_intern_csv(csv_content)
     if not rows:
@@ -191,12 +192,12 @@ def bulk_import_members(csv_content: bytes, batch_id: int) -> tuple[int, list[st
                     msg = f"Upload terminated at Row {i} (User: {row.get('gitlab_username', 'Unknown')}): A duplicate entry exists (likely the GitLab email or username)."
                 else:
                     msg = f"Upload terminated at Row {i} (User: {row.get('gitlab_username', 'Unknown')}): {error_str}"
-                
+
                 logging.error(f"Failed to import row {row}: {e}")
                 errors.append(msg)
                 # Terminate the upload completely, returning 0 successful imports
                 return 0, errors
-        
+
         # If all rows succeed, commit the entire batch
         session.commit()
         return count, errors

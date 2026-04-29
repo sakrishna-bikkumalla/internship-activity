@@ -955,9 +955,9 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
 
         for row in valid_members:
             username = row.get("Username", "unknown")
-            mrs = row.get("mrs_list", [])
-            issues = row.get("issues_list", [])
-            commits = row.get("commits_list", [])
+            mrs = sorted(row.get("mrs_list", []), key=lambda x: str(x.get("created_at", "")), reverse=True)
+            issues = sorted(row.get("issues_list", []), key=lambda x: str(x.get("created_at", "")), reverse=True)
+            commits = sorted(row.get("commits_list", []), key=lambda x: f"{x.get('date', '')} {x.get('time', '')}", reverse=True)
 
             st.markdown(f"### 👤 {username}")
 
@@ -977,13 +977,8 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             idx_c3.metric("Consistency %", f"{consistency_pct:.1f}%")
             idx_c4.metric("Collaboration %", f"{collaboration_pct:.1f}%")
 
-            # Define keys for session state tracking
-            mr_limit_key = f"_lb_limit_{username}_mrs"
-            issue_limit_key = f"_lb_limit_{username}_issues"
-            commit_limit_key = f"_lb_limit_{username}_commits"
-
             # Helper to generate list HTML
-            def get_list_html(items, type_, limit):
+            def get_list_html(items, type_):
                 def format_gitlab_date(iso_str):
                     if not iso_str:
                         return None
@@ -994,7 +989,7 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                         return None
 
                 html_lines = []
-                for item in items[:limit]:
+                for item in items:
                     url = item.get("web_url", "#")
                     created = format_gitlab_date(item.get("created_at"))
 
@@ -1053,10 +1048,6 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 if not html_lines:
                     return "<p style='color:#888; font-style:italic;'>No items found.</p>"
 
-                count_suffix = ""
-                if len(items) > limit:
-                    count_suffix = f"<li style='color:#888; list-style:none; margin-top:5px; font-size:0.9em;'>... and {len(items) - limit} more</li>"
-
                 return f"""
                 <style>
                     .li-link {{
@@ -1071,7 +1062,6 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 </style>
                 <ul style='list-style-type: disc; padding-left: 18px; color: #d9e1ee; font-size: 0.92em; line-height:1.5;'>
                     {"".join(html_lines)}
-                    {count_suffix}
                 </ul>
                 """
 
@@ -1079,81 +1069,45 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
 
             # MRs Column
             with c1:
-                limit = st.session_state.get(mr_limit_key, DEFAULT_LIMIT)
                 st.markdown(
                     f"""
-                <div style="background: rgba(255,165,0,0.06); border: 1px solid rgba(255,165,0,0.25); border-radius: 12px; padding: 15px; height: 100%; min-height: 200px;">
+                <div style="background: rgba(255,165,0,0.06); border: 1px solid rgba(255,165,0,0.25); border-radius: 12px; padding: 15px; height: 350px; overflow-y: auto;">
                     <h4 style="margin-top:0; color:#ffa500; display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,165,0,0.2); padding-bottom: 8px; margin-bottom: 12px;">
                         <span>📙</span> MRs ({len(mrs)})
                     </h4>
-                    {get_list_html(mrs, "mr", limit)}
+                    {get_list_html(mrs, "mr")}
                 </div>
                 """,
                     unsafe_allow_html=True,
                 )
-
-                # Load More / See Less buttons (placed closely below the card)
-                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-                if len(mrs) > limit:
-                    if st.button("➕ Load more MRs", key=f"btn_more_mr_{username}", width="stretch"):
-                        st.session_state[mr_limit_key] = limit + INCREMENT
-                        st.rerun()
-                if limit > DEFAULT_LIMIT:
-                    if st.button("➖ See less MRs", key=f"btn_less_mr_{username}", width="stretch"):
-                        st.session_state[mr_limit_key] = DEFAULT_LIMIT
-                        st.rerun()
 
             # Issues Column
             with c2:
-                limit = st.session_state.get(issue_limit_key, DEFAULT_LIMIT)
                 st.markdown(
                     f"""
-                <div style="background: rgba(255,215,0,0.06); border: 1px solid rgba(255,215,0,0.25); border-radius: 12px; padding: 15px; height: 100%; min-height: 200px;">
+                <div style="background: rgba(255,215,0,0.06); border: 1px solid rgba(255,215,0,0.25); border-radius: 12px; padding: 15px; height: 350px; overflow-y: auto;">
                     <h4 style="margin-top:0; color:#ffd700; display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(255,215,0,0.2); padding-bottom: 8px; margin-bottom: 12px;">
                         <span>🎫</span> Issues ({len(issues)})
                     </h4>
-                    {get_list_html(issues, "issue", limit)}
+                    {get_list_html(issues, "issue")}
                 </div>
                 """,
                     unsafe_allow_html=True,
                 )
-
-                # Load More / See Less buttons
-                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-                if len(issues) > limit:
-                    if st.button("➕ Load more Issues", key=f"btn_more_iss_{username}", width="stretch"):
-                        st.session_state[issue_limit_key] = limit + INCREMENT
-                        st.rerun()
-                if limit > DEFAULT_LIMIT:
-                    if st.button("➖ See less Issues", key=f"btn_less_iss_{username}", width="stretch"):
-                        st.session_state[issue_limit_key] = DEFAULT_LIMIT
-                        st.rerun()
 
             # Commits Column
             with c3:
-                limit = st.session_state.get(commit_limit_key, DEFAULT_LIMIT)
                 st.markdown(
                     f"""
-                <div style="background: rgba(52,152,219,0.06); border: 1px solid rgba(52,152,219,0.25); border-radius: 12px; padding: 15px; height: 100%; min-height: 200px;">
+                <div style="background: rgba(52,152,219,0.06); border: 1px solid rgba(52,152,219,0.25); border-radius: 12px; padding: 15px; height: 350px; overflow-y: auto;">
                     <h4 style="margin-top:0; color:#3498db; display:flex; align-items:center; gap:8px; border-bottom: 1px solid rgba(52,152,219,0.2); padding-bottom: 8px; margin-bottom: 12px;">
                         <span>💻</span> Commits ({len(commits)})
                     </h4>
-                    {get_list_html(commits, "commit", limit)}
+                    {get_list_html(commits, "commit")}
                 </div>
                 """,
                     unsafe_allow_html=True,
                 )
-
-                # Load More / See Less buttons
-                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-                if len(commits) > limit:
-                    if st.button("➕ Load more Commits", key=f"btn_more_com_{username}", width="stretch"):
-                        st.session_state[commit_limit_key] = limit + INCREMENT
-                        st.rerun()
-                if limit > DEFAULT_LIMIT:
-                    if st.button("➖ See less Commits", key=f"btn_less_com_{username}", width="stretch"):
-                        st.session_state[commit_limit_key] = DEFAULT_LIMIT
-                        st.rerun()
 
             st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 

@@ -108,15 +108,15 @@ def _render_roster_upload():
             with st.spinner("Processing CSV..."):
                 content = uploaded_file.read()
                 count, errors = bulk_import_members(content, target_batch_id)
-                
+
                 if count > 0:
                     st.success("✅ Database upload is successful!")
-                
+
                 if errors:
                     st.error(f"❌ Encountered {len(errors)} error(s) during import:")
                     for error in errors:
                         st.write(f"- {error}")
-                
+
                 if count > 0 and not errors:
                     st.rerun()
                 elif count == 0 and not errors:

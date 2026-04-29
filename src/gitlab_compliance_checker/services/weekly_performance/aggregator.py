@@ -9,9 +9,9 @@ from gitlab_compliance_checker.infrastructure.gitlab import projects as gitlab_p
 from gitlab_compliance_checker.services.weekly_performance.models import (
     CorpusDailyData,
     DailyData,
+    EventDetail,
     GitLabDailyData,
     WeeklyActivity,
-    EventDetail,
 )
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -97,7 +97,9 @@ def _fetch_mrs_by_date(
                     hour = _get_ist_hour(merged_at)
                     if hour is not None:
                         active_hours[date_str].add(hour)
-                        events[date_str][hour].append({"type": "mr", "title": mr.get("title", ""), "url": mr.get("web_url", "")})
+                        events[date_str][hour].append(
+                            {"type": "mr", "title": mr.get("title", ""), "url": mr.get("web_url", "")}
+                        )
 
     logger.debug(f"[GitLab] Merged MRs by date: {dict(counts)}")
     return dict(counts), dict(active_hours), dict(events)
@@ -119,7 +121,7 @@ def _fetch_issues_by_date(
     counts: dict[str, int] = defaultdict(int)
     active_hours: dict[str, set[int]] = defaultdict(set)
     events: dict[str, dict[int, list[EventDetail]]] = defaultdict(lambda: defaultdict(list))
-    
+
     for issue in assigned:
         created_at = issue.get("created_at", "")
         if created_at:
@@ -129,8 +131,10 @@ def _fetch_issues_by_date(
                 hour = _get_ist_hour(created_at)
                 if hour is not None:
                     active_hours[date_str].add(hour)
-                    events[date_str][hour].append({"type": "issue", "title": issue.get("title", ""), "url": issue.get("web_url", "")})
-                    
+                    events[date_str][hour].append(
+                        {"type": "issue", "title": issue.get("title", ""), "url": issue.get("web_url", "")}
+                    )
+
     logger.debug(f"[GitLab] Issues by date: {dict(counts)}")
     return dict(counts), dict(active_hours), dict(events)
 
@@ -174,7 +178,9 @@ def _fetch_commits_by_date(
                     hour = int(time_str.split(":")[0])
                     active_hours[commit_date].add(hour)
                     c_title = commit.get("message", "Commit").split("\n")[0]
-                    events[commit_date][hour].append({"type": "commit", "title": c_title, "url": commit.get("web_url", "")})
+                    events[commit_date][hour].append(
+                        {"type": "commit", "title": c_title, "url": commit.get("web_url", "")}
+                    )
                 except Exception:
                     pass
 
@@ -208,7 +214,9 @@ def aggregate_intern_data(
 
     mr_counts, mr_hours, mr_events = _fetch_mrs_by_date(gl_client, user_id, start_date, end_date)
     issue_counts, issue_hours, issue_events = _fetch_issues_by_date(gl_client, user_id, start_date, end_date)
-    commit_counts, commit_hours, commit_events = _fetch_commits_by_date(gl_client, user_id, gitlab_username, start_date, end_date)
+    commit_counts, commit_hours, commit_events = _fetch_commits_by_date(
+        gl_client, user_id, gitlab_username, start_date, end_date
+    )
 
     all_dates: set[str] = set()
     all_dates.update(daily_times.keys())

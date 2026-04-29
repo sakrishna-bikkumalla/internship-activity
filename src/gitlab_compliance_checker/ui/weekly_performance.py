@@ -187,7 +187,7 @@ STATUS_CARD_CSS = """
     .slot-details {
         position: relative;
     }
-    
+
     .slot-details[open] {
         z-index: 1000;
     }
@@ -196,11 +196,11 @@ STATUS_CARD_CSS = """
         list-style: none; /* Hide default arrow */
         cursor: pointer;
     }
-    
+
     .slot-details > summary::-webkit-details-marker {
         display: none;
     }
-    
+
     .slot-popover {
         position: absolute;
         top: calc(100% + 8px);
@@ -216,7 +216,7 @@ STATUS_CARD_CSS = """
         max-height: 250px;
         overflow-y: auto;
     }
-    
+
     /* Popover Caret Arrow */
     .slot-popover::before {
         content: '';
@@ -230,7 +230,7 @@ STATUS_CARD_CSS = """
         border-top: 1px solid #e2e8f0;
         border-left: 1px solid #e2e8f0;
     }
-    
+
     .popover-item {
         display: flex;
         align-items: center;
@@ -242,17 +242,17 @@ STATUS_CARD_CSS = """
         transition: all 0.2s ease;
         margin-bottom: 2px;
     }
-    
+
     .popover-item:last-child {
         margin-bottom: 0;
     }
-    
+
     .popover-item:hover {
         background-color: #f7fafc;
         transform: scale(1.01);
         color: #2d3748;
     }
-    
+
     .badge {
         display: inline-block;
         padding: 3px 8px;
@@ -265,7 +265,7 @@ STATUS_CARD_CSS = """
         letter-spacing: 0.05em;
         flex-shrink: 0;
     }
-    
+
     .item-title {
         white-space: nowrap;
         overflow: hidden;
@@ -276,13 +276,13 @@ STATUS_CARD_CSS = """
 
     .type-mr .badge { background-color: #48bb78; box-shadow: 0 2px 5px rgba(72,187,120,0.3); }
     .type-mr:hover { background-color: #f0fff4; }
-    
+
     .type-issue .badge { background-color: #f56565; box-shadow: 0 2px 5px rgba(245,101,101,0.3); }
     .type-issue:hover { background-color: #fff5f5; }
-    
+
     .type-commit .badge { background-color: #805ad5; box-shadow: 0 2px 5px rgba(128,90,213,0.3); }
     .type-commit:hover { background-color: #faf5ff; }
-    
+
     .type-audio .badge { background-color: #ed8936; box-shadow: 0 2px 5px rgba(237,137,54,0.3); }
     .type-audio:hover { background-color: #fffaf0; }
 </style>
@@ -377,7 +377,7 @@ def _render_activity_slots(
             status_class = "slot-yellow"
 
         compact_class = "compact" if compact else ""
-        
+
         hour_events = events_by_hour.get(hour, [])
         if hour_events:
             popover_html = '<div class="slot-popover">'
@@ -387,8 +387,8 @@ def _render_activity_slots(
                 e_title = event.get("title", "")
                 e_url = event.get("url", "#")
                 popover_html += f'<a href="{e_url}" target="_blank" class="popover-item type-{type_class}"><span class="badge">{e_type}</span><span class="item-title">{e_title}</span></a>'
-            popover_html += '</div>'
-            
+            popover_html += "</div>"
+
             svg_html += f"""
 <details class="slot-details">
     <summary class="slot-box {status_class} {compact_class}" title="{slot_label}">
@@ -606,7 +606,7 @@ def _render_performance_grid(
             # Activity Slots: Office Hours (9 AM - 5 PM)
             active_hours = gitlab.get("active_hours", [])
             events_by_hour = gitlab.get("events_by_hour", {})
-            
+
             _render_activity_slots(
                 active_hours,
                 slots=[9, 10, 11, 12, 13, 14, 15, 16],
@@ -696,7 +696,14 @@ def _fetch_all_activity(
         for i in range(num_days):
             day_key = (start_date + timedelta(days=i)).isoformat()
             activity.daily_data[day_key] = {
-                "gitlab": {"mrs": 0, "issues": 0, "commits": 0, "time_spent_seconds": 0, "active_hours": [], "events_by_hour": {}},
+                "gitlab": {
+                    "mrs": 0,
+                    "issues": 0,
+                    "commits": 0,
+                    "time_spent_seconds": 0,
+                    "active_hours": [],
+                    "events_by_hour": {},
+                },
                 "corpus": {"audio_urls": []},
             }
 
@@ -744,10 +751,16 @@ def _fetch_all_activity(
                                 current_hours = set(activity.daily_data[date_str]["gitlab"].get("active_hours", []))
                                 current_hours.add(hr)
                                 activity.daily_data[date_str]["gitlab"]["active_hours"] = sorted(current_hours)
-                                
+
                                 events_dict = activity.daily_data[date_str]["gitlab"].setdefault("events_by_hour", {})
                                 hr_events = events_dict.setdefault(hr, [])
-                                hr_events.append({"type": "audio", "title": audio.get("filename", "Audio"), "url": audio.get("url", "")})
+                                hr_events.append(
+                                    {
+                                        "type": "audio",
+                                        "title": audio.get("filename", "Audio"),
+                                        "url": audio.get("url", ""),
+                                    }
+                                )
 
         activity.audio_fetched = True
 

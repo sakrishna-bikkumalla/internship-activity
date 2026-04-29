@@ -7,6 +7,7 @@ class EventDetail(TypedDict):
     title: str
     url: str
 
+
 class GitLabDailyData(TypedDict):
     mrs: int
     issues: int
