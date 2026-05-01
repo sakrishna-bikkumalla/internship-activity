@@ -1,7 +1,10 @@
+from urllib.parse import urlparse
+
 import pandas as pd
 import streamlit as st
 
 from ..infrastructure.database import get_session
+from ..infrastructure.gitlab.groups import get_group_members
 from ..services.roster_service import (
     add_batch,
     add_or_update_member,
@@ -13,11 +16,13 @@ from ..services.roster_service import (
 )
 
 
-def render_admin_management():
+def render_admin_management(client):
     st.header("🛠 Admin: Roster Management")
     st.markdown("Manage batches, teams, and interns in the persistent database.")
 
-    tabs = st.tabs(["📅 Manage Batches", "👥 All Members", "📤 Bulk Import", "➕ Add/Edit Member"])
+    tabs = st.tabs(
+        ["📅 Manage Batches", "👥 All Members", "📤 Bulk Import", "➕ Add/Edit Member", "🔗 Group URL Import"]
+    )
 
     with tabs[0]:
         _render_batch_management()
@@ -30,6 +35,56 @@ def render_admin_management():
 
     with tabs[3]:
         _render_member_form()
+
+    with tabs[4]:
+        _render_group_url_import(client)
+
+
+def _render_group_url_import(client):
+    st.subheader("🔗 Group URL Import")
+    st.markdown("Fetch members directly from a GitLab group and store them in the temporary session.")
+
+    group_url = st.text_input("GitLab Group URL", placeholder="https://code.swecha.org/corpus")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fetch_option = st.selectbox("Fetch Limit", ["All", "Specific Limit"], index=0)
+    with col2:
+        limit = None
+        if fetch_option == "Specific Limit":
+            limit = st.number_input("Number of members", min_value=1, value=50, step=10)
+
+    if st.button("🚀 Fetch Group Members", type="primary"):
+        if not group_url:
+            st.error("Please enter a Group URL.")
+            return
+
+        parsed = urlparse(group_url)
+        path = parsed.path.strip("/")
+
+        # Handle gitlab.com/groups/ namespace
+        if path.startswith("groups/"):
+            path = path[len("groups/") :]
+
+        if not path:
+            st.error("Could not determine group path from URL.")
+            return
+
+        with st.spinner(f"Fetching members for '{path}'..."):
+            try:
+                members = get_group_members(client, path, limit=limit)
+
+                if members:
+                    st.session_state["fetched_group_members"] = members
+                    st.success(f"✅ Successfully fetched {len(members)} members!")
+
+                    # Display a preview
+                    df = pd.DataFrame(members)
+                    st.dataframe(df[["name", "username", "email"]], use_container_width=True, hide_index=True)
+                else:
+                    st.warning("No members found or group is inaccessible.")
+            except Exception as e:
+                st.error(f"❌ Error fetching group members: {e}")
 
 
 def _render_batch_management():

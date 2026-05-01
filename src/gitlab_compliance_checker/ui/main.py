@@ -131,9 +131,14 @@ def main():
                         st.session_state["active_profile_error"] = str(e)
         else:
             # Admins/Mentors can choose from DB or manual entry
-            lookup_mode = st.radio("Lookup Method", ["Select from Roster", "Manual Username Input"], horizontal=True)
+            lookup_options = ["Select from Roster", "Manual Username Input"]
+            if st.session_state.get("fetched_group_members"):
+                lookup_options.append("Select from Group Names")
+
+            lookup_mode = st.radio("Lookup Method", options=lookup_options, horizontal=True)
 
             input_username = None
+            selected_group_member = None
             if lookup_mode == "Select from Roster":
                 members = get_all_members_with_teams()
                 if not members:
@@ -145,6 +150,15 @@ def main():
                     )
                     if selected_label != "-- Select --":
                         input_username = user_options[selected_label]
+            elif lookup_mode == "Select from Group Names":
+                group_members = st.session_state.get("fetched_group_members", [])
+                member_options = {f"{m['name']} (@{m['username']})": m for m in group_members}
+                selected_label = st.selectbox(
+                    "Choose a Group Member", options=["-- Select --"] + list(member_options.keys())
+                )
+                if selected_label != "-- Select --":
+                    selected_group_member = member_options[selected_label]
+                    input_username = selected_group_member["username"]
             else:
                 input_username = st.text_input("Enter GitLab Username", placeholder="username (e.g. jdoe)")
 
@@ -155,7 +169,12 @@ def main():
                     input_username = input_username.strip()
                     with st.spinner(f"Fetching profile for '{input_username}'..."):
                         try:
-                            st.session_state["active_profile_data"] = users.get_user_by_username(client, input_username)
+                            profile_res = users.get_user_by_username(client, input_username)
+                            if profile_res and lookup_mode == "Select from Group Names" and selected_group_member:
+                                profile_res["override_email"] = selected_group_member.get("email")
+                                profile_res["override_username"] = selected_group_member.get("username")
+
+                            st.session_state["active_profile_data"] = profile_res
                             st.session_state["active_profile_error"] = None
                         except Exception as e:
                             st.session_state["active_profile_data"] = None
@@ -180,7 +199,7 @@ def main():
         render_weekly_performance_ui(client)
 
     elif mode == "Admin: Roster Management":
-        render_admin_management()
+        render_admin_management(client)
 
     else:
         st.error(f"Routing Error: Unknown mode '{mode}' selected.")

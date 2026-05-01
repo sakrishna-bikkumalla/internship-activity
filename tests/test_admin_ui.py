@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-import streamlit as st
 
 from gitlab_compliance_checker.ui import admin
 
@@ -30,7 +29,7 @@ def mock_roster_service():
                 "date_of_joining": "2024-01-01",
             }
         ]
-        m_bulk.return_value = 1
+        m_bulk.return_value = (1, [])
         
         yield {
             "batches": m_batches,
@@ -45,8 +44,8 @@ def mock_roster_service():
 
 def test_render_admin_management_tabs(mock_roster_service):
     # Just verify it runs without error and renders tabs
-    with patch("streamlit.tabs", return_value=[MagicMock() for _ in range(4)]) as m_tabs:
-        admin.render_admin_management()
+    with patch("streamlit.tabs", return_value=[MagicMock() for _ in range(5)]) as m_tabs:
+        admin.render_admin_management(MagicMock())
         assert m_tabs.called
 
 

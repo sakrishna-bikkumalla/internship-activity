@@ -48,6 +48,8 @@ class InternCSVRow(TypedDict):
     college_name: str
     id: NotRequired[int]
     batch_name: NotRequired[str]
+    override_email: NotRequired[str | None]
+    override_username: NotRequired[str | None]
 
 
 def parse_intern_csv(csv_content: bytes) -> list[InternCSVRow]:

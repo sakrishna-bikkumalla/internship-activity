@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from gitlab_compliance_checker.ui import weekly_performance
+
 
 @patch("gitlab_compliance_checker.ui.weekly_performance.st.markdown")
 def test_render_summary_card(mock_markdown):

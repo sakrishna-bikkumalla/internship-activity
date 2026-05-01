@@ -19,12 +19,12 @@ def sample_user_info():
 def sample_success_data():
     return {
         "projects": {"personal": [{"name_with_namespace": "p1", "web_url": "u1"}], "contributed": []},
-        "commits": [{"project_name": "p1", "message": "m1", "date": "d1", "time": "t1", "slot": "s1"}],
+        "commits": [{"project_name": "p1", "message": "m1", "date": "d1", "time": "t1", "slot": "s1", "web_url": "u1"}],
         "commit_stats": {"total": 1, "morning_commits": 1, "afternoon_commits": 0},
         "groups": [{"name": "g1"}],
-        "mrs": [{"title": "mr1", "role": "author", "state": "opened", "created_at": "t1"}],
+        "mrs": [{"title": "mr1", "role": "author", "state": "opened", "created_at": "t1", "web_url": "u1"}],
         "mr_stats": {"total": 1, "merged": 0, "opened": 1, "closed": 0},
-        "issues": [{"title": "i1", "state": "opened", "created_at": "t1"}],
+        "issues": [{"title": "i1", "role": "author", "state": "opened", "created_at": "t1", "web_url": "u1"}],
         "issue_stats": {"total": 1, "opened": 1, "closed": 0},
     }
 

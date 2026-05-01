@@ -140,7 +140,13 @@ def _fetch_issues_by_date(
 
 
 def _fetch_commits_by_date(
-    gl_client, user_id: int, gitlab_username: str, start_date: date, end_date: date
+    gl_client,
+    user_id: int,
+    gitlab_username: str,
+    start_date: date,
+    end_date: date,
+    override_email: str | None = None,
+    override_username: str | None = None,
 ) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
     logger.debug(
         f"[GitLab] Fetching commits for user_id={user_id}, gitlab_username={gitlab_username}, {start_date} to {end_date}"
@@ -153,6 +159,11 @@ def _fetch_commits_by_date(
     if not user_obj:
         logger.debug(f"[GitLab] Could not find user object for {gitlab_username}")
         return dict(counts), dict(active_hours), dict(events)
+
+    if override_email:
+        user_obj["override_email"] = override_email
+    if override_username:
+        user_obj["override_username"] = override_username
 
     user_projects = gitlab_projects.get_user_projects(gl_client, user_id, gitlab_username)
     all_projs = user_projects.get("all", [])
@@ -195,6 +206,8 @@ def aggregate_intern_data(
     intern_name: str,
     start_date: date,
     end_date: date,
+    override_email: str | None = None,
+    override_username: str | None = None,
 ) -> WeeklyActivity:
     """Aggregate all GitLab activity for one intern into WeeklyActivity model."""
     logger.debug(
@@ -215,7 +228,13 @@ def aggregate_intern_data(
     mr_counts, mr_hours, mr_events = _fetch_mrs_by_date(gl_client, user_id, start_date, end_date)
     issue_counts, issue_hours, issue_events = _fetch_issues_by_date(gl_client, user_id, start_date, end_date)
     commit_counts, commit_hours, commit_events = _fetch_commits_by_date(
-        gl_client, user_id, gitlab_username, start_date, end_date
+        gl_client,
+        user_id,
+        gitlab_username,
+        start_date,
+        end_date,
+        override_email=override_email,
+        override_username=override_username,
     )
 
     all_dates: set[str] = set()

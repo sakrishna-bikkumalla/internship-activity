@@ -36,7 +36,7 @@ def test_render_date_selector_single(mock_date):
 
 @patch("streamlit.selectbox")
 def test_render_intern_selector(mock_selectbox, mock_intern):
-    mock_selectbox.return_value = f"John Doe (@jdoe)"
+    mock_selectbox.return_value = "John Doe (@jdoe)"
     interns = [mock_intern]
     selected = weekly_performance._render_intern_selector(interns)
     assert selected["gitlab_username"] == "jdoe"

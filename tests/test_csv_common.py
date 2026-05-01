@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from gitlab_compliance_checker.ui import csv_common
+
 
 def test_map_row_to_member():
     # InternCSVRow keys: name, gitlab_username, gitlab_email, etc.

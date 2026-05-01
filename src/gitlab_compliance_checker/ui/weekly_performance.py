@@ -332,7 +332,7 @@ def _render_summary_card(mrs: int, issues: int, commits: int, time_str: str) -> 
 def _render_activity_slots(
     active_hours: list[int],
     slots: list[int],
-    events_by_hour: dict[int, list[Any]] = None,
+    events_by_hour: dict[int, list[Any]] | None = None,
     title: str = "Activity Timeline",
     use_strict_mode: bool = True,
     compact: bool = False,
@@ -559,7 +559,7 @@ def _render_date_selector() -> tuple[Any, str]:
 
 def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
     if not interns:
-        st.info("No interns found. Please add members in the Admin panel.")
+        st.info("No interns found in the database.")
         return None
 
     options = ["All Interns"] + [f"{r['name']} (@{r['gitlab_username']})" for r in interns]
@@ -569,6 +569,28 @@ def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
     if selected == "All Interns":
         return "ALL"
     return intern_map.get(selected)
+
+
+def _render_group_member_selector() -> Any:
+    group_members = st.session_state.get("fetched_group_members", [])
+    if not group_members:
+        st.info("No group members found. Please fetch them in the Admin panel.")
+        return None
+
+    options = [f"{m['name']} (@{m['username']})" for m in group_members]
+    member_map = {
+        f"{m['name']} (@{m['username']})": {
+            "gitlab_username": m["username"],
+            "name": m["name"],
+            "corpus_username": None,
+            "override_email": m.get("email"),
+            "override_username": m.get("username"),
+        }
+        for m in group_members
+    }
+
+    selected = st.selectbox("Select Group Member", options=options, key="wp_group_member_select")
+    return member_map.get(selected)
 
 
 def _render_performance_grid(
@@ -719,6 +741,8 @@ def _fetch_all_activity(
                 intern_name=selected_intern["name"],
                 start_date=start_date,
                 end_date=end_date,
+                override_email=selected_intern.get("override_email"),
+                override_username=selected_intern.get("override_username"),
             )
             for date_str, daily in gitlab_activity.daily_data.items():
                 if date_str in activity.daily_data:
@@ -829,20 +853,31 @@ def render_weekly_performance_ui(gl_client) -> None:
         start_date = res
         num_days = 1
 
-    if not interns:
-        st.info("No intern data found in the database.")
+    group_members = st.session_state.get("fetched_group_members", [])
+    if not interns and not group_members:
+        st.info("No intern data found in the database or fetched from group.")
         if role == "admin":
-            st.info("💡 **Admin Tip**: Go to the **Admin: Roster Management** mode to upload a CSV or add members.")
+            st.info(
+                "💡 **Admin Tip**: Go to the **Admin: Roster Management** mode to upload a CSV or import group members."
+            )
         st.divider()
         st.markdown("**Preview Grid (no data):**")
         _render_performance_grid(start_date, None, num_days=num_days, show_audio=True)
         return
 
     if role == "intern":
-        selected_intern: InternCSVRow | str = interns[0]
+        selected_intern = interns[0] if interns else None
     else:
-        intern_raw = _render_intern_selector(interns)
-        selected_intern = cast(InternCSVRow | str, intern_raw)
+        if group_members:
+            lookup_mode = st.radio(
+                "Select Intern From:", options=["Roster", "Group Names"], horizontal=True, key="wp_lookup_mode"
+            )
+            if lookup_mode == "Roster":
+                selected_intern = _render_intern_selector(interns)
+            else:
+                selected_intern = _render_group_member_selector()
+        else:
+            selected_intern = _render_intern_selector(interns)
 
     if selected_intern == "ALL":
         is_all_cached = all(

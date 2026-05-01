@@ -45,7 +45,15 @@ def resolve_project_paths(client, repo_paths: list[str]) -> tuple[list[int], lis
     return resolved_ids, failed
 
 
-def process_single_user(client, username, since=None, until=None, project_ids: list[int] | None = None):
+def process_single_user(
+    client,
+    username,
+    since=None,
+    until=None,
+    project_ids: list[int] | None = None,
+    override_email: str | None = None,
+    override_username: str | None = None,
+):
     """
     Worker function to process a single user.
     Refactored to fetch all components (projects, groups, MRs, issues, commits)
@@ -66,6 +74,10 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
             return result
 
         user_id = user_obj["id"]
+        if override_email:
+            user_obj["override_email"] = override_email
+        if override_username:
+            user_obj["override_username"] = override_username
         result["data"]["user"] = user_obj
 
         # Use global executor for concurrent fetching
@@ -150,7 +162,9 @@ def process_single_user(client, username, since=None, until=None, project_ids: l
     return result
 
 
-def process_batch_users(client, usernames, since=None, until=None, project_ids: list[int] | None = None):
+def process_batch_users(
+    client, usernames, since=None, until=None, project_ids: list[int] | None = None, overrides: dict | None = None
+):
     """
     Concurrent processing of multiple users using ThreadPoolExecutor.
     Safe to call from Streamlit.
@@ -158,9 +172,11 @@ def process_batch_users(client, usernames, since=None, until=None, project_ids: 
     results = []
     clean_usernames = [u.strip() for u in usernames if u.strip()]
 
-    future_to_user = {
-        _GLOBAL_EXECUTOR.submit(process_single_user, client, u, since, until, project_ids): u for u in clean_usernames
-    }
+    future_to_user = {}
+    for u in clean_usernames:
+        ov = overrides.get(u, {}) if overrides else {}
+        future = _GLOBAL_EXECUTOR.submit(process_single_user, client, u, since, until, project_ids, **ov)
+        future_to_user[future] = u
     for future in concurrent.futures.as_completed(future_to_user):
         try:
             res = future.result()
@@ -198,7 +214,15 @@ async def resolve_project_paths_async(client, repo_paths: list[str]) -> tuple[li
     return resolved_ids, failed
 
 
-async def process_single_user_async(client, username, since=None, until=None, project_ids: list[int] | None = None):
+async def process_single_user_async(
+    client,
+    username,
+    since=None,
+    until=None,
+    project_ids: list[int] | None = None,
+    override_email: str | None = None,
+    override_username: str | None = None,
+):
     """
     Async worker to process a single user with maximum concurrency.
     """
@@ -217,6 +241,10 @@ async def process_single_user_async(client, username, since=None, until=None, pr
             return result
 
         user_id = user_obj["id"]
+        if override_email:
+            user_obj["override_email"] = override_email
+        if override_username:
+            user_obj["override_username"] = override_username
         result["data"]["user"] = user_obj
 
         # 2. Concurrent Fetching (Components that only need user_id)
@@ -286,7 +314,9 @@ async def process_single_user_async(client, username, since=None, until=None, pr
     return result
 
 
-async def process_batch_users_async(client, usernames, since=None, until=None, project_ids: list[int] | None = None):
+async def process_batch_users_async(
+    client, usernames, since=None, until=None, project_ids: list[int] | None = None, overrides: dict | None = None
+):
     """
     Core async batch processing with maximum concurrency.
     Handles exceptions by returning a "Crash" status for the specific user.
@@ -297,7 +327,8 @@ async def process_batch_users_async(client, usernames, since=None, until=None, p
 
     async def _safe_process(u):
         try:
-            res = await process_single_user_async(client, u, since, until, project_ids)
+            ov = overrides.get(u, {}) if overrides else {}
+            res = await process_single_user_async(client, u, since, until, project_ids, **ov)
             return res
         except Exception as exc:
             return {"username": u, "status": "Crash", "error": str(exc)}

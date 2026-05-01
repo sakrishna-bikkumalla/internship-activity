@@ -14,23 +14,30 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
     all_commits = []
     project_commit_counts = {}
     seen_shas = set()
+    # New logic for explicit group member matching
+    override_email = user.get("override_email")
+    override_username = user.get("override_username")
 
-    api_username = user.get("username")
-    db_g_username = ""
-    db_g_email = ""
-    if api_username:
-        try:
-            from gitlab_compliance_checker.services import roster_service
+    if override_email or override_username:
+        global_username = (override_username or "").lower()
+        global_email = (override_email or "").lower()
+    else:
+        api_username = user.get("username")
+        db_g_username = ""
+        db_g_email = ""
+        if api_username:
+            try:
+                from gitlab_compliance_checker.services import roster_service
 
-            db_member = roster_service.get_member_by_username(api_username)
-            if db_member:
-                db_g_username = db_member.get("global_username") or ""
-                db_g_email = db_member.get("global_email") or ""
-        except Exception:
-            pass
+                db_member = roster_service.get_member_by_username(api_username)
+                if db_member:
+                    db_g_username = db_member.get("global_username") or ""
+                    db_g_email = db_member.get("global_email") or ""
+            except Exception:
+                pass
 
-    global_username = (db_g_username or user.get("global_username") or "").lower()
-    global_email = (db_g_email or user.get("global_email") or "").lower()
+        global_username = (db_g_username or user.get("global_username") or "").lower()
+        global_email = (db_g_email or user.get("global_email") or "").lower()
     ist = timezone(timedelta(hours=5, minutes=30))
 
     morn_start = datetime.strptime("09:00", "%H:%M").time()
@@ -170,22 +177,30 @@ def get_user_commits(client, user, projects, since=None, until=None):
     seen_shas = set()
     shas_lock = threading.Lock()
 
-    api_username = user.get("username")
-    db_g_username = ""
-    db_g_email = ""
-    if api_username:
-        try:
-            from gitlab_compliance_checker.services import roster_service
+    # New logic for explicit group member matching
+    override_email = user.get("override_email")
+    override_username = user.get("override_username")
 
-            db_member = roster_service.get_member_by_username(api_username)
-            if db_member:
-                db_g_username = db_member.get("global_username") or ""
-                db_g_email = db_member.get("global_email") or ""
-        except Exception:
-            pass
+    if override_email or override_username:
+        global_username = str(override_username or "").lower()
+        global_email = str(override_email or "").lower()
+    else:
+        api_username = user.get("username")
+        db_g_username = ""
+        db_g_email = ""
+        if api_username:
+            try:
+                from gitlab_compliance_checker.services import roster_service
 
-    global_username = str(db_g_username or user.get("global_username") or "").lower()
-    global_email = str(db_g_email or user.get("global_email") or "").lower()
+                db_member = roster_service.get_member_by_username(api_username)
+                if db_member:
+                    db_g_username = db_member.get("global_username") or ""
+                    db_g_email = db_member.get("global_email") or ""
+            except Exception:
+                pass
+
+        global_username = str(db_g_username or user.get("global_username") or "").lower()
+        global_email = str(db_g_email or user.get("global_email") or "").lower()
 
     date_params = {}
     if since:

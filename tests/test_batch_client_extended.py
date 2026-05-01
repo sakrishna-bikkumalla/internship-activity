@@ -1,7 +1,10 @@
 import asyncio
 from unittest.mock import MagicMock, patch
+
 import pytest
+
 from gitlab_compliance_checker.services.batch import client
+
 
 @pytest.fixture
 def mock_loop():

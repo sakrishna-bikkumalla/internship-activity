@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import streamlit as st
+
+import pytest
+
 from gitlab_compliance_checker.ui import leaderboard
 
 

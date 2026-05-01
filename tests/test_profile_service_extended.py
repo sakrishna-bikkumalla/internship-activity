@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock, patch
+
 import pytest
+
 from gitlab_compliance_checker.services.profile import profile_service
+
 
 @pytest.fixture
 def mock_gl():

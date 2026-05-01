@@ -74,6 +74,19 @@ class FakeStreamlitModule(types.ModuleType):
         self.warning = self._record_warning
         self.error = self._record_error
         self.info = self._record_info
+        self.column_config = types.SimpleNamespace(
+            LinkColumn=lambda *a, **k: MagicMock(),
+            TextColumn=lambda *a, **k: MagicMock(),
+            ProgressColumn=lambda *a, **k: MagicMock(),
+            CheckboxColumn=lambda *a, **k: MagicMock(),
+            SelectboxColumn=lambda *a, **k: MagicMock(),
+            NumberColumn=lambda *a, **k: MagicMock(),
+            DatetimeColumn=lambda *a, **k: MagicMock(),
+            DateColumn=lambda *a, **k: MagicMock(),
+            TimeColumn=lambda *a, **k: MagicMock(),
+            ListColumn=lambda *a, **k: MagicMock(),
+            ImageColumn=lambda *a, **k: MagicMock(),
+        )
         self.stop = self._stop
 
     def cache_data(self, *a, **k):

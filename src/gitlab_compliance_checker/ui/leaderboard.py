@@ -845,9 +845,6 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             st.info("No successful member data to show contributions for.")
             return
 
-        DEFAULT_LIMIT = 15
-        INCREMENT = 20
-
         # Inject custom CSS for buttons to match the premium theme
         st.markdown(
             """
@@ -957,7 +954,9 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             username = row.get("Username", "unknown")
             mrs = sorted(row.get("mrs_list", []), key=lambda x: str(x.get("created_at", "")), reverse=True)
             issues = sorted(row.get("issues_list", []), key=lambda x: str(x.get("created_at", "")), reverse=True)
-            commits = sorted(row.get("commits_list", []), key=lambda x: f"{x.get('date', '')} {x.get('time', '')}", reverse=True)
+            commits = sorted(
+                row.get("commits_list", []), key=lambda x: f"{x.get('date', '')} {x.get('time', '')}", reverse=True
+            )
 
             st.markdown(f"### 👤 {username}")
 

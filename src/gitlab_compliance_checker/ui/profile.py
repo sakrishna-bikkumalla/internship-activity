@@ -32,7 +32,12 @@ def render_user_profile(client, simple_user_info):
 
     # Fetch Data concurrently via the batch engine
     with st.spinner("Fetching comprehensive user data in parallel..."):
-        user_data = batch.process_single_user(client, username)
+        user_data = batch.process_single_user(
+            client,
+            username,
+            override_email=simple_user_info.get("override_email"),
+            override_username=simple_user_info.get("override_username"),
+        )
 
     if not user_data or user_data.get("status") != "Success":
         error_msg = user_data.get("error", "Unknown error") if user_data else "Unknown error"

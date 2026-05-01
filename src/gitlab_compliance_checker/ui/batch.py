@@ -8,9 +8,9 @@ from gitlab_compliance_checker.services.roster_service import get_all_members_wi
 
 
 @st.cache_data(ttl=3600)
-def cached_process_batch_users(_client, usernames_tuple, project_ids=None):
+def cached_process_batch_users(_client, usernames_tuple, project_ids=None, overrides=None):
     """Cache the unified batch results for 1 hour."""
-    return batch.process_batch_users(_client, list(usernames_tuple), project_ids=project_ids)
+    return batch.process_batch_users(_client, list(usernames_tuple), project_ids=project_ids, overrides=overrides)
 
 
 def render_batch_analytics_ui(client):
@@ -29,17 +29,38 @@ def render_batch_analytics_ui(client):
 
     # 2. Configuration Section
     with st.expander("🛠️ Selection & Configuration", expanded=True):
+        selection_options = ["All Registered Interns", "Select Specific Interns"]
+        if st.session_state.get("fetched_group_members"):
+            selection_options.append("Select from Group Names")
+
         selection_mode = st.radio(
             "Target Selection",
-            ["All Registered Interns", "Select Specific Interns"],
+            selection_options,
             horizontal=True,
             help="Choose whether to analyze everyone in the roster or just a few.",
         )
 
         selected_members = []
+        member_overrides = {}
         if selection_mode == "All Registered Interns":
             selected_members = db_members
             st.info(f"📍 Analysis will include all **{len(db_members)}** interns from the database.")
+        elif selection_mode == "Select from Group Names":
+            group_members = st.session_state.get("fetched_group_members", [])
+            group_user_options = {f"{m['name']} (@{m['username']})": m for m in group_members}
+            selected_group_labels = st.multiselect(
+                "Select Group Members", options=list(group_user_options.keys()), default=[]
+            )
+            for label in selected_group_labels:
+                m = group_user_options[label]
+                username = m["username"]
+                selected_members.append(
+                    {"gitlab_username": username, "name": m["name"], "college_name": "Group Member"}
+                )
+                member_overrides[username] = {
+                    "override_email": m.get("email"),
+                    "override_username": m.get("username"),
+                }
         else:
             selected_labels = st.multiselect("Select Interns", options=list(user_options.keys()), default=[])
             selected_members = [user_options[label] for label in selected_labels]
@@ -85,7 +106,9 @@ def render_batch_analytics_ui(client):
 
         st.info(f"Processing {len(usernames)} users...")
         with st.spinner("Fetching unified data in parallel..."):
-            results = cached_process_batch_users(client, tuple(usernames), project_ids=project_ids)
+            results = cached_process_batch_users(
+                client, tuple(usernames), project_ids=project_ids, overrides=member_overrides
+            )
 
         st.success("Unified Batch processing complete!")
 
