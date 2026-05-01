@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 import httpx
 import streamlit as st
+from dotenv import load_dotenv
 
 from gitlab_compliance_checker.ui.main import main
 
@@ -89,6 +90,12 @@ def check_login():
             st.error(f"❌ Login failed: {e}")
             st.stop()
 
+    # Load environment variables
+    try:
+        load_dotenv(override=True)
+    except TypeError:
+        load_dotenv()
+
     # 4. Not logged in, show the login screen
     st.title("🔒 GitLab Compliance Checker")
     st.write("Please sign in with your Swecha GitLab account to access the compliance dashboard.")
@@ -113,15 +120,25 @@ if __name__ == "__main__":
     username = user_info.get("username") or user_info.get("preferred_username")
     rbac_users = st.secrets.get("rbac", {}).get("users", {})
 
-    if rbac_users and username not in rbac_users:
-        st.error(f"⛔ Access Denied: User '{username}' is not authorized.")
+    # Initialize Database for the check
+    from gitlab_compliance_checker.infrastructure.database import init_db
+    from gitlab_compliance_checker.services.roster_service import is_member_registered
+
+    init_db()
+
+    if username in rbac_users:
+        # High-privilege roles (admin/mentor) stay in secrets
+        st.session_state["user_role"] = rbac_users[username]
+    elif is_member_registered(username):
+        # Interns are dynamically authorized from the database
+        st.session_state["user_role"] = "intern"
+    else:
+        st.error(f"⛔ Access Denied: User '{username}' is not in the authorized roster.")
+        st.info("💡 **Interns**: Please contact your administrator to be added to the database roster.")
         if st.button("Logout"):
             st.session_state.clear()
             st.rerun()
         st.stop()
-
-    if username in rbac_users:
-        st.session_state["user_role"] = rbac_users[username]
 
     logging.getLogger("gitlab_compliance_checker").setLevel(logging.DEBUG)
     main()

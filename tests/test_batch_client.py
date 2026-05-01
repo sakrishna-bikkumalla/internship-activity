@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,6 +15,18 @@ def mock_client():
 
 def test_client_request_success(mock_client):
     assert True  # Client requests tested functionally within API context
+
+
+@pytest.mark.asyncio
+async def test_async_request_post_passes_payload_fields(mock_client):
+    mock_gl = AsyncMock()
+    mock_gl.post.return_value = b'{"ok": true}'
+    mock_client._gl = mock_gl
+
+    result = await mock_client._async_request("POST", "/projects", {"name": "demo"})
+
+    assert result == {"ok": True}
+    mock_gl.post.assert_awaited_once_with("/projects", name="demo")
 
 
 def test_users_api_get_by_username(mock_client):

@@ -5,8 +5,7 @@ async def get_user_issues_async(client, user_id, username=None, since=None, unti
     """
     Async fetch Issues.
     """
-    issues_list = []
-    seen_ids = set()
+    issues_dict = {}
     stats = {"total": 0, "opened": 0, "closed": 0, "assigned": 0}
     pid_set = set(project_ids) if project_ids else None
 
@@ -31,26 +30,27 @@ async def get_user_issues_async(client, user_id, username=None, since=None, unti
             if pid_set is not None and item.get("project_id") not in pid_set:
                 continue
 
-            if item["id"] not in seen_ids:
+            if item["id"] in issues_dict:
+                existing_role = issues_dict[item["id"]]["role"]
+                if existing_role != role_label and existing_role != "Authored & Assigned":
+                    issues_dict[item["id"]]["role"] = "Authored & Assigned"
+            else:
                 state = item.get("state")
-                issues_list.append(
-                    {
-                        "title": item.get("title"),
-                        "description": item.get("description"),
-                        "project_id": item.get("project_id"),
-                        "web_url": item.get("web_url"),
-                        "state": state,
-                        "created_at": item.get("created_at"),
-                        "closed_at": item.get("closed_at"),
-                        "assigned": is_assigned,
-                        "role": role_label,
-                        "labels": item.get("labels", []),
-                        "milestone": item.get("milestone"),
-                        "time_stats": item.get("time_stats", {}),
-                        "_username": username,
-                    }
-                )
-                seen_ids.add(item["id"])
+                issues_dict[item["id"]] = {
+                    "title": item.get("title"),
+                    "description": item.get("description"),
+                    "project_id": item.get("project_id"),
+                    "web_url": item.get("web_url"),
+                    "state": state,
+                    "created_at": item.get("created_at"),
+                    "closed_at": item.get("closed_at"),
+                    "assigned": is_assigned,
+                    "role": role_label,
+                    "labels": item.get("labels", []),
+                    "milestone": item.get("milestone"),
+                    "time_stats": item.get("time_stats", {}),
+                    "_username": username,
+                }
                 stats["total"] += 1
                 if state == "opened":
                     stats["opened"] += 1
@@ -60,7 +60,7 @@ async def get_user_issues_async(client, user_id, username=None, since=None, unti
             if is_assigned:
                 stats["assigned"] += 1
 
-    return issues_list, stats
+    return list(issues_dict.values()), stats
 
 
 def get_user_issues(client, user_id, username=None, since=None, until=None, project_ids=None):
@@ -73,8 +73,7 @@ def get_user_issues(client, user_id, username=None, since=None, until=None, proj
       - issues_list
       - stats: {total, opened, closed, assigned}
     """
-    issues_list = []
-    seen_ids = set()
+    issues_dict = {}
     stats = {"total": 0, "opened": 0, "closed": 0, "assigned": 0}
     pid_set = set(project_ids) if project_ids else None
 
@@ -93,26 +92,27 @@ def get_user_issues(client, user_id, username=None, since=None, until=None, proj
                 if pid_set is not None and item.get("project_id") not in pid_set:
                     continue
 
-                if item["id"] not in seen_ids:
+                if item["id"] in issues_dict:
+                    existing_role = issues_dict[item["id"]]["role"]
+                    if existing_role != role_label and existing_role != "Authored & Assigned":
+                        issues_dict[item["id"]]["role"] = "Authored & Assigned"
+                else:
                     state = item.get("state")
-                    issues_list.append(
-                        {
-                            "title": item.get("title"),
-                            "description": item.get("description"),
-                            "project_id": item.get("project_id"),
-                            "web_url": item.get("web_url"),
-                            "state": state,
-                            "created_at": item.get("created_at"),
-                            "closed_at": item.get("closed_at"),
-                            "assigned": is_assigned,
-                            "role": role_label,
-                            "labels": item.get("labels", []),
-                            "milestone": item.get("milestone"),
-                            "time_stats": item.get("time_stats", {}),
-                            "_username": username,
-                        }
-                    )
-                    seen_ids.add(item["id"])
+                    issues_dict[item["id"]] = {
+                        "title": item.get("title"),
+                        "description": item.get("description"),
+                        "project_id": item.get("project_id"),
+                        "web_url": item.get("web_url"),
+                        "state": state,
+                        "created_at": item.get("created_at"),
+                        "closed_at": item.get("closed_at"),
+                        "assigned": is_assigned,
+                        "role": role_label,
+                        "labels": item.get("labels", []),
+                        "milestone": item.get("milestone"),
+                        "time_stats": item.get("time_stats", {}),
+                        "_username": username,
+                    }
 
                     stats["total"] += 1
                     if state == "opened":
@@ -131,4 +131,4 @@ def get_user_issues(client, user_id, username=None, since=None, until=None, proj
     # 2. Assigned
     fetch_and_add({"assignee_id": user_id, "scope": "all"}, is_assigned=True, role_label="Assigned")
 
-    return issues_list, stats
+    return list(issues_dict.values()), stats

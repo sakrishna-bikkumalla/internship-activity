@@ -14,10 +14,30 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
     all_commits = []
     project_commit_counts = {}
     seen_shas = set()
+    # New logic for explicit group member matching
+    override_email = user.get("override_email")
+    override_username = user.get("override_username")
 
-    author_name = user.get("name")
-    author_email = user.get("email")
-    username = user.get("username")
+    if override_email or override_username:
+        global_username = (override_username or "").lower()
+        global_email = (override_email or "").lower()
+    else:
+        api_username = user.get("username")
+        db_g_username = ""
+        db_g_email = ""
+        if api_username:
+            try:
+                from gitlab_compliance_checker.services import roster_service
+
+                db_member = roster_service.get_member_by_username(api_username)
+                if db_member:
+                    db_g_username = db_member.get("global_username") or ""
+                    db_g_email = db_member.get("global_email") or ""
+            except Exception:
+                pass
+
+        global_username = (db_g_username or user.get("global_username") or "").lower()
+        global_email = (db_g_email or user.get("global_email") or "").lower()
     ist = timezone(timedelta(hours=5, minutes=30))
 
     morn_start = datetime.strptime("09:00", "%H:%M").time()
@@ -34,7 +54,7 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
     async def _fetch_project_commits(project):
         pid = project.get("id")
         pname = project.get("name_with_namespace")
-        search_term = author_email or author_name or username
+        search_term = global_email or global_username
         if not search_term:
             return {"pid": pid, "commits": [], "count": 0, "error": None}
 
@@ -59,9 +79,6 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
             def _ns(s):
                 return re.sub(r"[\s_\.\-]", "", (s or "").lower())
 
-            ns_uname = _ns(username)
-            ns_aname = _ns(author_name)
-
             for c in commits_data or []:
                 sha = c.get("id")
                 if not sha or sha in p_seen:
@@ -69,19 +86,11 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
 
                 c_author_name = (c.get("author_name", "") or "").lower()
                 c_author_email = (c.get("author_email", "") or "").lower()
-                c_email_local = c_author_email.split("@")[0] if "@" in c_author_email else c_author_email
-                ns_cname = _ns(c_author_name)
 
                 is_match = False
-                if author_email and c_author_email == author_email.lower():
+                if global_email and c_author_email == global_email:
                     is_match = True
-                elif username and c_email_local == username.lower():
-                    is_match = True
-                elif author_email and "@" in author_email and author_email.split("@")[0].lower() == c_email_local:
-                    is_match = True
-                elif ns_cname and (ns_uname and ns_cname == ns_uname):
-                    is_match = True
-                elif ns_cname and (ns_aname and ns_cname == ns_aname):
+                elif global_username and c_author_name == global_username:
                     is_match = True
 
                 if is_match:
@@ -92,7 +101,7 @@ async def get_user_commits_async(client, user, projects, since=None, until=None)
                             "sha": sha,
                             "pname": pname,
                             "title": c.get("title"),
-                            "created_at": c.get("created_at"),
+                            "created_at": c.get("authored_date") or c.get("created_at"),
                             "author_name": c.get("author_name"),
                             "short_id": c.get("short_id"),
                             "web_url": c.get("web_url"),
@@ -168,9 +177,30 @@ def get_user_commits(client, user, projects, since=None, until=None):
     seen_shas = set()
     shas_lock = threading.Lock()
 
-    username = str(user.get("username", "")).lower()
-    display_name = str(user.get("name", "")).lower()
-    user_email = str(user.get("email", "")).lower()
+    # New logic for explicit group member matching
+    override_email = user.get("override_email")
+    override_username = user.get("override_username")
+
+    if override_email or override_username:
+        global_username = str(override_username or "").lower()
+        global_email = str(override_email or "").lower()
+    else:
+        api_username = user.get("username")
+        db_g_username = ""
+        db_g_email = ""
+        if api_username:
+            try:
+                from gitlab_compliance_checker.services import roster_service
+
+                db_member = roster_service.get_member_by_username(api_username)
+                if db_member:
+                    db_g_username = db_member.get("global_username") or ""
+                    db_g_email = db_member.get("global_email") or ""
+            except Exception:
+                pass
+
+        global_username = str(db_g_username or user.get("global_username") or "").lower()
+        global_email = str(db_g_email or user.get("global_email") or "").lower()
 
     date_params = {}
     if since:
@@ -195,13 +225,9 @@ def get_user_commits(client, user, projects, since=None, until=None):
                 sha = item.get("id")
 
                 match = False
-                if author_email == user_email and user_email:
+                if global_email and author_email == global_email:
                     match = True
-                elif author_name == display_name and display_name:
-                    match = True
-                elif username in author_email and username:
-                    match = True
-                elif username == author_name and username:
+                elif global_username and author_name == global_username:
                     match = True
 
                 if match:
@@ -214,7 +240,7 @@ def get_user_commits(client, user, projects, since=None, until=None):
 
                     if should_add:
                         count += 1
-                        timestamp_str = item.get("created_at")
+                        timestamp_str = item.get("authored_date") or item.get("created_at")
                         try:
                             dt = dateutil.parser.parse(timestamp_str)
                             if dt.tzinfo is None:
