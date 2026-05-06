@@ -1,7 +1,9 @@
+import re
 from urllib.parse import urlparse
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.exc import IntegrityError
 
 from ..infrastructure.database import get_session
 from ..infrastructure.gitlab.groups import get_group_members
@@ -168,9 +170,9 @@ def _render_roster_upload():
                     st.success("✅ Database upload is successful!")
 
                 if errors:
-                    st.error(f"❌ Encountered {len(errors)} error(s) during import:")
-                    for error in errors:
-                        st.write(f"- {error}")
+                    with st.expander(f"❌ Encountered {len(errors)} error(s) during import", expanded=True):
+                        for error in errors:
+                            st.write(f"- {error}")
 
                 if count > 0 and not errors:
                     st.rerun()
@@ -216,9 +218,11 @@ def _render_roster_table():
     st.markdown("### 🗑 Delete Member")
     member_id_to_del = st.number_input("Enter Member ID to delete", min_value=1, step=1, key="del_id_input")
     if st.button("🗑 Delete Member", type="secondary"):
-        delete_member(member_id_to_del)
-        st.success(f"Member {member_id_to_del} deleted.")
-        st.rerun()
+        if delete_member(member_id_to_del):
+            st.success(f"✅ Member {member_id_to_del} has been deleted successfully.")
+            st.rerun()
+        else:
+            st.error(f"❌ Member with ID {member_id_to_del} was not found.")
 
 
 def _render_member_form():
@@ -283,26 +287,43 @@ def _render_member_form():
         submitted = st.form_submit_button(f"💾 {btn_label}", type="primary")
 
         if submitted:
+            # Basic validation
+            email_regex = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+
             if not gitlab_user:
                 st.error("GitLab Username is required.")
+            elif gitlab_email and not re.match(email_regex, gitlab_email):
+                st.error("Invalid GitLab Email format.")
+            elif global_email and not re.match(email_regex, global_email):
+                st.error("Invalid Global Email format.")
             else:
-                with get_session() as session:
-                    add_or_update_member(
-                        session,
-                        {
-                            "name": name,
-                            "team_name": team_name,
-                            "gitlab_username": gitlab_user,
-                            "gitlab_email": gitlab_email,
-                            "corpus_username": corpus_user,
-                            "global_username": global_user,
-                            "global_email": global_email,
-                            "college_name": college,
-                        },
-                        target_batch_id,
-                    )
-                if mode == "Edit Existing":
-                    st.success("✅ The edit has been successfully done.")
-                else:
-                    st.success("✅ The intern has been added to the database successfully.")
-                st.rerun()
+                try:
+                    with get_session() as session:
+                        add_or_update_member(
+                            session,
+                            {
+                                "name": name,
+                                "team_name": team_name,
+                                "gitlab_username": gitlab_user,
+                                "gitlab_email": gitlab_email,
+                                "corpus_username": corpus_user,
+                                "global_username": global_user,
+                                "global_email": global_email,
+                                "college_name": college,
+                            },
+                            target_batch_id,
+                            member_id=selected_member_id,
+                        )
+                    if mode == "Edit Existing":
+                        st.success("✅ The edit has been successfully done.")
+                    else:
+                        st.success("✅ The intern has been added to the database successfully.")
+                    st.rerun()
+                except IntegrityError as e:
+                    error_msg = str(e)
+                    if "UniqueViolation" in error_msg or "UNIQUE constraint failed" in error_msg:
+                        st.error("❌ A member with this GitLab username or email already exists in the database.")
+                    else:
+                        st.error(f"❌ Database error: {e}")
+                except Exception as e:
+                    st.error(f"❌ An unexpected error occurred: {e}")

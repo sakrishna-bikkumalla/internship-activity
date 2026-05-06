@@ -91,7 +91,7 @@ def test_render_member_form_add(mock_roster_service):
             with patch("streamlit.form") as m_form:
                 m_form.return_value.__enter__.return_value = MagicMock()
                 with patch("streamlit.form_submit_button", return_value=True):
-                    with patch("streamlit.text_input", side_effect=["Name", "Team", "user", "email", "c", "g", "ge", "coll"]):
+                    with patch("streamlit.text_input", side_effect=["Name", "Team", "user", "email@example.com", "c", "g", "ge@example.com", "coll"]):
                         admin._render_member_form()
                         assert mock_roster_service["add_update"].called
 
@@ -115,6 +115,6 @@ def test_render_member_form_edit(mock_roster_service):
                     m_form.return_value.__enter__.return_value = MagicMock()
                     with patch("streamlit.form_submit_button", return_value=True):
                         # 8 text fields
-                        with patch("streamlit.text_input", return_value="updated"):
+                        with patch("streamlit.text_input", side_effect=["Name", "Team", "user", "email@example.com", "c", "g", "ge@example.com", "coll"]):
                             admin._render_member_form()
                             assert mock_roster_service["add_update"].called

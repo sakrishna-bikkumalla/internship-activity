@@ -129,7 +129,7 @@ def get_all_teams() -> List[str]:
         return [t.name for t in session.query(Team).all()]
 
 
-def add_or_update_member(session: Session, data: InternCSVRow, batch_id: int):
+def add_or_update_member(session: Session, data: InternCSVRow, batch_id: int, member_id: int | None = None):
     """Adds a new member or updates an existing one within a specific batch."""
     team_name = data.get("team_name", "Default Team")
     # Lookup team within the specific batch
@@ -139,12 +139,22 @@ def add_or_update_member(session: Session, data: InternCSVRow, batch_id: int):
         session.add(team)
         session.flush()
 
-    member = session.query(Member).filter_by(gitlab_username=data["gitlab_username"]).first()
+    if not data.get("gitlab_username"):
+        raise ValueError("GitLab username is required.")
+
+    member = None
+    if member_id:
+        member = session.query(Member).get(member_id)
+
+    if not member:
+        member = session.query(Member).filter_by(gitlab_username=data["gitlab_username"]).first()
+
     if not member:
         member = Member(gitlab_username=data["gitlab_username"])
         session.add(member)
 
     member.name = data.get("name", member.name)
+    member.gitlab_username = data.get("gitlab_username", member.gitlab_username)
     member.gitlab_email = data.get("gitlab_email", member.gitlab_email)
     member.corpus_username = data.get("corpus_username", member.corpus_username)
     member.global_username = data.get("global_username", member.global_username)
@@ -154,13 +164,15 @@ def add_or_update_member(session: Session, data: InternCSVRow, batch_id: int):
     member.team_id = team.id
 
 
-def delete_member(member_id: int):
-    """Deletes a member from the database."""
+def delete_member(member_id: int) -> bool:
+    """Deletes a member from the database. Returns True if deleted, False if not found."""
     with get_session() as session:
         member = session.query(Member).get(member_id)
         if member:
             session.delete(member)
             session.commit()
+            return True
+        return False
 
 
 def bulk_import_members(csv_content: bytes, batch_id: int) -> tuple[int, list[str]]:
