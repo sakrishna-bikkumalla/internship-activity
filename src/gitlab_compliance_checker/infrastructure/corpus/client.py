@@ -187,3 +187,75 @@ class CorpusClient:
         for i, url in enumerate(audio_urls):
             logger.debug(f"[Corpus] Audio URL {i + 1}: {url}")
         return audio_urls
+
+    def extract_all_media(self, records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+        """Extract and classify all media files from Corpus records by type.
+
+        Classifies each record into one of four buckets: audio, image, video, file.
+        Classification is first attempted via the record's ``media_type`` field; if
+        that is absent the file extension is used as a fallback.
+
+        Args:
+            records: List of record dicts from fetch_records
+
+        Returns:
+            Dict with keys "audio", "image", "video", "file", each mapping to a
+            list of dicts: {url, filename, media_type, created_at, published_date}
+        """
+        IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".tiff"}
+        VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
+        AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".aac", ".flac", ".m4a", ".opus", ".weba"}
+
+        buckets: dict[str, list[dict[str, Any]]] = {
+            "audio": [],
+            "image": [],
+            "video": [],
+            "file": [],
+        }
+
+        for record in records:
+            url = record.get("file_url", "")
+            if not url:
+                continue
+
+            media_type: str = (record.get("media_type") or "").lower().strip()
+
+            # Determine bucket
+            if media_type in ("audio",):
+                bucket = "audio"
+            elif media_type in ("image", "photo", "picture"):
+                bucket = "image"
+            elif media_type in ("video",):
+                bucket = "video"
+            else:
+                # Fallback: guess from file extension
+                import os
+
+                ext = os.path.splitext(url.split("?")[0])[-1].lower()
+                if ext in AUDIO_EXTS:
+                    bucket = "audio"
+                elif ext in IMAGE_EXTS:
+                    bucket = "image"
+                elif ext in VIDEO_EXTS:
+                    bucket = "video"
+                else:
+                    bucket = "file"
+
+            entry: dict[str, Any] = {
+                "url": url,
+                "filename": record.get("file_name")
+                or record.get("filename")
+                or url.split("/")[-1].split("?")[0]
+                or "file",
+                "media_type": bucket,
+                "created_at": record.get("created_at", ""),
+                "published_date": record.get("published_date", ""),
+            }
+            buckets[bucket].append(entry)
+
+        logger.debug(
+            f"[Corpus] extract_all_media: audio={len(buckets['audio'])}, "
+            f"image={len(buckets['image'])}, video={len(buckets['video'])}, "
+            f"file={len(buckets['file'])}"
+        )
+        return buckets

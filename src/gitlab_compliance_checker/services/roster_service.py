@@ -111,6 +111,7 @@ def get_all_teams_with_members() -> List[dict]:
                         {
                             "name": m.name,
                             "username": m.gitlab_username,
+                            "corpus_username": m.corpus_username or "",
                             "global_username": m.global_username,
                             "global_email": m.global_email,
                             "date_of_joining": m.date_of_joining,
