@@ -400,6 +400,69 @@ def _build_excel_export(team_data: dict) -> bytes:
     return output.getvalue()
 
 
+def _build_individual_metrics_excel_export(team_data: dict) -> bytes:
+    """Single-sheet Excel containing all members from all teams with attendance and consistency metrics."""
+    output = io.BytesIO()
+    all_member_data = []
+
+    for team_name, (_, member_rows, _) in team_data.items():
+        for row in member_rows:
+            # Re-calculate metrics to ensure they are present even if not in cache
+            mrs = row.get("mrs_list", [])
+            issues = row.get("issues_list", [])
+            commits = row.get("commits_list", [])
+            cf = row.get("corpus_files") or {}
+            activity_map = _get_daily_activity_counts(mrs, issues, commits, corpus_files=cf)
+
+            joining_date_str = row.get("Date of Joining")
+            joining_date = None
+            if joining_date_str:
+                try:
+                    joining_date = dateutil.parser.parse(joining_date_str).date()
+                except Exception:
+                    pass
+
+            active_days, total_days, consistency_pct, working_days, attendance_pct = _get_contribution_index(
+                activity_map, row.get("Username"), joining_date=joining_date
+            )
+
+            total_corpus = sum(len(v) for v in cf.values()) if isinstance(cf, dict) else 0
+
+            export_row = {
+                "Team Name": team_name,
+                "Name": row.get("Name", ""),
+                "Username": row.get("Username", ""),
+                "Date of Joining": row.get("Date of Joining", ""),
+                "Status": row.get("Status", ""),
+                "Total Commits": row.get("Total Commits", 0),
+                "Morning Commits": row.get("Morning Commits", 0),
+                "Afternoon Commits": row.get("Afternoon Commits", 0),
+                "MR Created": row.get("MR Created", 0),
+                "MR Merged": row.get("MR Merged", 0),
+                "MR Open": row.get("MR Open", 0),
+                "MR Closed": row.get("MR Closed", 0),
+                "MR Assigned": row.get("MR Assigned", 0),
+                "Issues Raised": row.get("Issues Raised", 0),
+                "Issues Closed": row.get("Issues Closed", 0),
+                "Issues Assigned": row.get("Issues Assigned", 0),
+                "Score": row.get("Score", 0),
+                "Corpus Files": total_corpus,
+                "Active Days": active_days,
+                "Consistency %": f"{consistency_pct:.1f}%",
+                "Attendance %": f"{attendance_pct:.1f}%",
+            }
+            all_member_data.append(export_row)
+
+    if all_member_data:
+        df = pd.DataFrame(all_member_data)
+        # Sort by Team and then by Score
+        df = df.sort_values(by=["Team Name", "Score"], ascending=[True, False])
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Individual Metrics")
+
+    return output.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # UI: CSV Bulk Upload
 # ---------------------------------------------------------------------------
@@ -2403,6 +2466,36 @@ def render_team_leaderboard(client) -> None:
                             gl_user, {"audio": [], "image": [], "video": [], "file": []}
                         )
 
+            # ── Pre-calculate Attendance/Consistency Metrics for UI & Export ──
+            for mrow in member_rows:
+                # 1. Get Activity Map
+                mrs = mrow.get("mrs_list", [])
+                issues = mrow.get("issues_list", [])
+                commits = mrow.get("commits_list", [])
+                corpus_files = mrow.get("corpus_files", {})
+                activity_map = _get_daily_activity_counts(mrs, issues, commits, corpus_files=corpus_files)
+
+                # 2. Get Joining Date
+                joining_date_str = mrow.get("Date of Joining")
+                joining_date = None
+                if joining_date_str:
+                    try:
+                        joining_date = dateutil.parser.parse(joining_date_str).date()
+                    except Exception:
+                        pass
+
+                # 3. Calculate Index
+                active_days, total_days, consistency_pct, working_days, attendance_pct = _get_contribution_index(
+                    activity_map, mrow.get("Username"), joining_date=joining_date
+                )
+
+                # 4. Store in row
+                mrow["Active Days"] = active_days
+                mrow["Total Days"] = total_days
+                mrow["Consistency %"] = consistency_pct
+                mrow["Attendance %"] = attendance_pct
+                mrow["Working Days"] = working_days
+
             totals = _aggregate_team_totals(member_rows)
             team_data[team_name] = (team, member_rows, totals)
             progress.progress((idx + 1) / len(teams_to_process), text=f"Done: {team_name}")
@@ -2438,13 +2531,26 @@ def render_team_leaderboard(client) -> None:
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
     now_ist = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
-    filename = f"team_leaderboard_{now_ist.strftime('%Y-%m-%d')}.xlsx"
+    filename_full = f"team_leaderboard_{now_ist.strftime('%Y-%m-%d')}.xlsx"
+    filename_indiv = f"individual_metrics_{now_ist.strftime('%Y-%m-%d')}.xlsx"
+
     try:
-        st.download_button(
-            label="⬇️ Download Full Report (Excel)",
-            data=_build_excel_export(team_data),
-            file_name=filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            st.download_button(
+                label="⬇️ Download Full Report (Excel)",
+                data=_build_excel_export(team_data),
+                file_name=filename_full,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_full_report",
+            )
+        with col_ex2:
+            st.download_button(
+                label="⬇️ Download Individual Metrics (Excel)",
+                data=_build_individual_metrics_excel_export(team_data),
+                file_name=filename_indiv,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_indiv_report",
+            )
     except Exception as exc:
         st.error(f"Could not generate Excel export: {exc}")
