@@ -30,6 +30,7 @@ import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
 from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
+from gitlab_compliance_checker.infrastructure.gitlab.timelogs import format_time_spent
 from gitlab_compliance_checker.services.roster_service import get_all_teams_with_members
 
 # ---------------------------------------------------------------------------
@@ -225,7 +226,6 @@ def _extract_member_row(result: dict) -> dict:
     """Flatten one process_batch_users() result into display metrics. Handles errors gracefully."""
     username = result.get("username", "unknown")
     status = result.get("status", "Error")
-
     if status != "Success":
         return {
             "Username": username,
@@ -243,6 +243,8 @@ def _extract_member_row(result: dict) -> dict:
             "Issues Assigned": 0,
             "Groups": 0,
             "Score": 0,
+            "Time Spent": "0 min",
+            "time_spent_seconds": 0,
             "Error": result.get("error", "Unknown error"),
             "mrs_list": [],
             "issues_list": [],
@@ -258,6 +260,8 @@ def _extract_member_row(result: dict) -> dict:
     total_mrs = m.get("total", 0)
     merged_mrs = m.get("merged", 0)
     issues_closed = i.get("closed", 0)
+
+    total_time_seconds = data.get("total_time_spent_seconds", 0)
 
     return {
         "Username": username,
@@ -275,6 +279,8 @@ def _extract_member_row(result: dict) -> dict:
         "Issues Assigned": i.get("assigned", 0),
         "Groups": len(data.get("groups", [])),
         "Score": _calculate_score(total_commits, merged_mrs, total_mrs, issues_closed),
+        "Time Spent": format_time_spent(total_time_seconds),
+        "time_spent_seconds": total_time_seconds,
         "mrs_list": data.get("mrs", []),
         "issues_list": data.get("issues", []),
         "commits_list": data.get("commits", []),
@@ -297,6 +303,7 @@ def _aggregate_team_totals(member_rows: list[dict]) -> dict:
         "Issues Assigned": 0,
         "Team Score": 0,
         "Corpus Files": 0,
+        "time_spent_seconds": 0,
     }
     for row in member_rows:
         for key in totals:
@@ -308,6 +315,9 @@ def _aggregate_team_totals(member_rows: list[dict]) -> dict:
 
             src = "Score" if key == "Team Score" else key
             totals[key] += row.get(src, 0)
+
+    # Add formatted team time spent for display
+    totals["Time Spent"] = format_time_spent(totals["time_spent_seconds"])
     return totals
 
 
@@ -396,7 +406,14 @@ def _build_excel_export(team_data: dict) -> bytes:
             .to_excel(writer, index=False, sheet_name="Leaderboard")
         )
         for team_name, (_, member_rows, _) in team_data.items():
-            pd.DataFrame(member_rows).to_excel(writer, index=False, sheet_name=team_name[:31])
+            if member_rows:
+                # Exclude internal raw lists from individual sheets to keep them clean
+                exclude_cols = {"mrs_list", "issues_list", "commits_list", "corpus_files", "time_spent_seconds"}
+                df_team = pd.DataFrame(member_rows)
+                display_cols = [c for c in df_team.columns if c not in exclude_cols]
+                df_team[display_cols].to_excel(writer, index=False, sheet_name=team_name[:31])
+            else:
+                pd.DataFrame().to_excel(writer, index=False, sheet_name=team_name[:31])
     return output.getvalue()
 
 
@@ -450,6 +467,8 @@ def _build_individual_metrics_excel_export(team_data: dict) -> bytes:
                 "Active Days": active_days,
                 "Consistency %": f"{consistency_pct:.1f}%",
                 "Attendance %": f"{attendance_pct:.1f}%",
+                "Time Spent (Format)": row.get("Time Spent", "0 min"),
+                "Time Spent (Seconds)": row.get("time_spent_seconds", 0),
             }
             all_member_data.append(export_row)
 
@@ -1489,18 +1508,22 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                         *   **Exclusions**: All **Mondays** and the **1st Sunday** of every month are excluded.
                     """)
 
-            idx_c1, idx_c2, idx_c3, idx_c4, idx_c5 = st.columns(5)
+            idx_c1, idx_c2, idx_c3, idx_c4, idx_c5, idx_c6 = st.columns(6)
             idx_c1.metric("Active Days", active_days)
             idx_c2.metric("Total Days", total_days)
             idx_c3.metric("Consistency %", f"{consistency_pct:.1f}%")
             idx_c4.metric("Collaboration %", f"{collaboration_pct:.1f}%")
 
+            time_spent_str = row.get("Time Spent", "0 min")
+            idx_c5.metric("Time Spent", time_spent_str)
+            idx_c5.caption("All-time (DOJ to Today)")
+
             if joining_date:
-                idx_c5.metric("Attendance", f"{attendance_pct:.1f}%")
-                idx_c5.caption(f"**{active_days} / {working_days}** working days")
+                idx_c6.metric("Attendance", f"{attendance_pct:.1f}%")
+                idx_c6.caption(f"**{active_days} / {working_days}** working days")
             else:
-                idx_c5.metric("Attendance", "N/A")
-                idx_c5.caption("Set Joining Date in Roster")
+                idx_c6.metric("Attendance", "N/A")
+                idx_c6.caption("Set Joining Date in Roster")
 
             # Helper to generate list HTML
             def get_list_html(items, type_):
@@ -1869,6 +1892,8 @@ def _build_individual_rows(team_data: dict) -> list[dict]:
                     "MRs Merged": row.get("MR Merged", 0),
                     "Issues Closed": row.get("Issues Closed", 0),
                     "Score": row.get("Score", 0),
+                    "Time Spent": row.get("Time Spent", "0 min"),
+                    "time_spent_seconds": row.get("time_spent_seconds", 0),
                     "Badge": "",
                 }
             )
@@ -2174,6 +2199,7 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
             f'<td class="lb-num">{int(row.get("Total Commits", 0))}</td>'
             f'<td class="lb-num">{int(row.get("MRs Merged", 0))}</td>'
             f'<td class="lb-num">{int(row.get("Issues Closed", 0))}</td>'
+            f'<td class="lb-num" style="color: #70b1ff; font-weight: 700;">{escape(str(row.get("Time Spent", "0 min")))}</td>'
             "</tr>"
         )
 
@@ -2192,6 +2218,7 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
         <th>Commits</th>
         <th>MRs</th>
         <th>Issues</th>
+        <th>Time Spent</th>
       </tr>
     </thead>
     <tbody>
@@ -2412,11 +2439,20 @@ def render_team_leaderboard(client) -> None:
 
             with st.spinner(f"Fetching **{team_name}** ({len(usernames)} member(s))…"):
                 try:
+                    # Prepare overrides with time_since (Date of Joining) for all-time spent
+                    overrides = {}
+                    for m in team.get("members", []):
+                        uname = m.get("username")
+                        doj = m.get("date_of_joining")
+                        if uname and doj:
+                            overrides[uname] = {"time_since": doj}
+
                     results = process_batch_users(
                         client,
                         usernames,
                         since=since_iso,
                         until=until_iso,
+                        overrides=overrides,
                     )
                 except Exception as exc:
                     st.warning(f"⚠️ Could not fetch data for **{team_name}**: {exc}")

@@ -53,12 +53,22 @@ def process_single_user(
     project_ids: list[int] | None = None,
     override_email: str | None = None,
     override_username: str | None = None,
+    time_since: str | None = None,
+    time_until: str | None = None,
 ):
     """
     Worker function to process a single user.
-    Refactored to fetch all components (projects, groups, MRs, issues, commits)
+    Refactored to fetch all components (projects, groups, MRs, issues, commits, timelogs)
     concurrently where possible.
     """
+    from datetime import date
+
+    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
+        aggregate_daily_time,
+        build_daily_time_from_time_stats,
+        fetch_user_timelogs_from_projects,
+    )
+
     username = username.strip()
     result = {"username": username, "status": "Success", "error": None, "data": {}}
 
@@ -137,7 +147,52 @@ def process_single_user(
         user_mrs, mr_stats = f_mrs.result()
         user_issues, issue_stats = f_issues.result()
 
-        # 4. Quality Evaluation (Efficient)
+        # 4. Timelogs (Special handling for Leaderboard all-time spent)
+        def _to_date(val, default):
+            if not val:
+                return default
+            if isinstance(val, date):
+                return val
+            try:
+                # Handle ISO strings (strip time if present)
+                return date.fromisoformat(str(val)[:10])
+            except Exception:
+                return default
+
+        t_since = _to_date(time_since, _to_date(since, date(2000, 1, 1)))
+        t_until = _to_date(time_until, _to_date(until, date.today()))
+
+        total_time_spent = 0
+        try:
+            # Discover projects from MRs/Issues to ensure no project is missed
+            timelog_projs = list(all_projs_list)
+            seen_t_pids = {p.get("id") for p in timelog_projs if p.get("id")}
+            for item in user_mrs + user_issues:
+                pid = item.get("project_id")
+                if pid and pid not in seen_t_pids:
+                    timelog_projs.append({"id": pid})
+                    seen_t_pids.add(pid)
+
+            timelogs_raw = fetch_user_timelogs_from_projects(client, user_id, timelog_projs, t_since, t_until)
+            daily_times = aggregate_daily_time(timelogs_raw)
+
+            # Supplement with time_stats fallback
+            daily_times = build_daily_time_from_time_stats(
+                user_issues,
+                user_mrs,
+                client,
+                t_since.isoformat(),
+                t_until.isoformat(),
+                existing_daily_times=daily_times,
+            )
+            total_time_spent = sum(daily_times.values())
+        except Exception as te:
+            # Don't crash the whole user if timelogs fail
+            import logging
+
+            logging.getLogger(__name__).error(f"Timelog fetch failed for {username}: {te}")
+
+        # 5. Quality Evaluation (Efficient)
         authored_issues = [i for i in user_issues if i.get("role") == "Author"]
         authored_mrs = [m for m in user_mrs if m.get("role") == "Authored"]
 
@@ -154,6 +209,7 @@ def process_single_user(
         result["data"]["issue_stats"] = issue_stats
         result["data"]["issue_quality"] = issue_quality
         result["data"]["mr_quality"] = mr_quality
+        result["data"]["total_time_spent_seconds"] = total_time_spent
 
     except Exception as e:
         result["status"] = "Error"
@@ -222,10 +278,20 @@ async def process_single_user_async(
     project_ids: list[int] | None = None,
     override_email: str | None = None,
     override_username: str | None = None,
+    time_since: str | None = None,
+    time_until: str | None = None,
 ):
     """
     Async worker to process a single user with maximum concurrency.
     """
+    from datetime import date
+
+    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
+        aggregate_daily_time,
+        build_daily_time_from_time_stats,
+        fetch_user_timelogs_from_projects_async,
+    )
+
     username = username.strip()
     result = {"username": username, "status": "Success", "error": None, "data": {}}
 
@@ -284,7 +350,51 @@ async def process_single_user_async(
             client, user_obj, all_projs_list, since=since, until=until
         )
 
-        # 5. Quality Evaluation (Efficient logic, already async-friendly)
+        # 5. Timelogs (Special handling for Leaderboard all-time spent)
+        def _to_date(val, default):
+            if not val:
+                return default
+            if isinstance(val, date):
+                return val
+            try:
+                return date.fromisoformat(str(val)[:10])
+            except Exception:
+                return default
+
+        t_since = _to_date(time_since, _to_date(since, date(2000, 1, 1)))
+        t_until = _to_date(time_until, _to_date(until, date.today()))
+
+        total_time_spent = 0
+        try:
+            timelog_projs = list(all_projs_list)
+            seen_t_pids = {p.get("id") for p in timelog_projs if p.get("id")}
+            for item in user_mrs + user_issues:
+                pid = item.get("project_id")
+                if pid and pid not in seen_t_pids:
+                    timelog_projs.append({"id": pid})
+                    seen_t_pids.add(pid)
+
+            timelogs_raw = await fetch_user_timelogs_from_projects_async(
+                client, user_id, timelog_projs, t_since, t_until
+            )
+            daily_times = aggregate_daily_time(timelogs_raw)
+
+            # Supplement with time_stats fallback
+            daily_times = build_daily_time_from_time_stats(
+                user_issues,
+                user_mrs,
+                client,
+                t_since.isoformat(),
+                t_until.isoformat(),
+                existing_daily_times=daily_times,
+            )
+            total_time_spent = sum(daily_times.values())
+        except Exception as te:
+            import logging
+
+            logging.getLogger(__name__).error(f"Async timelog fetch failed for {username}: {te}")
+
+        # 6. Quality Evaluation (Efficient logic, already async-friendly)
         authored_issues = [i for i in user_issues if i.get("role") == "Author"]
         authored_mrs = [m for m in user_mrs if m.get("role") == "Authored"]
 
@@ -304,6 +414,7 @@ async def process_single_user_async(
                 "issue_stats": issue_stats,
                 "issue_quality": issue_quality,
                 "mr_quality": mr_quality,
+                "total_time_spent_seconds": total_time_spent,
             }
         )
 

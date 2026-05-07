@@ -39,9 +39,9 @@ async def get_user_projects_async(client, user_id, username):
         )
         f_events = client._async_get_paginated(
             f"/users/{user_id}/events",
-            params={"action": "pushed"},
-            per_page=50,
-            max_pages=20,
+            params={},
+            per_page=100,
+            max_pages=5,
         )
 
         projects_data, events_data = await asyncio.gather(f_projects, f_events)
@@ -109,9 +109,9 @@ def get_user_projects(client, user_id, username):
         events_data = (
             client._get_paginated(
                 f"/users/{user_id}/events",
-                params={"action": "pushed"},
-                per_page=50,
-                max_pages=20,
+                params={},  # Fetch all actions to catch issues, MRs, comments, etc.
+                per_page=100,
+                max_pages=5,
             )
             or []
         )
