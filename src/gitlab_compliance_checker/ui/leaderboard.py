@@ -28,7 +28,9 @@ import dateutil.parser
 import pandas as pd
 import streamlit as st
 
+from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
 from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
+from gitlab_compliance_checker.infrastructure.gitlab.timelogs import format_time_spent
 from gitlab_compliance_checker.services.roster_service import get_all_teams_with_members
 
 # ---------------------------------------------------------------------------
@@ -68,10 +70,84 @@ def _init_state() -> None:
         "_lb_last_ranking_rows": [],
         "_lb_cached_results": None,
         "_lb_last_filters": None,
+        "_lb_corpus_token": None,
+        "_lb_corpus_client": None,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
+
+
+# ---------------------------------------------------------------------------
+# Corpus Login
+# ---------------------------------------------------------------------------
+
+
+def _render_corpus_login() -> None:
+    """Render a Corpus login widget in the sidebar (same pattern as Weekly Performance Tracker)."""
+    with st.sidebar.expander("Corpus Login", expanded=st.session_state.get("_lb_corpus_token") is None):
+        phone = st.text_input("Phone", key="_lb_corpus_phone", placeholder="+1234567890")
+        password = st.text_input("Password", key="_lb_corpus_password", type="password")
+        if st.button("Login to Corpus", key="_lb_corpus_login_btn"):
+            if not phone or not password:
+                st.warning("Phone and password are required.")
+            else:
+                try:
+                    corpus_client = CorpusClient()
+                    token = corpus_client.login(phone, password)
+                    st.session_state["_lb_corpus_token"] = token
+                    st.session_state["_lb_corpus_client"] = corpus_client
+                    st.success("Logged in to Corpus!")
+                except Exception as e:
+                    st.error(f"Login failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Corpus Media Fetch
+# ---------------------------------------------------------------------------
+
+
+def _fetch_corpus_media_for_team(
+    corpus_client: "CorpusClient",
+    team_members: list[dict],
+    since: str | None = None,
+    until: str | None = None,
+) -> dict[str, dict[str, list[dict]]]:
+    """Fetch ALL corpus media (audio, image, video, file) for each team member.
+
+    Args:
+        corpus_client: Authenticated CorpusClient instance.
+        team_members:  List of member dicts (must contain 'username' and 'corpus_username').
+        since:         ISO date string YYYY-MM-DD for start filter (optional).
+        until:         ISO date string YYYY-MM-DD for end filter (optional).
+
+    Returns:
+        Dict mapping gitlab_username -> { "audio": [...], "image": [...], "video": [...], "file": [...] }
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+    result: dict[str, dict[str, list[dict]]] = {}
+
+    for member in team_members:
+        gl_username = member.get("username", "")
+        corpus_uid = member.get("corpus_username", "").strip()
+        if not corpus_uid:
+            _log.debug(f"[LB Corpus] No corpus_username for {gl_username}, skipping")
+            result[gl_username] = {"audio": [], "image": [], "video": [], "file": []}
+            continue
+
+        try:
+            records = corpus_client.fetch_records(corpus_uid, start_date=since, end_date=until)
+            media = corpus_client.extract_all_media(records)
+            result[gl_username] = media
+            total = sum(len(v) for v in media.values())
+            _log.debug(f"[LB Corpus] {gl_username} ({corpus_uid}): {total} files fetched")
+        except Exception as exc:
+            _log.warning(f"[LB Corpus] Failed for {gl_username} ({corpus_uid}): {exc}")
+            result[gl_username] = {"audio": [], "image": [], "video": [], "file": []}
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +226,6 @@ def _extract_member_row(result: dict) -> dict:
     """Flatten one process_batch_users() result into display metrics. Handles errors gracefully."""
     username = result.get("username", "unknown")
     status = result.get("status", "Error")
-
     if status != "Success":
         return {
             "Username": username,
@@ -168,6 +243,8 @@ def _extract_member_row(result: dict) -> dict:
             "Issues Assigned": 0,
             "Groups": 0,
             "Score": 0,
+            "Time Spent": "0 min",
+            "time_spent_seconds": 0,
             "Error": result.get("error", "Unknown error"),
             "mrs_list": [],
             "issues_list": [],
@@ -183,6 +260,8 @@ def _extract_member_row(result: dict) -> dict:
     total_mrs = m.get("total", 0)
     merged_mrs = m.get("merged", 0)
     issues_closed = i.get("closed", 0)
+
+    total_time_seconds = data.get("total_time_spent_seconds", 0)
 
     return {
         "Username": username,
@@ -200,6 +279,8 @@ def _extract_member_row(result: dict) -> dict:
         "Issues Assigned": i.get("assigned", 0),
         "Groups": len(data.get("groups", [])),
         "Score": _calculate_score(total_commits, merged_mrs, total_mrs, issues_closed),
+        "Time Spent": format_time_spent(total_time_seconds),
+        "time_spent_seconds": total_time_seconds,
         "mrs_list": data.get("mrs", []),
         "issues_list": data.get("issues", []),
         "commits_list": data.get("commits", []),
@@ -221,11 +302,22 @@ def _aggregate_team_totals(member_rows: list[dict]) -> dict:
         "Issues Closed": 0,
         "Issues Assigned": 0,
         "Team Score": 0,
+        "Corpus Files": 0,
+        "time_spent_seconds": 0,
     }
     for row in member_rows:
         for key in totals:
+            if key == "Corpus Files":
+                cf = row.get("corpus_files")
+                if isinstance(cf, dict):
+                    totals[key] += sum(len(v) for v in cf.values())
+                continue
+
             src = "Score" if key == "Team Score" else key
             totals[key] += row.get(src, 0)
+
+    # Add formatted team time spent for display
+    totals["Time Spent"] = format_time_spent(totals["time_spent_seconds"])
     return totals
 
 
@@ -314,7 +406,79 @@ def _build_excel_export(team_data: dict) -> bytes:
             .to_excel(writer, index=False, sheet_name="Leaderboard")
         )
         for team_name, (_, member_rows, _) in team_data.items():
-            pd.DataFrame(member_rows).to_excel(writer, index=False, sheet_name=team_name[:31])
+            if member_rows:
+                # Exclude internal raw lists from individual sheets to keep them clean
+                exclude_cols = {"mrs_list", "issues_list", "commits_list", "corpus_files", "time_spent_seconds"}
+                df_team = pd.DataFrame(member_rows)
+                display_cols = [c for c in df_team.columns if c not in exclude_cols]
+                df_team[display_cols].to_excel(writer, index=False, sheet_name=team_name[:31])
+            else:
+                pd.DataFrame().to_excel(writer, index=False, sheet_name=team_name[:31])
+    return output.getvalue()
+
+
+def _build_individual_metrics_excel_export(team_data: dict) -> bytes:
+    """Single-sheet Excel containing all members from all teams with attendance and consistency metrics."""
+    output = io.BytesIO()
+    all_member_data = []
+
+    for team_name, (_, member_rows, _) in team_data.items():
+        for row in member_rows:
+            # Re-calculate metrics to ensure they are present even if not in cache
+            mrs = row.get("mrs_list", [])
+            issues = row.get("issues_list", [])
+            commits = row.get("commits_list", [])
+            cf = row.get("corpus_files") or {}
+            activity_map = _get_daily_activity_counts(mrs, issues, commits, corpus_files=cf)
+
+            joining_date_str = row.get("Date of Joining")
+            joining_date = None
+            if joining_date_str:
+                try:
+                    joining_date = dateutil.parser.parse(joining_date_str).date()
+                except Exception:
+                    pass
+
+            active_days, total_days, consistency_pct, working_days, attendance_pct = _get_contribution_index(
+                activity_map, row.get("Username"), joining_date=joining_date
+            )
+
+            total_corpus = sum(len(v) for v in cf.values()) if isinstance(cf, dict) else 0
+
+            export_row = {
+                "Team Name": team_name,
+                "Name": row.get("Name", ""),
+                "Username": row.get("Username", ""),
+                "Date of Joining": row.get("Date of Joining", ""),
+                "Status": row.get("Status", ""),
+                "Total Commits": row.get("Total Commits", 0),
+                "Morning Commits": row.get("Morning Commits", 0),
+                "Afternoon Commits": row.get("Afternoon Commits", 0),
+                "MR Created": row.get("MR Created", 0),
+                "MR Merged": row.get("MR Merged", 0),
+                "MR Open": row.get("MR Open", 0),
+                "MR Closed": row.get("MR Closed", 0),
+                "MR Assigned": row.get("MR Assigned", 0),
+                "Issues Raised": row.get("Issues Raised", 0),
+                "Issues Closed": row.get("Issues Closed", 0),
+                "Issues Assigned": row.get("Issues Assigned", 0),
+                "Score": row.get("Score", 0),
+                "Corpus Files": total_corpus,
+                "Active Days": active_days,
+                "Consistency %": f"{consistency_pct:.1f}%",
+                "Attendance %": f"{attendance_pct:.1f}%",
+                "Time Spent (Format)": row.get("Time Spent", "0 min"),
+                "Time Spent (Seconds)": row.get("time_spent_seconds", 0),
+            }
+            all_member_data.append(export_row)
+
+    if all_member_data:
+        df = pd.DataFrame(all_member_data)
+        # Sort by Team and then by Score
+        df = df.sort_values(by=["Team Name", "Score"], ascending=[True, False])
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Individual Metrics")
+
     return output.getvalue()
 
 
@@ -542,12 +706,13 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
     if project_name:
         st.caption(f"Project: {project_name}")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Team Score", totals["Team Score"])
     c2.metric("Total Commits", totals["Total Commits"])
     c3.metric("MR Merged", totals["MR Merged"])
     c4.metric("Issues Closed", totals["Issues Closed"])
-    c5.metric("Members", len(member_rows))
+    c5.metric("Total Files", totals.get("Corpus Files", 0))
+    c6.metric("Members", len(member_rows))
 
     display_cols = [
         "Username",
@@ -565,8 +730,14 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
         "Issues Assigned",
         "Groups",
         "Score",
+        "Corpus Files",
     ]
     df = pd.DataFrame(member_rows)
+    # Compute a friendly Corpus Files total count column if the raw data exists
+    if "corpus_files" in df.columns:
+        df["Corpus Files"] = df["corpus_files"].apply(
+            lambda m: sum(len(v) for v in m.values()) if isinstance(m, dict) else 0
+        )
     available = [c for c in display_cols if c in df.columns]
     st.dataframe(df[available], width="stretch", hide_index=True)
 
@@ -582,8 +753,14 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
     st.divider()
 
 
-def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
-    """Aggregates all contributions into a date-based activity map {YYYY-MM-DD: count}."""
+def _get_daily_activity_counts(mrs, issues, commits, corpus_files: dict | None = None) -> dict[str, int]:
+    """Aggregates all contributions into a date-based activity map {YYYY-MM-DD: count}.
+
+    GitLab timestamps (MRs / issues / commits) are already converted by the API.
+    Corpus timestamps are stored in UTC and converted to IST (UTC+5:30) before
+    extracting the calendar date.
+    """
+    IST_OFFSET = datetime.timedelta(hours=5, minutes=30)
     activity_map: dict[str, int] = {}
 
     def add_to_map(date_str):
@@ -606,6 +783,29 @@ def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
         if day and isinstance(day, str) and len(day) == 10:
             activity_map[day] = activity_map.get(day, 0) + 1
 
+    def add_corpus_to_map(created_at: str) -> None:
+        """Convert UTC ISO timestamp to IST date and add to the activity map."""
+        if not created_at:
+            return
+        try:
+            # Parse as UTC (strip trailing Z, add explicit UTC offset)
+            ts_str = created_at.rstrip("Z")
+            if "+" not in ts_str and ts_str.count("-") < 3:
+                # No timezone info — assume UTC
+                dt_utc = datetime.datetime.fromisoformat(ts_str).replace(tzinfo=datetime.timezone.utc)
+            else:
+                dt_utc = datetime.datetime.fromisoformat(created_at)
+                if dt_utc.tzinfo is None:
+                    dt_utc = dt_utc.replace(tzinfo=datetime.timezone.utc)
+            dt_ist = dt_utc + IST_OFFSET
+            day = dt_ist.date().isoformat()
+            activity_map[day] = activity_map.get(day, 0) + 1
+        except Exception:
+            # Fallback: naive date split
+            day = created_at[:10] if len(created_at) >= 10 else ""
+            if day and len(day) == 10:
+                activity_map[day] = activity_map.get(day, 0) + 1
+
     for m in mrs:
         add_to_map(m.get("created_at"))
     for i in issues:
@@ -613,7 +813,80 @@ def _get_daily_activity_counts(mrs, issues, commits) -> dict[str, int]:
     for c in commits:
         add_to_map(c.get("date"))
 
+    # Corpus contributions — convert UTC → IST before date extraction
+    if corpus_files:
+        for bucket_items in corpus_files.values():
+            for entry in bucket_items:
+                add_corpus_to_map(entry.get("created_at", ""))
+
     return activity_map
+
+
+def _build_contributions_by_day(
+    mrs: list,
+    issues: list,
+    commits: list,
+    corpus_files: dict | None = None,
+) -> dict[str, dict[str, list]]:
+    """Group every contribution by its IST calendar date.
+
+    Returns:
+        {"YYYY-MM-DD": {"mrs": [...], "issues": [...], "commits": [...], "corpus": [...]}}
+    """
+    IST_OFFSET = datetime.timedelta(hours=5, minutes=30)
+
+    def _date_from_utc(ts: str) -> str:
+        """Parse a UTC ISO timestamp and return the IST date string (YYYY-MM-DD)."""
+        if not ts:
+            return ""
+        try:
+            ts_str = ts.rstrip("Z")
+            if "+" not in ts_str and ts_str.count("-") < 3:
+                dt = datetime.datetime.fromisoformat(ts_str).replace(tzinfo=datetime.timezone.utc)
+            else:
+                dt = datetime.datetime.fromisoformat(ts)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return (dt + IST_OFFSET).date().isoformat()
+        except Exception:
+            return ts[:10] if len(ts) >= 10 else ""
+
+    by_day: dict[str, dict[str, list]] = {}
+
+    def _ensure(d: str) -> None:
+        if d and d not in by_day:
+            by_day[d] = {"mrs": [], "issues": [], "commits": [], "corpus": []}
+
+    for m in mrs:
+        d = _date_from_utc(m.get("created_at", ""))
+        _ensure(d)
+        if d:
+            by_day[d]["mrs"].append(m)
+
+    for i in issues:
+        d = _date_from_utc(i.get("created_at", ""))
+        _ensure(d)
+        if d:
+            by_day[d]["issues"].append(i)
+
+    for c in commits:
+        # Commits store date as YYYY-MM-DD already (IST via GitLab API)
+        d = c.get("date", "")
+        if d and len(d) >= 10:
+            d = d[:10]
+        _ensure(d)
+        if d:
+            by_day[d]["commits"].append(c)
+
+    if corpus_files:
+        for bucket_items in corpus_files.values():
+            for entry in bucket_items:
+                d = _date_from_utc(entry.get("created_at", ""))
+                _ensure(d)
+                if d:
+                    by_day[d]["corpus"].append(entry)
+
+    return by_day
 
 
 def _get_group_start_date(username: str | None) -> datetime.date | None:
@@ -623,39 +896,70 @@ def _get_group_start_date(username: str | None) -> datetime.date | None:
     return None
 
 
-def _get_contribution_index(activity_map: dict[str, int], username: str | None = None) -> tuple[int, int, float]:
+def _get_contribution_index(
+    activity_map: dict[str, int], username: str | None = None, joining_date: datetime.date | None = None
+) -> tuple[int, int, float, int, float]:
     """
-    Returns (active_days, total_days, consistency_pct) for the current leaderboard context.
-    If date filter is set, total_days follows that inclusive range.
-    Otherwise, total_days is derived from the user's first and last active day.
+    Returns (active_days, total_days, consistency_pct, working_days, attendance_pct)
+    for the current leaderboard context.
     """
     active_days = sum(1 for count in activity_map.values() if count > 0)
+    today = datetime.date.today()
 
+    # Calculate Total Days (Priority: Joining Date -> Date Filter -> Activity Span)
     total_days = 0
     from_date = st.session_state.get("_lb_from_date")
     to_date = st.session_state.get("_lb_to_date")
 
-    cohort_start = _get_group_start_date(username)
-    if cohort_start:
-        today = datetime.date.today()
-        total_days = max((today - cohort_start).days + 1, 0)
-    elif from_date and to_date:
-        total_days = (to_date - from_date).days + 1
-    elif activity_map:
-        try:
-            days = sorted(activity_map.keys())
-            start = datetime.date.fromisoformat(days[0])
-            end = datetime.date.fromisoformat(days[-1])
-            total_days = (end - start).days + 1
-        except Exception:
-            total_days = active_days
+    if joining_date:
+        total_days = max((today - joining_date).days + 1, 0)
+    else:
+        cohort_start = _get_group_start_date(username)
+        if cohort_start:
+            total_days = max((today - cohort_start).days + 1, 0)
+        elif from_date and to_date:
+            total_days = (to_date - from_date).days + 1
+        elif activity_map:
+            try:
+                days = sorted(activity_map.keys())
+                start = datetime.date.fromisoformat(days[0])
+                end = datetime.date.fromisoformat(days[-1])
+                total_days = (end - start).days + 1
+            except Exception:
+                total_days = active_days
 
     consistency_pct = (active_days / total_days * 100.0) if total_days > 0 else 0.0
-    return active_days, total_days, consistency_pct
+
+    # Calculate Attendance based on Date of Joining
+    working_days = 0
+    if joining_date:
+        curr = joining_date
+        while curr <= today:
+            # Exclude every Monday (curr.weekday() == 0)
+            is_monday = curr.weekday() == 0
+            # Exclude every month's first Sunday (curr.weekday() == 6 and day 1-7)
+            is_first_sunday = curr.weekday() == 6 and curr.day <= 7
+
+            if not is_monday and not is_first_sunday:
+                working_days += 1
+            curr += datetime.timedelta(days=1)
+
+    attendance_pct = (active_days / working_days * 100.0) if working_days > 0 else 0.0
+
+    return active_days, total_days, consistency_pct, working_days, attendance_pct
 
 
-def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
-    """Renders a GitLab-style activity heatmap (364 days) matching GitLab's contribution graph."""
+def _render_activity_heatmap(
+    activity_map: dict[str, int],
+    contributions_by_day: dict[str, dict[str, list]] | None = None,
+    username: str = "user",
+) -> None:
+    """Renders a GitLab-style activity heatmap (364 days).
+
+    When *contributions_by_day* is provided, every active day cell becomes a
+    clickable box that toggles a popover listing all GitLab and Corpus
+    contributions for that day. Uses a pure-CSS checkbox hack for reliability.
+    """
     today = datetime.date.today()
     start_date = today - datetime.timedelta(days=363)
     while start_date.weekday() != 0:
@@ -674,46 +978,50 @@ def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
         }
         .heatmap-months {
             display: flex;
-            margin-left: 32px;
-            margin-bottom: 4px;
-            height: 16px;
+            margin-left: 38px;
+            margin-bottom: 6px;
+            height: 18px;
         }
         .heatmap-month-label {
             flex: 1;
-            font-size: 10px;
+            font-size: 11px;
             color: #8b949e;
             min-width: 0;
         }
         .heatmap-weeks {
             display: flex;
-            gap: 3px;
+            gap: 4px;
         }
         .heatmap-day-labels {
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            height: 88px;
-            padding-right: 6px;
-            font-size: 9px;
+            height: 115px;
+            padding-right: 8px;
+            font-size: 10px;
             color: #8b949e;
         }
         .heatmap-week {
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 4px;
         }
+        /* ── base cell ── */
         .heatmap-day {
-            width: 10px;
-            height: 10px;
+            width: 13px;
+            height: 13px;
             border-radius: 2px;
             background: rgba(255, 255, 255, 0.08);
             outline: 1px solid rgba(255,255,255,0.02);
+            cursor: pointer;
+            display: block;
         }
         .heatmap-day:hover {
-            transform: scale(1.5);
+            transform: scale(1.4);
             z-index: 5;
             box-shadow: 0 0 8px rgba(52, 152, 219, 0.6);
         }
+        /* ── levels ── */
         .heatmap-day-0 { background: rgba(255,255,255,0.08); }
         .heatmap-day-1 { background: #1e3a5f; }
         .heatmap-day-2 { background: #2b5a91; }
@@ -724,24 +1032,139 @@ def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
             outline: 2px solid #70b1ff !important;
             outline-offset: -1px;
         }
+        /* ── popover checkbox hack ── */
+        .hp-cb {
+            display: none !important;
+        }
+        .hp-day-wrapper {
+            position: relative;
+            display: inline-block;
+            line-height: 0;
+        }
+        .heatmap-popover {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            min-width: 280px;
+            max-width: 380px;
+            background: #1a1d2e;
+            border: 1px solid rgba(120, 129, 149, 0.35);
+            border-radius: 10px;
+            padding: 12px 14px;
+            z-index: 1000;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+            max-height: 350px;
+            overflow-y: auto;
+            font-size: 0.78rem;
+            color: #d9e1ee;
+            line-height: 1.4;
+        }
+        .hp-cb:checked ~ .heatmap-popover {
+            display: block;
+        }
+        .heatmap-popover::before {
+            content: '';
+            position: absolute;
+            top: -5px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background: #1a1d2e;
+            border-top: 1px solid rgba(120,129,149,0.35);
+            border-left: 1px solid rgba(120,129,149,0.35);
+        }
+        .hp-date {
+            font-weight: 700;
+            font-size: 0.82rem;
+            color: #70b1ff;
+            margin-bottom: 6px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding-bottom: 4px;
+            padding-right: 25px; /* space for X */
+        }
+        .hp-section {
+            margin: 8px 0 4px 0;
+            font-weight: 600;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            opacity: 0.7;
+            border-bottom: 1px dashed rgba(255,255,255,0.05);
+        }
+        .hp-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 5px;
+            padding: 3px 0;
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
+        .hp-link {
+            color: #d9e1ee;
+            text-decoration: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 280px;
+            display: inline-block;
+        }
+        .hp-link:hover { color: #70b1ff; text-decoration: underline; }
+        .hp-badge {
+            display: inline-block;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 0.62rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .hp-mr    { background: rgba(255,165,0,0.2);  color: #ffa500; }
+        .hp-issue { background: rgba(255,215,0,0.15); color: #ffd700; }
+        .hp-commit{ background: rgba(52,152,219,0.2); color: #3498db; }
+        .hp-audio { background: rgba(237,137,54,0.2); color: #ed8936; }
+        .hp-image { background: rgba(56,178,172,0.2); color: #38b2ac; }
+        .hp-video { background: rgba(229,62,62,0.2);  color: #e53e3e; }
+        .hp-file  { background: rgba(159,122,234,0.2); color: #9f7aea; }
+        .hp-close {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            font-size: 24px;
+            font-weight: 300;
+            color: #8b949e;
+            cursor: pointer;
+            line-height: 1;
+            transition: color 0.2s, transform 0.2s;
+            z-index: 1001;
+            user-select: none;
+        }
+        .hp-close:hover {
+            color: #ff4d4d;
+            transform: scale(1.1);
+        }
+        /* ── legend ── */
         .heatmap-legend {
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            gap: 4px;
-            margin-top: 10px;
-            font-size: 10px;
+            gap: 5px;
+            margin-top: 12px;
+            font-size: 11px;
             color: #8b949e;
         }
         .heatmap-legend-box {
-            width: 10px;
-            height: 10px;
+            width: 13px;
+            height: 13px;
             border-radius: 2px;
         }
     </style>
     """
 
-    weeks_data = []
+    weeks_data: list[list[dict[str, Any]]] = []
     current_date = start_date
     month_starts = []
     last_month = None
@@ -749,12 +1172,12 @@ def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
     for w in range(53):
         week_days = []
         for _d in range(7):
-            date_str = current_date.isoformat()
-            count_val: int = activity_map.get(date_str, 0)
+            date_val = current_date.isoformat()
+            count_val: int = activity_map.get(date_val, 0)
             is_today = current_date == today
             week_days.append(
                 {
-                    "date": date_str,
+                    "date": date_val,
                     "count": count_val,
                     "is_today": is_today,
                     "day": current_date.day,
@@ -778,10 +1201,13 @@ def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
         month_labels_html.append(label)
 
     weeks_html = []
+    from html import escape
+
     for week_days in weeks_data:
         days_html = []
         for day_info in week_days:
             count: int = day_info["count"]  # type: ignore[assignment]
+            date_str = day_info["date"]
             if count == 0:
                 level = "heatmap-day-0"
             elif count <= 2:
@@ -796,8 +1222,88 @@ def _render_activity_heatmap(activity_map: dict[str, int]) -> None:
                 level = "heatmap-day-5"
 
             today_class = "heatmap-today" if day_info["is_today"] else ""
-            title = f"{day_info['date']}: {count} contribution{'s' if count != 1 else ''}"
-            days_html.append(f'<div class="heatmap-day {level} {today_class}" title="{title}"></div>')
+            title = f"{date_str}: {count} contribution{'s' if count != 1 else ''}"
+
+            date_str = str(day_info["date"])
+            day_contribs = None
+            if isinstance(contributions_by_day, dict):
+                day_contribs = contributions_by_day.get(date_str)
+            if count > 0 and day_contribs:
+                # Use a unique ID for the checkbox hack
+                # Slugify username to ensure valid HTML ID
+                user_slug = "".join(c if c.isalnum() else "_" for c in username)
+                cb_id = f"hp_cb_{user_slug}_{date_str}"
+
+                CORPUS_ICONS = {"audio": "🎤", "image": "🖼️", "video": "🎬", "file": "📎"}
+                CORPUS_BADGE = {"audio": "hp-audio", "image": "hp-image", "video": "hp-video", "file": "hp-file"}
+
+                popover_inner = f'<label for="{cb_id}" class="hp-close">&times;</label>'
+                popover_inner += f'<div class="hp-date">📅 {date_str}</div>'
+
+                day_mrs = day_contribs.get("mrs", [])
+                if day_mrs:
+                    popover_inner += '<div class="hp-section">📙 Merge Requests</div>'
+                    for m in day_mrs:
+                        t = escape(m.get("title", "MR"))[:60]
+                        u = m.get("web_url", "#")
+                        state = m.get("state", "")
+                        popover_inner += (
+                            f'<div class="hp-item">'
+                            f'<span class="hp-badge hp-mr">{state}</span>'
+                            f'<a href="{u}" target="_blank" class="hp-link" title="{t}">{t}</a>'
+                            f"</div>"
+                        )
+                day_issues = day_contribs.get("issues", [])
+                if day_issues:
+                    popover_inner += '<div class="hp-section">🎫 Issues</div>'
+                    for i in day_issues:
+                        t = escape(i.get("title", "Issue"))[:60]
+                        u = i.get("web_url", "#")
+                        state = i.get("state", "")
+                        popover_inner += (
+                            f'<div class="hp-item">'
+                            f'<span class="hp-badge hp-issue">{state}</span>'
+                            f'<a href="{u}" target="_blank" class="hp-link" title="{t}">{t}</a>'
+                            f"</div>"
+                        )
+                day_commits = day_contribs.get("commits", [])
+                if day_commits:
+                    popover_inner += '<div class="hp-section">💻 Commits</div>'
+                    for c in day_commits:
+                        msg = escape(c.get("message", "commit").split("\n")[0])[:60]
+                        sha = c.get("short_id", "")
+                        u = c.get("web_url", "#")
+                        popover_inner += (
+                            f'<div class="hp-item">'
+                            f'<span class="hp-badge hp-commit">{sha}</span>'
+                            f'<a href="{u}" target="_blank" class="hp-link" title="{msg}">{msg}</a>'
+                            f"</div>"
+                        )
+                day_corpus = day_contribs.get("corpus", [])
+                if day_corpus:
+                    popover_inner += '<div class="hp-section">📁 Corpus</div>'
+                    for entry in day_corpus:
+                        mtype = entry.get("media_type", "file")
+                        icon = CORPUS_ICONS.get(mtype, "📎")
+                        badge_cls = CORPUS_BADGE.get(mtype, "hp-file")
+                        fname = escape(entry.get("filename", "file"))[:50]
+                        u = entry.get("url", "#")
+                        popover_inner += (
+                            f'<div class="hp-item">'
+                            f'<span class="hp-badge {badge_cls}">{icon} {mtype}</span>'
+                            f'<a href="{u}" target="_blank" class="hp-link" title="{fname}">{fname}</a>'
+                            f"</div>"
+                        )
+
+                days_html.append(
+                    f'<div class="hp-day-wrapper">'
+                    f'<input type="checkbox" id="{cb_id}" class="hp-cb">'
+                    f'<label for="{cb_id}" class="heatmap-day {level} {today_class}" title="{title}"></label>'
+                    f'<div class="heatmap-popover">{popover_inner}</div>'
+                    f"</div>"
+                )
+            else:
+                days_html.append(f'<div class="heatmap-day {level} {today_class}" title="{title}"></div>')
         weeks_html.append(f'<div class="heatmap-week">{"".join(days_html)}</div>')
 
     legend_html = """
@@ -960,21 +1466,64 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
 
             st.markdown(f"### 👤 {username}")
 
-            # Render Activity Heatmap
-            activity_map = _get_daily_activity_counts(mrs, issues, commits)
-            _render_activity_heatmap(activity_map)
+            corpus_files: dict = row.get("corpus_files") or {}
+            total_corpus = sum(len(v) for v in corpus_files.values()) if corpus_files else 0
 
-            # Contribution Index (as requested: Active Days, Total Days, Consistency %)
-            active_days, total_days, consistency_pct = _get_contribution_index(activity_map, username)
-            total_contributions = len(mrs) + len(issues) + len(commits)
+            # Render Activity Heatmap — includes corpus contributions (UTC→IST)
+            # Build per-day breakdown so each cell can show a popover
+            contributions_by_day = _build_contributions_by_day(mrs, issues, commits, corpus_files)
+            activity_map = _get_daily_activity_counts(mrs, issues, commits, corpus_files=corpus_files)
+            _render_activity_heatmap(activity_map, contributions_by_day=contributions_by_day, username=username)
+
+            # Contribution Index
+            joining_date_str = row.get("Date of Joining")
+            joining_date = None
+            if joining_date_str:
+                try:
+                    joining_date = dateutil.parser.parse(joining_date_str).date()
+                except Exception:
+                    pass
+
+            active_days, total_days, consistency_pct, working_days, attendance_pct = _get_contribution_index(
+                activity_map, username, joining_date=joining_date
+            )
+            total_contributions = len(mrs) + len(issues) + len(commits) + total_corpus
             collaboration_events = len(mrs) + len(issues)
             collaboration_pct = (collaboration_events / total_contributions) * 100 if total_contributions > 0 else 0.0
-            st.markdown("#### 📈 Contribution Index")
-            idx_c1, idx_c2, idx_c3, idx_c4 = st.columns(4)
+            # Header with info popover
+            ci_head_a, ci_head_b = st.columns([0.9, 0.1])
+            with ci_head_a:
+                st.markdown("#### 📈 Contribution Index")
+            with ci_head_b:
+                with st.popover("ℹ️", help="How are these metrics calculated?"):
+                    st.markdown("""
+                    ### 📊 Metric Definitions
+
+                    *   **Active Days**: Count of unique calendar days (IST) where you had at least one GitLab action or Corpus upload.
+                    *   **Total Days**: The total number of calendar days from your Joining Date until today.
+                    *   **Consistency %**: (Active Days / Total Days) × 100. Measures how regularly you contribute.
+                    *   **Collaboration %**: (MRs + Issues) / (Total Contributions) × 100. Measures focus on team-sync tasks.
+                    *   **Attendance**: (Active Days / Expected Working Days) × 100.
+                        *   *Working Days* are calculated from your Joining Date until today.
+                        *   **Exclusions**: All **Mondays** and the **1st Sunday** of every month are excluded.
+                    """)
+
+            idx_c1, idx_c2, idx_c3, idx_c4, idx_c5, idx_c6 = st.columns(6)
             idx_c1.metric("Active Days", active_days)
             idx_c2.metric("Total Days", total_days)
             idx_c3.metric("Consistency %", f"{consistency_pct:.1f}%")
             idx_c4.metric("Collaboration %", f"{collaboration_pct:.1f}%")
+
+            time_spent_str = row.get("Time Spent", "0 min")
+            idx_c5.metric("Time Spent", time_spent_str)
+            idx_c5.caption("All-time (DOJ to Today)")
+
+            if joining_date:
+                idx_c6.metric("Attendance", f"{attendance_pct:.1f}%")
+                idx_c6.caption(f"**{active_days} / {working_days}** working days")
+            else:
+                idx_c6.metric("Attendance", "N/A")
+                idx_c6.caption("Set Joining Date in Roster")
 
             # Helper to generate list HTML
             def get_list_html(items, type_):
@@ -1107,6 +1656,67 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                 """,
                     unsafe_allow_html=True,
                 )
+
+            # ── Corpus Media Section ─────────────────────────────────────────
+            # Same scrollable-card style as MRs / Issues / Commits — links only, no inline players.
+            def get_corpus_list_html(items: list, bucket: str, font_color: str) -> str:
+                BUCKET_ICONS = {"audio": "🎤", "image": "🖼️", "video": "🎬", "file": "📎"}
+                b_icon = BUCKET_ICONS.get(bucket, "📁")
+                html_lines = []
+                for entry in sorted(items, key=lambda x: x.get("created_at", ""), reverse=True):
+                    fname = escape(entry.get("filename") or "file")
+                    url = entry.get("url", "#")
+                    ts_raw = entry.get("created_at", "")
+                    ts = ts_raw[:16].replace("T", " ") if ts_raw else ""
+                    time_meta = f"⏱ {ts}" if ts else ""
+                    html_lines.append(
+                        f"<li><a href='{url}' target='_blank' class='li-link'>"
+                        f"<span style='color:{font_color}; margin-right:4px;'>{b_icon}</span>"
+                        f"{fname}</a>"
+                        + (f"<br><span style='color:#888; font-size:0.8em;'>{time_meta}</span>" if time_meta else "")
+                        + "</li>"
+                    )
+                if not html_lines:
+                    return "<p style='color:#888; font-style:italic;'>No items found.</p>"
+                return (
+                    "<ul style='list-style-type: disc; padding-left: 18px;"
+                    " color: #d9e1ee; font-size: 0.92em; line-height:1.5;'>" + "".join(html_lines) + "</ul>"
+                )
+
+            corpus_cfg = [
+                ("audio", "🎤", "#ed8936", "rgba(237,137,54,0.08)", "rgba(237,137,54,0.25)"),
+                ("image", "🖼️", "#38b2ac", "rgba(56,178,172,0.08)", "rgba(56,178,172,0.25)"),
+                ("video", "🎬", "#e53e3e", "rgba(229,62,62,0.08)", "rgba(229,62,62,0.25)"),
+                ("file", "📄", "#9f7aea", "rgba(159,122,234,0.08)", "rgba(159,122,234,0.25)"),
+            ]
+            non_empty_corpus = [
+                (k, icon, fc, bg, border) for k, icon, fc, bg, border in corpus_cfg if corpus_files.get(k)
+            ]
+
+            if non_empty_corpus:
+                st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
+                num_corpus_cols = min(len(non_empty_corpus), 4)
+                corpus_cols = st.columns(num_corpus_cols)
+                for col, (bucket, icon, font_color, bg_color, border_color) in zip(
+                    corpus_cols, non_empty_corpus, strict=False
+                ):
+                    items = corpus_files[bucket]
+                    with col:
+                        st.markdown(
+                            f"""
+<div style="background: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; padding: 15px; height: 350px; overflow-y: auto;">
+    <h4 style="margin-top:0; color:{font_color}; display:flex; align-items:center; gap:8px; border-bottom: 1px solid {border_color}; padding-bottom: 8px; margin-bottom: 12px;">
+        <span>{icon}</span> {bucket.capitalize()} ({len(items)})
+    </h4>
+    {get_corpus_list_html(items, bucket, font_color)}
+</div>
+""",
+                            unsafe_allow_html=True,
+                        )
+            elif st.session_state.get("_lb_corpus_token"):
+                st.caption("📁 No Corpus files found for this member in the selected date range.")
+            else:
+                st.caption("📁 Login to Corpus (sidebar) to view file contributions.")
 
             st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
@@ -1282,6 +1892,8 @@ def _build_individual_rows(team_data: dict) -> list[dict]:
                     "MRs Merged": row.get("MR Merged", 0),
                     "Issues Closed": row.get("Issues Closed", 0),
                     "Score": row.get("Score", 0),
+                    "Time Spent": row.get("Time Spent", "0 min"),
+                    "time_spent_seconds": row.get("time_spent_seconds", 0),
                     "Badge": "",
                 }
             )
@@ -1587,6 +2199,7 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
             f'<td class="lb-num">{int(row.get("Total Commits", 0))}</td>'
             f'<td class="lb-num">{int(row.get("MRs Merged", 0))}</td>'
             f'<td class="lb-num">{int(row.get("Issues Closed", 0))}</td>'
+            f'<td class="lb-num" style="color: #70b1ff; font-weight: 700;">{escape(str(row.get("Time Spent", "0 min")))}</td>'
             "</tr>"
         )
 
@@ -1605,6 +2218,7 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
         <th>Commits</th>
         <th>MRs</th>
         <th>Issues</th>
+        <th>Time Spent</th>
       </tr>
     </thead>
     <tbody>
@@ -1667,6 +2281,13 @@ def render_team_leaderboard(client) -> None:
         st.session_state["_lb_cached_results"] = None
     if "_lb_last_filters" not in st.session_state:
         st.session_state["_lb_last_filters"] = None
+
+    _render_corpus_login()
+
+    if not st.session_state.get("_lb_corpus_token"):
+        st.warning(
+            "📻 **Corpus Audio Missing**: Please login with your Corpus credentials in the sidebar to include audio contributions in the leaderboard."
+        )
 
     st.subheader("🏆 Team Leaderboard")
     st.markdown(
@@ -1818,11 +2439,20 @@ def render_team_leaderboard(client) -> None:
 
             with st.spinner(f"Fetching **{team_name}** ({len(usernames)} member(s))…"):
                 try:
+                    # Prepare overrides with time_since (Date of Joining) for all-time spent
+                    overrides = {}
+                    for m in team.get("members", []):
+                        uname = m.get("username")
+                        doj = m.get("date_of_joining")
+                        if uname and doj:
+                            overrides[uname] = {"time_since": doj}
+
                     results = process_batch_users(
                         client,
                         usernames,
                         since=since_iso,
                         until=until_iso,
+                        overrides=overrides,
                     )
                 except Exception as exc:
                     st.warning(f"⚠️ Could not fetch data for **{team_name}**: {exc}")
@@ -1840,12 +2470,68 @@ def render_team_leaderboard(client) -> None:
                 mrow.update(
                     {
                         "Name": found_meta.get("name", mrow.get("Name", "")),
+                        "corpus_username": found_meta.get("corpus_username", ""),
                         "Global Username": found_meta.get("global_username", ""),
                         "Global Email": found_meta.get("global_email", ""),
                         "Date of Joining": found_meta.get("date_of_joining", ""),
+                        "corpus_files": {"audio": [], "image": [], "video": [], "file": []},
                     }
                 )
                 member_rows.append(mrow)
+
+            # ── Corpus media fetch (if logged in) ────────────────────────────
+            corpus_client = st.session_state.get("_lb_corpus_client")
+            if corpus_client:
+                with st.spinner(f"Fetching Corpus files for **{team_name}**…"):
+                    # Build the member list with corpus_username for the helper
+                    members_with_corpus = [
+                        {"username": m.get("username", ""), "corpus_username": m.get("corpus_username", "")}
+                        for m in team.get("members", [])
+                    ]
+                    # since/until come from the date filter (already ISO strings or None)
+                    # The corpus client date filter expects YYYY-MM-DD, extract just the date part
+                    corpus_since = since_iso[:10] if since_iso else None
+                    corpus_until = until_iso[:10] if until_iso else None
+                    corpus_media_map = _fetch_corpus_media_for_team(
+                        corpus_client, members_with_corpus, corpus_since, corpus_until
+                    )
+                    # Attach corpus files to each member row
+                    for mrow in member_rows:
+                        gl_user = mrow.get("Username", "")
+                        mrow["corpus_files"] = corpus_media_map.get(
+                            gl_user, {"audio": [], "image": [], "video": [], "file": []}
+                        )
+
+            # ── Pre-calculate Attendance/Consistency Metrics for UI & Export ──
+            for mrow in member_rows:
+                # 1. Get Activity Map
+                mrs = mrow.get("mrs_list", [])
+                issues = mrow.get("issues_list", [])
+                commits = mrow.get("commits_list", [])
+                corpus_files = mrow.get("corpus_files", {})
+                activity_map = _get_daily_activity_counts(mrs, issues, commits, corpus_files=corpus_files)
+
+                # 2. Get Joining Date
+                joining_date_str = mrow.get("Date of Joining")
+                joining_date = None
+                if joining_date_str:
+                    try:
+                        joining_date = dateutil.parser.parse(joining_date_str).date()
+                    except Exception:
+                        pass
+
+                # 3. Calculate Index
+                active_days, total_days, consistency_pct, working_days, attendance_pct = _get_contribution_index(
+                    activity_map, mrow.get("Username"), joining_date=joining_date
+                )
+
+                # 4. Store in row
+                mrow["Active Days"] = active_days
+                mrow["Total Days"] = total_days
+                mrow["Consistency %"] = consistency_pct
+                mrow["Attendance %"] = attendance_pct
+                mrow["Working Days"] = working_days
+
             totals = _aggregate_team_totals(member_rows)
             team_data[team_name] = (team, member_rows, totals)
             progress.progress((idx + 1) / len(teams_to_process), text=f"Done: {team_name}")
@@ -1881,13 +2567,26 @@ def render_team_leaderboard(client) -> None:
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
     now_ist = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
-    filename = f"team_leaderboard_{now_ist.strftime('%Y-%m-%d')}.xlsx"
+    filename_full = f"team_leaderboard_{now_ist.strftime('%Y-%m-%d')}.xlsx"
+    filename_indiv = f"individual_metrics_{now_ist.strftime('%Y-%m-%d')}.xlsx"
+
     try:
-        st.download_button(
-            label="⬇️ Download Full Report (Excel)",
-            data=_build_excel_export(team_data),
-            file_name=filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            st.download_button(
+                label="⬇️ Download Full Report (Excel)",
+                data=_build_excel_export(team_data),
+                file_name=filename_full,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_full_report",
+            )
+        with col_ex2:
+            st.download_button(
+                label="⬇️ Download Individual Metrics (Excel)",
+                data=_build_individual_metrics_excel_export(team_data),
+                file_name=filename_indiv,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_indiv_report",
+            )
     except Exception as exc:
         st.error(f"Could not generate Excel export: {exc}")

@@ -59,14 +59,22 @@ def _get_user_id(gl_client, username: str) -> int | None:
     return target_user["id"] if target_user else None
 
 
-def _fetch_mrs_by_date(
-    gl_client, user_id: int, start_date: date, end_date: date
-) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
+_RawMRResult = tuple[
+    dict[str, int],
+    dict[str, set[int]],
+    dict[str, dict[int, list[EventDetail]]],
+    list[dict],
+]
+
+
+def _fetch_mrs_by_date(gl_client, user_id: int, start_date: date, end_date: date) -> _RawMRResult:
+    """Fetch merged MRs. Returns (counts, active_hours, events, raw_mr_list)."""
     logger.debug(f"[GitLab] Fetching merged MRs for user_id={user_id}, {start_date} to {end_date}")
     counts: dict[str, int] = defaultdict(int)
     active_hours: dict[str, set[int]] = defaultdict(set)
     events: dict[str, dict[int, list[EventDetail]]] = defaultdict(lambda: defaultdict(list))
     seen_ids: set[int] = set()
+    raw_mrs: list[dict] = []
 
     date_params = {
         "scope": "all",
@@ -88,6 +96,7 @@ def _fetch_mrs_by_date(
             if mr_id in seen_ids:
                 continue
             seen_ids.add(mr_id)
+            raw_mrs.append(mr)
 
             merged_at = mr.get("merged_at", "")
             if merged_at:
@@ -102,12 +111,13 @@ def _fetch_mrs_by_date(
                         )
 
     logger.debug(f"[GitLab] Merged MRs by date: {dict(counts)}")
-    return dict(counts), dict(active_hours), dict(events)
+    return dict(counts), dict(active_hours), dict(events), raw_mrs
 
 
 def _fetch_issues_by_date(
     gl_client, user_id: int, start_date: date, end_date: date
-) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
+) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]], list[dict]]:
+    """Fetch assigned issues. Returns (counts, active_hours, events, raw_issue_list)."""
     logger.debug(f"[GitLab] Fetching assigned issues for user_id={user_id}, {start_date} to {end_date}")
     date_params = {
         "scope": "all",
@@ -136,7 +146,7 @@ def _fetch_issues_by_date(
                     )
 
     logger.debug(f"[GitLab] Issues by date: {dict(counts)}")
-    return dict(counts), dict(active_hours), dict(events)
+    return dict(counts), dict(active_hours), dict(events), assigned
 
 
 def _fetch_commits_by_date(
@@ -147,6 +157,7 @@ def _fetch_commits_by_date(
     end_date: date,
     override_email: str | None = None,
     override_username: str | None = None,
+    user_projects: list[dict] | None = None,
 ) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
     logger.debug(
         f"[GitLab] Fetching commits for user_id={user_id}, gitlab_username={gitlab_username}, {start_date} to {end_date}"
@@ -165,8 +176,12 @@ def _fetch_commits_by_date(
     if override_username:
         user_obj["override_username"] = override_username
 
-    user_projects = gitlab_projects.get_user_projects(gl_client, user_id, gitlab_username)
-    all_projs = user_projects.get("all", [])
+    # Reuse pre-fetched projects if provided to avoid a duplicate API call
+    if user_projects is not None:
+        all_projs = user_projects
+    else:
+        fetched = gitlab_projects.get_user_projects(gl_client, user_id, gitlab_username)
+        all_projs = fetched.get("all", [])
     if not all_projs:
         logger.debug(f"[GitLab] No projects found for user {gitlab_username}")
         return dict(counts), dict(active_hours), dict(events)
@@ -218,15 +233,56 @@ def aggregate_intern_data(
         logger.warning(f"[Aggregator] Could not find GitLab user_id for {gitlab_username}")
         return WeeklyActivity(intern_name=intern_name, gitlab_username=gitlab_username, corpus_uid=corpus_uid)
 
-    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import aggregate_daily_time, fetch_user_timelogs
+    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
+        aggregate_daily_time,
+        build_daily_time_from_time_stats,
+        fetch_user_timelogs_from_projects,
+    )
 
-    logger.debug(f"[Aggregator] Fetching timelogs for {gitlab_username}")
-    timelogs = fetch_user_timelogs(gl_client, gitlab_username, start_date, end_date)
-    logger.debug(f"[Aggregator] Got {len(timelogs)} timelogs")
+    # Fetch user projects once — reused for timelogs AND commits
+    user_projects = gitlab_projects.get_user_projects(gl_client, user_id, gitlab_username)
+    all_projs = user_projects.get("all", [])
+    logger.info(f"[Aggregator] Found {len(all_projs)} projects for {gitlab_username}")
+
+    # ── Fetch issues and MRs first (needed for time_stats fallback) ──
+    mr_counts, mr_hours, mr_events, raw_mrs = _fetch_mrs_by_date(gl_client, user_id, start_date, end_date)
+    issue_counts, issue_hours, issue_events, raw_issues = _fetch_issues_by_date(
+        gl_client, user_id, start_date, end_date
+    )
+    # Discover projects from issues/MRs that might have been missed by get_user_projects
+    activity_project_ids = set()
+    for mr in raw_mrs:
+        pid = mr.get("project_id")
+        if pid:
+            activity_project_ids.add(pid)
+    for issue in raw_issues:
+        pid = issue.get("project_id")
+        if pid:
+            activity_project_ids.add(pid)
+
+    existing_project_ids = {p["id"] for p in all_projs}
+    missing_project_ids = activity_project_ids - existing_project_ids
+
+    if missing_project_ids:
+        logger.info(
+            f"[Aggregator] Discovered {len(missing_project_ids)} extra projects from MRs/Issues for {gitlab_username}"
+        )
+        for pid in missing_project_ids:
+            all_projs.append({"id": pid})
+
+    # ── Strategy 1: timelogs endpoint (global + per-project) ──
+    logger.info(f"[Aggregator] Fetching timelogs for {gitlab_username} across {len(all_projs)} projects")
+    timelogs = fetch_user_timelogs_from_projects(gl_client, user_id, all_projs, start_date, end_date)
+    logger.info(f"[Aggregator] Timelogs fetched: {len(timelogs)}")
     daily_times = aggregate_daily_time(timelogs)
 
-    mr_counts, mr_hours, mr_events = _fetch_mrs_by_date(gl_client, user_id, start_date, end_date)
-    issue_counts, issue_hours, issue_events = _fetch_issues_by_date(gl_client, user_id, start_date, end_date)
+    # ── Strategy 2: Supplement with time_stats fallback ──
+    logger.info(f"[Aggregator] Supplementing daily_times with issue/MR time_stats for {gitlab_username}")
+    daily_times = build_daily_time_from_time_stats(
+        raw_issues, raw_mrs, gl_client, start_date.isoformat(), end_date.isoformat(), existing_daily_times=daily_times
+    )
+    logger.info(f"[Aggregator] Final daily_times after supplementation: {daily_times}")
+
     commit_counts, commit_hours, commit_events = _fetch_commits_by_date(
         gl_client,
         user_id,
@@ -235,6 +291,7 @@ def aggregate_intern_data(
         end_date,
         override_email=override_email,
         override_username=override_username,
+        user_projects=all_projs,
     )
 
     all_dates: set[str] = set()
