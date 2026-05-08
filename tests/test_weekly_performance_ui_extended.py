@@ -42,8 +42,9 @@ def test_render_intern_selector(mock_selectbox, mock_intern):
     assert selected["gitlab_username"] == "jdoe"
 
 
-def test_render_performance_grid_empty():
-    with patch("streamlit.markdown"), \
-         patch("streamlit.columns", return_value=[MagicMock(), MagicMock()]):
-        weekly_performance._render_performance_grid(date(2024, 1, 1), None, num_days=1)
-        # Should run without error
+@patch("gitlab_compliance_checker.ui.weekly_performance.st")
+def test_render_performance_grid_empty(mock_st):
+    mock_st.columns.return_value = [MagicMock(), MagicMock()]
+    mock_st.container.return_value.__enter__.return_value = MagicMock()
+    weekly_performance._render_performance_grid(date(2024, 1, 1), None, num_days=1)
+    # Should run without error
