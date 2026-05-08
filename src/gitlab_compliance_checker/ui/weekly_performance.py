@@ -50,6 +50,7 @@ STATUS_CARD_CSS = """
         letter-spacing: 0.05em;
         border-bottom: 2px solid #f7fafc;
         padding-bottom: 6px;
+        white-space: nowrap;
     }
     .metrics-grid {
         display: grid;
@@ -63,9 +64,10 @@ STATUS_CARD_CSS = """
         padding: 8px;
         border-radius: 8px;
         background: #f8fafc;
+        min-width: 0;
     }
     .metric-label {
-        font-size: 0.6rem;
+        font-size: 0.55rem;
         font-weight: 600;
         color: #718096;
         margin-bottom: 2px;
@@ -77,7 +79,7 @@ STATUS_CARD_CSS = """
     }
     .metric-icon { font-size: 0.9rem; }
     .metric-value {
-        font-size: 0.9rem;
+        font-size: 0.75rem;
         font-weight: 700;
         color: #2d3748;
     }
@@ -98,6 +100,7 @@ STATUS_CARD_CSS = """
         border-radius: 16px;
         border: 1px solid #e2e8f0;
         box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+        min-width: 200px;
     }
     .slots-title {
         font-size: 0.65rem;
@@ -285,6 +288,23 @@ STATUS_CARD_CSS = """
 
     .type-audio .badge { background-color: #ed8936; box-shadow: 0 2px 5px rgba(237,137,54,0.3); }
     .type-audio:hover { background-color: #fffaf0; }
+
+    /* Horizontal Scroll for Performance Grid */
+    [data-testid="stVerticalBlock"]:has(.performance-grid-marker) [data-testid="stHorizontalBlock"] {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        white-space: nowrap !important;
+        display: block !important;
+        padding-bottom: 2rem !important;
+    }
+
+    [data-testid="stVerticalBlock"]:has(.performance-grid-marker) [data-testid="stHorizontalBlock"] > div {
+        display: inline-block !important;
+        vertical-align: top !important;
+        width: 220px !important;
+        white-space: normal !important;
+        margin-right: 0.5rem !important;
+    }
 </style>
 """
 
@@ -599,78 +619,83 @@ def _render_performance_grid(
     num_days: int = 7,
     show_audio: bool = True,
 ) -> None:
-    cols = st.columns(num_days)
-    for i, day_col in enumerate(cols):
-        day_date = start_date + timedelta(days=i)
-        day_key = day_date.isoformat()
-        day_data: DailyData = cast(DailyData, activity.daily_data.get(day_key, {})) if activity else cast(DailyData, {})
-
-        gitlab = day_data.get("gitlab", {})
-        corpus = day_data.get("corpus", {})
-
-        with day_col:
-            st.markdown(f"**{day_date.strftime('%A')}**")
-            st.caption(day_date.strftime("%b %d"))
-
-            mrs = gitlab.get("mrs", 0)
-            issues = gitlab.get("issues", 0)
-            commits = gitlab.get("commits", 0)
-            time_spent = gitlab.get("time_spent_seconds", 0)
-
-            time_str = "0h 0m"
-            if time_spent > 0:
-                h = time_spent // 3600
-                m = (time_spent % 3600) // 60
-                time_str = f"{h}h {m}m"
-
-            _render_summary_card(mrs, issues, commits, time_str)
-
-            # Activity Slots: Office Hours (9 AM - 5 PM)
-            active_hours = gitlab.get("active_hours", [])
-            events_by_hour = gitlab.get("events_by_hour", {})
-
-            _render_activity_slots(
-                active_hours,
-                slots=[9, 10, 11, 12, 13, 14, 15, 16],
-                events_by_hour=events_by_hour,
-                title="Office Hours (9 am-5 pm)",
-                use_strict_mode=True,
-                compact=False,
+    with st.container():
+        st.markdown('<div class="performance-grid-marker"></div>', unsafe_allow_html=True)
+        cols = st.columns(num_days)
+        for i, day_col in enumerate(cols):
+            day_date = start_date + timedelta(days=i)
+            day_key = day_date.isoformat()
+            day_data: DailyData = (
+                cast(DailyData, activity.daily_data.get(day_key, {})) if activity else cast(DailyData, {})
             )
 
-            # Activity Slots: Other Hours
-            other_slots = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23]
-            active_extra_slots = [h for h in other_slots if h in active_hours]
-            if active_extra_slots:
+            gitlab = day_data.get("gitlab", {})
+            corpus = day_data.get("corpus", {})
+
+            with day_col:
+                st.markdown(f"**{day_date.strftime('%A')}**")
+                st.caption(day_date.strftime("%b %d"))
+
+                mrs = gitlab.get("mrs", 0)
+                issues = gitlab.get("issues", 0)
+                commits = gitlab.get("commits", 0)
+                time_spent = gitlab.get("time_spent_seconds", 0)
+
+                time_str = "0h 0m"
+                if time_spent > 0:
+                    h = time_spent // 3600
+                    m = (time_spent % 3600) // 60
+                    time_str = f"{h}h {m}m"
+
+                _render_summary_card(mrs, issues, commits, time_str)
+
+                # Activity Slots: Office Hours (9 AM - 5 PM)
+                active_hours = gitlab.get("active_hours", [])
+                events_by_hour = gitlab.get("events_by_hour", {})
+
                 _render_activity_slots(
                     active_hours,
-                    slots=active_extra_slots,
+                    slots=[9, 10, 11, 12, 13, 14, 15, 16],
                     events_by_hour=events_by_hour,
-                    title="Extra Hours Activity",
-                    use_strict_mode=False,
-                    compact=True,
+                    title="Office Hours (9 am-5 pm)",
+                    use_strict_mode=True,
+                    compact=False,
                 )
 
-            if show_audio:
-                audio_entries = corpus.get("audio_urls", [])  # Now contains dicts
-                if audio_entries:
-                    st.markdown("**🎤 Audio:**")
-                    for entry in audio_entries:
-                        if isinstance(entry, dict):
-                            url = entry.get("url")
-                            time_str = ""
-                            if entry.get("created_at"):
-                                try:
-                                    time_str = f"({entry['created_at'][11:16]})"
-                                except Exception:
-                                    pass
-                            st.caption(f"{entry.get('filename', 'Audio')} {time_str}")
-                        else:
-                            url = entry
+                # Activity Slots: Other Hours
+                other_slots = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23]
+                active_extra_slots = [h for h in other_slots if h in active_hours]
+                if active_extra_slots:
+                    _render_activity_slots(
+                        active_hours,
+                        slots=active_extra_slots,
+                        events_by_hour=events_by_hour,
+                        title="Extra Hours Activity",
+                        use_strict_mode=False,
+                        compact=True,
+                    )
 
-                        st.audio(url)
-                else:
-                    st.caption("No audio")
+                if show_audio:
+                    audio_entries = corpus.get("audio_urls", [])  # Now contains dicts
+                    if audio_entries:
+                        st.markdown("**🎤 Audio:**")
+                        for entry in audio_entries:
+                            if isinstance(entry, dict):
+                                url = entry.get("url")
+                                time_str = ""
+                                if entry.get("created_at"):
+                                    try:
+                                        time_str = f"({entry['created_at'][11:16]})"
+                                    except Exception:
+                                        pass
+                                st.caption(f"{entry.get('filename', 'Audio')} {time_str}")
+                            else:
+                                url = entry
+
+                            if url:
+                                st.audio(url)
+                    else:
+                        st.caption("No audio")
 
     if activity and num_days > 1:
         st.divider()
