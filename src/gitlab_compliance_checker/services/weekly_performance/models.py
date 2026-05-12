@@ -13,6 +13,10 @@ class GitLabDailyData(TypedDict):
     issues: int
     commits: int
     time_spent_seconds: int
+    mrs_open_time: int
+    mrs_merged_time: int
+    issues_open_time: int
+    issues_closed_time: int
     active_hours: list[int]
     events_by_hour: dict[int, list[EventDetail]]
 

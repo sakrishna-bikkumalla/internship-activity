@@ -51,6 +51,7 @@ async def get_user_mrs_async(client, user_id, username=None, since=None, until=N
                 state = item.get("state")
                 desc_quality = analyze_description(item.get("description", ""))
                 mrs_dict[item["id"]] = {
+                    "id": item["id"],
                     "title": item.get("title"),
                     "description": item.get("description"),
                     "project_id": item.get("project_id"),
@@ -129,6 +130,7 @@ def get_user_mrs(client, user_id, username=None, since=None, until=None, project
                     state = item.get("state")
                     desc_quality = analyze_description(item.get("description", ""))
                     mrs_dict[item["id"]] = {
+                        "id": item["id"],
                         "title": item.get("title"),
                         "description": item.get("description"),
                         "project_id": item.get("project_id"),

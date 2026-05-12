@@ -78,7 +78,7 @@ def _fetch_mrs_by_date(gl_client, user_id: int, start_date: date, end_date: date
 
     date_params = {
         "scope": "all",
-        "state": "merged",
+        "state": "all",
         "updated_after": (start_date - timedelta(days=1)).isoformat(),
     }
 
@@ -98,16 +98,20 @@ def _fetch_mrs_by_date(gl_client, user_id: int, start_date: date, end_date: date
             seen_ids.add(mr_id)
             raw_mrs.append(mr)
 
-            merged_at = mr.get("merged_at", "")
-            if merged_at:
-                date_str = _parse_ist_date(merged_at)
+            # Use merged_at, closed_at, or updated_at for activity attribution
+            act_timestamp = mr.get("merged_at") or mr.get("closed_at") or mr.get("updated_at", "")
+            if act_timestamp:
+                date_str = _parse_ist_date(act_timestamp)
                 if start_date_str <= date_str <= end_date_str:
                     counts[date_str] += 1
-                    hour = _get_ist_hour(merged_at)
+                    hour = _get_ist_hour(act_timestamp)
                     if hour is not None:
                         active_hours[date_str].add(hour)
+                        # Add state to title for clarity in UI events
+                        state = mr.get("state", "opened").capitalize()
+                        title = f"[{state}] {mr.get('title', '')}"
                         events[date_str][hour].append(
-                            {"type": "mr", "title": mr.get("title", ""), "url": mr.get("web_url", "")}
+                            {"type": "mr", "title": title, "url": mr.get("web_url", "")}
                         )
 
     logger.debug(f"[GitLab] Merged MRs by date: {dict(counts)}")
@@ -121,8 +125,8 @@ def _fetch_issues_by_date(
     logger.debug(f"[GitLab] Fetching assigned issues for user_id={user_id}, {start_date} to {end_date}")
     date_params = {
         "scope": "all",
-        "created_after": (start_date - timedelta(days=1)).isoformat(),
-        "created_before": (end_date + timedelta(days=1)).isoformat(),
+        "state": "all",
+        "updated_after": (start_date - timedelta(days=1)).isoformat(),
     }
     start_date_str = start_date.isoformat()
     end_date_str = end_date.isoformat()
@@ -133,16 +137,20 @@ def _fetch_issues_by_date(
     events: dict[str, dict[int, list[EventDetail]]] = defaultdict(lambda: defaultdict(list))
 
     for issue in assigned:
-        created_at = issue.get("created_at", "")
-        if created_at:
-            date_str = _parse_ist_date(created_at)
+        # Use closed_at if available (for closed issues), else created_at
+        act_timestamp = issue.get("closed_at") or issue.get("created_at", "")
+        if act_timestamp:
+            date_str = _parse_ist_date(act_timestamp)
             if date_str and start_date_str <= date_str <= end_date_str:
                 counts[date_str] += 1
-                hour = _get_ist_hour(created_at)
+                hour = _get_ist_hour(act_timestamp)
                 if hour is not None:
                     active_hours[date_str].add(hour)
+                    # Add state to title for clarity
+                    state = issue.get("state", "opened").capitalize()
+                    title = f"[{state}] {issue.get('title', '')}"
                     events[date_str][hour].append(
-                        {"type": "issue", "title": issue.get("title", ""), "url": issue.get("web_url", "")}
+                        {"type": "issue", "title": title, "url": issue.get("web_url", "")}
                     )
 
     logger.debug(f"[GitLab] Issues by date: {dict(counts)}")
@@ -234,7 +242,7 @@ def aggregate_intern_data(
         return WeeklyActivity(intern_name=intern_name, gitlab_username=gitlab_username, corpus_uid=corpus_uid)
 
     from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
-        aggregate_daily_time,
+        aggregate_daily_time_categorized,
         build_daily_time_from_time_stats,
         fetch_user_timelogs_from_projects,
     )
@@ -274,12 +282,22 @@ def aggregate_intern_data(
     logger.info(f"[Aggregator] Fetching timelogs for {gitlab_username} across {len(all_projs)} projects")
     timelogs = fetch_user_timelogs_from_projects(gl_client, user_id, all_projs, start_date, end_date)
     logger.info(f"[Aggregator] Timelogs fetched: {len(timelogs)}")
-    daily_times = aggregate_daily_time(timelogs)
+    daily_times, daily_categorized, seen_iss, seen_mrs = aggregate_daily_time_categorized(
+        timelogs, raw_issues, raw_mrs
+    )
 
     # ── Strategy 2: Supplement with time_stats fallback ──
     logger.info(f"[Aggregator] Supplementing daily_times with issue/MR time_stats for {gitlab_username}")
-    daily_times = build_daily_time_from_time_stats(
-        raw_issues, raw_mrs, gl_client, start_date.isoformat(), end_date.isoformat(), existing_daily_times=daily_times
+    daily_times, daily_categorized = build_daily_time_from_time_stats(
+        raw_issues,
+        raw_mrs,
+        gl_client,
+        start_date.isoformat(),
+        end_date.isoformat(),
+        existing_daily_times=daily_times,
+        existing_categorized=daily_categorized,
+        issue_formal_totals=seen_iss,
+        mr_formal_totals=seen_mrs,
     )
     logger.info(f"[Aggregator] Final daily_times after supplementation: {daily_times}")
 
@@ -319,11 +337,16 @@ def aggregate_intern_data(
         for hr in commit_events.get(date_str, {}):
             combined_events[hr].extend(commit_events[date_str][hr])
 
+        cats = daily_categorized.get(date_str, {})
         gitlab: GitLabDailyData = {
             "mrs": mr_counts.get(date_str, 0),
             "issues": issue_counts.get(date_str, 0),
             "commits": commit_counts.get(date_str, 0),
             "time_spent_seconds": daily_times.get(date_str, 0),
+            "mrs_open_time": cats.get("mrs_open", 0),
+            "mrs_merged_time": cats.get("mrs_merged", 0),
+            "issues_open_time": cats.get("issues_open", 0),
+            "issues_closed_time": cats.get("issues_closed", 0),
             "active_hours": sorted(combined_hours),
             "events_by_hour": dict(combined_events),
         }

@@ -245,10 +245,13 @@ def _extract_member_row(result: dict) -> dict:
             "Score": 0,
             "Time Spent": "0 min",
             "time_spent_seconds": 0,
+            "mrs_open_time": 0,
+            "mrs_merged_time": 0,
+            "issues_open_time": 0,
+            "issues_closed_time": 0,
             "Error": result.get("error", "Unknown error"),
-            "mrs_list": [],
-            "issues_list": [],
             "commits_list": [],
+            "item_time_breakdown": [],
         }
 
     data = result.get("data", {})
@@ -281,9 +284,14 @@ def _extract_member_row(result: dict) -> dict:
         "Score": _calculate_score(total_commits, merged_mrs, total_mrs, issues_closed),
         "Time Spent": format_time_spent(total_time_seconds),
         "time_spent_seconds": total_time_seconds,
+        "mrs_open_time": data.get("time_breakdown", {}).get("mrs_open", 0),
+        "mrs_merged_time": data.get("time_breakdown", {}).get("mrs_merged", 0),
+        "issues_open_time": data.get("time_breakdown", {}).get("issues_open", 0),
+        "issues_closed_time": data.get("time_breakdown", {}).get("issues_closed", 0),
         "mrs_list": data.get("mrs", []),
         "issues_list": data.get("issues", []),
         "commits_list": data.get("commits", []),
+        "item_time_breakdown": data.get("item_time_breakdown", []),
     }
 
 
@@ -304,6 +312,10 @@ def _aggregate_team_totals(member_rows: list[dict]) -> dict:
         "Team Score": 0,
         "Corpus Files": 0,
         "time_spent_seconds": 0,
+        "mrs_open_time": 0,
+        "mrs_merged_time": 0,
+        "issues_open_time": 0,
+        "issues_closed_time": 0,
     }
     for row in member_rows:
         for key in totals:
@@ -469,6 +481,10 @@ def _build_individual_metrics_excel_export(team_data: dict) -> bytes:
                 "Attendance %": f"{attendance_pct:.1f}%",
                 "Time Spent (Format)": row.get("Time Spent", "0 min"),
                 "Time Spent (Seconds)": row.get("time_spent_seconds", 0),
+                "MRs Open Time (s)": row.get("mrs_open_time", 0),
+                "MRs Merged Time (s)": row.get("mrs_merged_time", 0),
+                "Issues Open Time (s)": row.get("issues_open_time", 0),
+                "Issues Closed Time (s)": row.get("issues_closed_time", 0),
             }
             all_member_data.append(export_row)
 
@@ -706,13 +722,20 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
     if project_name:
         st.caption(f"Project: {project_name}")
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     c1.metric("Team Score", totals["Team Score"])
     c2.metric("Total Commits", totals["Total Commits"])
     c3.metric("MR Merged", totals["MR Merged"])
     c4.metric("Issues Closed", totals["Issues Closed"])
     c5.metric("Total Files", totals.get("Corpus Files", 0))
-    c6.metric("Members", len(member_rows))
+    with c6:
+        st.metric("Time Spent", totals.get("Time Spent", "0 min"))
+        with st.popover("🕒 Breakdown"):
+            st.write(f"**MRs Open:** {format_time_spent(totals.get('mrs_open_time', 0))}")
+            st.write(f"**MRs Merged:** {format_time_spent(totals.get('mrs_merged_time', 0))}")
+            st.write(f"**Issues Open:** {format_time_spent(totals.get('issues_open_time', 0))}")
+            st.write(f"**Issues Closed:** {format_time_spent(totals.get('issues_closed_time', 0))}")
+    c7.metric("Members", len(member_rows))
 
     display_cols = [
         "Username",
@@ -731,6 +754,7 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
         "Groups",
         "Score",
         "Corpus Files",
+        "Time Spent",
     ]
     df = pd.DataFrame(member_rows)
     # Compute a friendly Corpus Files total count column if the raw data exists
@@ -1517,6 +1541,27 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
             time_spent_str = row.get("Time Spent", "0 min")
             idx_c5.metric("Time Spent", time_spent_str)
             idx_c5.caption("All-time (DOJ to Today)")
+            with idx_c5:
+                with st.popover("🕒 Details"):
+                    st.write(f"**MRs Open:** {format_time_spent(row.get('mrs_open_time', 0))}")
+                    st.write(f"**MRs Merged:** {format_time_spent(row.get('mrs_merged_time', 0))}")
+                    st.write(f"**Issues Open:** {format_time_spent(row.get('issues_open_time', 0))}")
+                    st.write(f"**Issues Closed:** {format_time_spent(row.get('issues_closed_time', 0))}")
+
+                    item_breakdown = row.get("item_time_breakdown", [])
+                    if item_breakdown:
+                        st.divider()
+                        st.markdown("#### 🕒 Per-Item Breakdown")
+                        # Sort by time spent (seconds) descending
+                        sorted_items = sorted(item_breakdown, key=lambda x: x.get("seconds", 0), reverse=True)
+                        for item in sorted_items:
+                            col_a, col_b = st.columns([0.3, 0.7])
+                            with col_a:
+                                st.write(f"**{item['id']}**")
+                            with col_b:
+                                st.write(f"{format_time_spent(item['seconds'])} ({item['state']})")
+                            st.caption(f"{item['title']}")
+                            st.divider()
 
             if joining_date:
                 idx_c6.metric("Attendance", f"{attendance_pct:.1f}%")

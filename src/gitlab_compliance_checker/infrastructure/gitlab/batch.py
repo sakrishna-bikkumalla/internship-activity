@@ -64,7 +64,7 @@ def process_single_user(
     from datetime import date
 
     from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
-        aggregate_daily_time,
+        aggregate_daily_time_categorized,
         build_daily_time_from_time_stats,
         fetch_user_timelogs_from_projects,
     )
@@ -174,18 +174,61 @@ def process_single_user(
                     seen_t_pids.add(pid)
 
             timelogs_raw = fetch_user_timelogs_from_projects(client, user_id, timelog_projs, t_since, t_until)
-            daily_times = aggregate_daily_time(timelogs_raw)
+            daily_times, daily_categorized, i_formal, m_formal = aggregate_daily_time_categorized(
+                timelogs_raw, user_issues, user_mrs
+            )
 
             # Supplement with time_stats fallback
-            daily_times = build_daily_time_from_time_stats(
+            daily_times, daily_categorized = build_daily_time_from_time_stats(
                 user_issues,
                 user_mrs,
                 client,
                 t_since.isoformat(),
                 t_until.isoformat(),
                 existing_daily_times=daily_times,
+                existing_categorized=daily_categorized,
+                issue_formal_totals=i_formal,
+                mr_formal_totals=m_formal,
             )
             total_time_spent = sum(daily_times.values())
+
+            # Sum up categorized times across all days
+            cat_totals = {"mrs_open": 0, "mrs_merged": 0, "issues_open": 0, "issues_closed": 0}
+            for day_cats in daily_categorized.values():
+                for k, v in day_cats.items():
+                    if k in cat_totals:
+                        cat_totals[k] += v
+            result["data"]["time_breakdown"] = cat_totals
+
+            # NEW: Item-level breakdown for transparency
+            item_time_list = []
+            for mr in user_mrs:
+                gid = mr.get("id")
+                f_time = m_formal.get(gid, 0)
+                ts_time = mr.get("time_stats", {}).get("total_time_spent", 0)
+                total = max(f_time, ts_time)
+                if total > 0:
+                    item_time_list.append({
+                        "id": f"!{mr.get('iid')}",
+                        "title": mr.get("title"),
+                        "seconds": int(total),
+                        "type": "mr",
+                        "state": mr.get("state")
+                    })
+            for iss in user_issues:
+                gid = iss.get("id")
+                f_time = i_formal.get(gid, 0)
+                ts_time = iss.get("time_stats", {}).get("total_time_spent", 0)
+                total = max(f_time, ts_time)
+                if total > 0:
+                    item_time_list.append({
+                        "id": f"#{iss.get('iid')}",
+                        "title": iss.get("title"),
+                        "seconds": int(total),
+                        "type": "issue",
+                        "state": iss.get("state")
+                    })
+            result["data"]["item_time_breakdown"] = item_time_list
         except Exception as te:
             # Don't crash the whole user if timelogs fail
             import logging
@@ -287,7 +330,7 @@ async def process_single_user_async(
     from datetime import date
 
     from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
-        aggregate_daily_time,
+        aggregate_daily_time_categorized,
         build_daily_time_from_time_stats,
         fetch_user_timelogs_from_projects_async,
     )
@@ -377,18 +420,61 @@ async def process_single_user_async(
             timelogs_raw = await fetch_user_timelogs_from_projects_async(
                 client, user_id, timelog_projs, t_since, t_until
             )
-            daily_times = aggregate_daily_time(timelogs_raw)
+            daily_times, daily_categorized, i_formal, m_formal = aggregate_daily_time_categorized(
+                timelogs_raw, user_issues, user_mrs
+            )
 
             # Supplement with time_stats fallback
-            daily_times = build_daily_time_from_time_stats(
+            daily_times, daily_categorized = build_daily_time_from_time_stats(
                 user_issues,
                 user_mrs,
                 client,
                 t_since.isoformat(),
                 t_until.isoformat(),
                 existing_daily_times=daily_times,
+                existing_categorized=daily_categorized,
+                issue_formal_totals=i_formal,
+                mr_formal_totals=m_formal,
             )
             total_time_spent = sum(daily_times.values())
+
+            # Sum up categorized times across all days
+            cat_totals = {"mrs_open": 0, "mrs_merged": 0, "issues_open": 0, "issues_closed": 0}
+            for day_cats in daily_categorized.values():
+                for k, v in day_cats.items():
+                    if k in cat_totals:
+                        cat_totals[k] += v
+            result["data"]["time_breakdown"] = cat_totals
+
+            # NEW: Item-level breakdown for transparency
+            item_time_list = []
+            for mr in user_mrs:
+                gid = mr.get("id")
+                f_time = m_formal.get(gid, 0)
+                ts_time = mr.get("time_stats", {}).get("total_time_spent", 0)
+                total = max(f_time, ts_time)
+                if total > 0:
+                    item_time_list.append({
+                        "id": f"!{mr.get('iid')}",
+                        "title": mr.get("title"),
+                        "seconds": int(total),
+                        "type": "mr",
+                        "state": mr.get("state")
+                    })
+            for iss in user_issues:
+                gid = iss.get("id")
+                f_time = i_formal.get(gid, 0)
+                ts_time = iss.get("time_stats", {}).get("total_time_spent", 0)
+                total = max(f_time, ts_time)
+                if total > 0:
+                    item_time_list.append({
+                        "id": f"#{iss.get('iid')}",
+                        "title": iss.get("title"),
+                        "seconds": int(total),
+                        "type": "issue",
+                        "state": iss.get("state")
+                    })
+            result["data"]["item_time_breakdown"] = item_time_list
         except Exception as te:
             import logging
 

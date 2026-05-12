@@ -37,6 +37,8 @@ async def get_user_issues_async(client, user_id, username=None, since=None, unti
             else:
                 state = item.get("state")
                 issues_dict[item["id"]] = {
+                    "id": item["id"],
+                    "iid": item.get("iid"),
                     "title": item.get("title"),
                     "description": item.get("description"),
                     "project_id": item.get("project_id"),
@@ -99,6 +101,8 @@ def get_user_issues(client, user_id, username=None, since=None, until=None, proj
                 else:
                     state = item.get("state")
                     issues_dict[item["id"]] = {
+                        "id": item["id"],
+                        "iid": item.get("iid"),
                         "title": item.get("title"),
                         "description": item.get("description"),
                         "project_id": item.get("project_id"),
