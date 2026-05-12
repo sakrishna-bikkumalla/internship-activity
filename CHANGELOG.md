@@ -6,14 +6,14 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) an
 
 ## [1.0.0] - 2026-04-17
 ### Added
-- **Team Leaderboard**: Productivity tracking dashboard with team scoring, individual member rankings, GitLab-style 364-day activity heatmaps, achievement badges (rank badges, team player, sprint star, top committer, merge master, hackathon hero, consistency champ), collaboration percentages, and pie chart visualizations.
-- **Batch Analytics**: Unified batch analysis mode consolidating ICFAI batch, RCTS batch, BAD MRs, and BAD Issues modes. Includes comprehensive quality metrics for MRs (no description, no linked issues, failed pipelines, no semantic commits, long merge times) and Issues (no labels, no milestone, long open time, no semantic title).
+- **Batch Analytics and Ranking**: Productivity tracking dashboard with team scoring, individual member rankings, GitLab-style 364-day activity heatmaps, achievement badges (rank badges, team player, sprint star, top committer, merge master, hackathon hero, consistency champ), collaboration percentages, and pie chart visualizations.
+- **Compliance Audit**: Unified batch analysis mode consolidating ICFAI batch, RCTS batch, BAD MRs, and BAD Issues modes. Includes comprehensive quality metrics for MRs (no description, no linked issues, failed pipelines, no semantic commits, long merge times) and Issues (no labels, no milestone, long open time, no semantic title).
 - **DX-Checker**: Developer experience scoring system analyzing project tooling across 5 dimensions: quality & linting tools (Ruff, MyPy, ESLint, Prettier, Vulture), security & secret scanning, testing & coverage enforcement, automation & CI/CD, and internationalization readiness.
 - **BAD MRs/Issues Quality Tracking**: Quality metrics for closed/rejected MRs and closed issues, flagging items lacking proper documentation, labels, milestones, time tracking, semantic naming, and peer review.
 - **Weekly Performance Tracker**: Integration with Corpus API (standup audio recording system) alongside GitLab activity, displaying audio players in a 7-day grid with combined GitLab/Corpus data.
 - **Branch Selection**: Intermediate stage workflow allowing branch selection before running compliance analysis.
-- **Project-wise Filtered Leaderboard**: Filter team leaderboard results by specific GitLab projects.
-- **Date Range Filtering**: Filter contributions by custom date ranges in both team leaderboard and contribution mapping views.
+- **Project-wise Filtered Ranking**: Filter batch analytics and ranking results by specific GitLab projects.
+- **Date Range Filtering**: Filter contributions by custom date ranges in both ranking and contribution mapping views.
 - **Detailed Contribution Views**: Expanded MR titles, issue titles, and commit messages with GitLab links, plus activity feed sorted by date.
 - **Specific Team View**: Dedicated view showing 6-column metrics dashboard (Commits, MR Merged, MR Open, MR Closed, Issues Raised, Issues Closed) with individual user performance tables.
 - **Language-Aware CI Pipeline Recommendations**: DX-checker provides language-specific pipeline improvement suggestions.

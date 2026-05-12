@@ -4,7 +4,12 @@ import pandas as pd
 import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.gitlab import batch
-from gitlab_compliance_checker.services.roster_service import get_all_members_with_teams
+from gitlab_compliance_checker.services.roster_service import (
+    get_all_batches,
+    get_all_members_with_teams,
+    get_members_by_team,
+    get_teams_by_batch,
+)
 
 
 @st.cache_data(ttl=3600)
@@ -13,62 +18,110 @@ def cached_process_batch_users(_client, usernames_tuple, project_ids=None, overr
     return batch.process_batch_users(_client, list(usernames_tuple), project_ids=project_ids, overrides=overrides)
 
 
-def render_batch_analytics_ui(client):
-    st.subheader("📊 Batch Analytics")
-    st.caption("Comprehensive report combining General Stats, Authored Issue Quality, and Assigned MR Quality.")
+def _init_ba_state():
+    """Initialize session state for Compliance Audit filtering."""
+    defaults = {
+        "_ba_selected_batch": "All Batches",
+        "_ba_selected_teams": ["All Teams"],
+        "_ba_selected_members": ["All Members"],
+    }
+    for key, val in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
 
-    # 1. Fetch Users from Database
+
+def render_batch_analytics_ui(client):
+    _init_ba_state()
+
     db_members = get_all_members_with_teams()
     if not db_members:
         st.warning("⚠️ No interns found in the Roster Database. Please add users in the Admin panel first.")
         return
 
-    # Map for easy selection
-    # format: "Name (username)"
-    user_options = {f"{m['name']} (@{m['gitlab_username']})": m for m in db_members}
+    # --- Hierarchical Filtering ---
+    batches = get_all_batches()
+    batch_names = ["All Batches"] + [b["name"] for b in batches]
 
-    # 2. Configuration Section
-    with st.expander("🛠️ Selection & Configuration", expanded=True):
-        selection_options = ["All Registered Interns", "Select Specific Interns"]
-        if st.session_state.get("fetched_group_members"):
-            selection_options.append("Select from Group Names")
-
-        selection_mode = st.radio(
-            "Target Selection",
-            selection_options,
-            horizontal=True,
-            help="Choose whether to analyze everyone in the roster or just a few.",
-        )
-
-        selected_members = []
-        member_overrides = {}
-        if selection_mode == "All Registered Interns":
-            selected_members = db_members
-            st.info(f"📍 Analysis will include all **{len(db_members)}** interns from the database.")
-        elif selection_mode == "Select from Group Names":
-            group_members = st.session_state.get("fetched_group_members", [])
-            group_user_options = {f"{m['name']} (@{m['username']})": m for m in group_members}
-            selected_group_labels = st.multiselect(
-                "Select Group Members", options=list(group_user_options.keys()), default=[]
+    with st.expander("🎯 Filter Selection", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            selected_batch = st.selectbox(
+                "Select Batch",
+                options=batch_names,
+                index=batch_names.index(st.session_state["_ba_selected_batch"])
+                if st.session_state["_ba_selected_batch"] in batch_names
+                else 0,
+                key="_ba_batch_sel_widget",
+                help="Select the batch of interns to analyze.",
             )
-            for label in selected_group_labels:
-                m = group_user_options[label]
-                username = m["username"]
-                selected_members.append(
-                    {"gitlab_username": username, "name": m["name"], "college_name": "Group Member"}
-                )
-                member_overrides[username] = {
-                    "override_email": m.get("email"),
-                    "override_username": m.get("username"),
-                }
-        else:
-            selected_labels = st.multiselect("Select Interns", options=list(user_options.keys()), default=[])
-            selected_members = [user_options[label] for label in selected_labels]
+            if selected_batch != st.session_state["_ba_selected_batch"]:
+                st.session_state["_ba_selected_batch"] = selected_batch
+                st.session_state["_ba_selected_teams"] = ["All Teams"]
+                st.session_state["_ba_selected_members"] = ["All Members"]
+                st.rerun()
 
-        st.markdown("#### 📂 Filter by Project Repos *(optional)*")
-        st.caption(
-            "Filter results to specific GitLab project paths (e.g. `group/repo-name`). Leave blank for all projects."
-        )
+        teams_in_batch = get_teams_by_batch(selected_batch)
+        team_options = ["All Teams"] + sorted([t["name"] for t in teams_in_batch])
+
+        with c2:
+            selected_teams = st.multiselect(
+                "Select Team(s)",
+                options=team_options,
+                default=st.session_state["_ba_selected_teams"]
+                if all(t in team_options for t in st.session_state["_ba_selected_teams"])
+                else ["All Teams"],
+                key="_ba_teams_sel_widget",
+                help="Select specific teams within the batch.",
+            )
+            if selected_teams != st.session_state["_ba_selected_teams"]:
+                st.session_state["_ba_selected_teams"] = selected_teams
+                st.rerun()
+
+        # Determine members to show in the third filter based on team selection
+        if "All Teams" in selected_teams:
+            filtered_members_for_sel = (
+                db_members
+                if selected_batch == "All Batches"
+                else [m for t in teams_in_batch for m in get_members_by_team(t["name"], selected_batch)]
+            )
+        else:
+            filtered_members_for_sel = [
+                m for t_name in selected_teams for m in get_members_by_team(t_name, selected_batch)
+            ]
+
+        all_potential_members = sorted({f"{m['name']} (@{m['gitlab_username']})" for m in filtered_members_for_sel})
+        member_options = ["All Members"] + all_potential_members
+
+        with c3:
+            selected_members_labels = st.multiselect(
+                "Select Individual(s)",
+                options=member_options,
+                default=st.session_state["_ba_selected_members"]
+                if all(m in member_options for m in st.session_state["_ba_selected_members"])
+                else ["All Members"],
+                key="_ba_members_sel_widget",
+                help="Select specific individuals.",
+            )
+            if selected_members_labels != st.session_state["_ba_selected_members"]:
+                st.session_state["_ba_selected_members"] = selected_members_labels
+                st.rerun()
+
+    # Final member list for analysis
+    if "All Members" in selected_members_labels:
+        selected_members = filtered_members_for_sel
+    else:
+        selected_members = [
+            m
+            for label in selected_members_labels
+            for m in filtered_members_for_sel
+            if f"{m['name']} (@{m['gitlab_username']})" == label
+        ]
+
+    # 2. Project Filter
+    member_overrides = {}
+    repo_paths = []
+
+    with st.expander("📂 Optional Project Filter", expanded=False):
         repo_input = st.text_area(
             "Project Repo Paths",
             height=80,
@@ -127,56 +180,47 @@ def render_batch_analytics_ui(client):
                 "Status": status,
             }
 
-            if status == "Success":
-                # 2. General Stats
-                projects_info = data.get("projects", {})
-                c_stats = data.get("commit_stats", {"total": 0, "morning_commits": 0, "afternoon_commits": 0})
+            if status == "Error":
+                row["Compliance %"] = 0
+                row["Error Details"] = err
+                report_data.append(row)
+                continue
 
-                row["Commits Total"] = c_stats["total"]
-                row["Commits Morning"] = c_stats["morning_commits"]
-                row["Commits Afternoon"] = c_stats["afternoon_commits"]
-                row["Projects (Auth)"] = len(projects_info.get("personal", []))
-                row["Projects (Contr)"] = len(projects_info.get("contributed", []))
-                row["Groups Count"] = len(data.get("groups", []))
+            # 2. Compliance Metrics
+            pc = data.get("project_compliance", {})
+            row["Compliance %"] = pc.get("Compliance Rate", 0)
+            row["Total Projects"] = pc.get("Total Projects", 0)
+            row["Compliant"] = pc.get("Compliant", 0)
 
-                # 3. MR Quality (Authored)
-                mr_q = data.get("mr_quality", {})
-                row["MR Total (Authored)"] = mr_q.get("Closed MRs", 0)
-                row["MR No Desc"] = mr_q.get("No Desc", 0)
-                row["MR No Issues"] = mr_q.get("No Issues", 0)
-                row["MR No Time"] = mr_q.get("No Time Spent", 0)
-                row["MR Failed Pipe"] = mr_q.get("Failed Pipeline", 0)
-                row["MR No Semantic"] = mr_q.get("No Semantic Commits", 0)
-                row["MR No Review"] = mr_q.get("No Internal Review", 0)
-                row["MR > 2 Days"] = mr_q.get("Merge > 2 Days", 0)
-                row["MR > 1 Week"] = mr_q.get("Merge > 1 Week", 0)
+            # 3. MR Quality
+            mrq = data.get("merge_request_quality", {})
+            row["MR Merged"] = mrq.get("Total Merged", 0)
+            row["Avg Merge Days"] = mrq.get("Avg Merge Time", 0)
+            row["MR No Desc"] = mrq.get("No Desc", 0)
+            row["MR No Labels"] = mrq.get("No Labels", 0)
+            row["MR No Time"] = mrq.get("No Time Spent", 0)
+            row["MR Slow (>2d)"] = mrq.get("Merge > 2 Days", 0)
 
-                # 4. Issue Quality (Authored)
-                is_q = data.get("issue_quality", {})
-                row["Issue Total (Auth)"] = is_q.get("Total Assigned", 0)
-                row["Issue Closed"] = is_q.get("Closed Issues", 0)
-                row["Issue No Desc"] = is_q.get("No Desc", 0)
-                row["Issue No Labels"] = is_q.get("No Labels", 0)
-                row["Issue No Milestone"] = is_q.get("No Milestone", 0)
-                row["Issue No Time"] = is_q.get("No Time Spent", 0)
-                row["Issue Long Open"] = is_q.get("Long Open Time (>2 days)", 0)
-                row["Issue No Semantic"] = is_q.get("No Semantic Title", 0)
-            else:
-                row["Error"] = err
+            # 4. Issue Quality
+            isq = data.get("issue_quality", {})
+            row["Issues Closed"] = isq.get("Closed Issues", 0)
+            row["Issue No Desc"] = isq.get("No Desc", 0)
+            row["Issue No Labels"] = isq.get("No Labels", 0)
+            row["Issue No Time"] = isq.get("No Time Spent", 0)
 
             report_data.append(row)
 
         df = pd.DataFrame(report_data)
-        st.dataframe(df, use_container_width=True)
 
-        # Export
-        today = datetime.date.today()
+        # UI Display
+        st.subheader("📊 Analytical Results")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # CSV download
-        csv_bytes = df.to_csv(index=False).encode("utf-8")
+        # Download
+        csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 Download Unified Report (CSV)",
-            data=csv_bytes,
-            file_name=f"Unified_Batch_Report_{today}.csv",
+            label="📥 Download Results as CSV",
+            data=csv,
+            file_name=f"batch_analytics_{datetime.date.today()}.csv",
             mime="text/csv",
         )

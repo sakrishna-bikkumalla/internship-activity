@@ -1,8 +1,8 @@
 """
-Team Leaderboard Mode — Dynamic Team Creation + Edit
+Batch Analytics and Ranking Mode — Dynamic Team Creation + Edit
 ------------------------------------------------------
 Supports creating and editing teams via UI with full session state persistence.
-Fetches analytics via process_batch_users() and renders a ranked leaderboard.
+Fetches analytics via process_batch_users() and renders a ranked ranking table.
 
 Score formula:
     score = (total_commits * 1) + (merged_mrs * 5) + (total_mrs * 2) + (issues_closed * 3)
@@ -31,7 +31,12 @@ import streamlit as st
 from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
 from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
 from gitlab_compliance_checker.infrastructure.gitlab.timelogs import format_time_spent
-from gitlab_compliance_checker.services.roster_service import get_all_teams_with_members
+from gitlab_compliance_checker.services.roster_service import (
+    get_all_batches,
+    get_all_teams_with_members,
+    get_members_by_team,
+    get_teams_by_batch,
+)
 
 # ---------------------------------------------------------------------------
 # Default Teams (loaded from data/teams.json)
@@ -65,7 +70,9 @@ def _init_state() -> None:
         "_lb_clear_dates_requested": False,  # one-shot flag to clear date widgets safely
         "_lb_project_id": None,  # Resolved int or None
         "_lb_project_input": "",  # Raw string input
-        "_lb_selected_team": "All Teams",
+        "_lb_selected_batch": "All Batches",
+        "_lb_selected_teams": ["All Teams"],
+        "_lb_selected_members": ["All Members"],
         "_lb_page": "Workspace",
         "_lb_last_ranking_rows": [],
         "_lb_cached_results": None,
@@ -405,7 +412,7 @@ def _validate_json_teams(data: dict) -> tuple[list[dict], str]:
 
 
 def _build_excel_export(team_data: dict) -> bytes:
-    """Multi-sheet Excel: Sheet 1 = leaderboard, Sheet N = per-team member details."""
+    """Multi-sheet Excel: Sheet 1 = ranking, Sheet N = per-team member details."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         lb_rows = [
@@ -415,7 +422,7 @@ def _build_excel_export(team_data: dict) -> bytes:
         (
             pd.DataFrame(lb_rows)
             .sort_values("Team Score", ascending=False)
-            .to_excel(writer, index=False, sheet_name="Leaderboard")
+            .to_excel(writer, index=False, sheet_name="Batch Ranking")
         )
         for team_name, (_, member_rows, _) in team_data.items():
             if member_rows:
@@ -1862,13 +1869,13 @@ def _render_specific_team_analytics(
 
 
 # ---------------------------------------------------------------------------
-# UI: Overall Leaderboard
+# UI: Overall Ranking
 # ---------------------------------------------------------------------------
 
 
-def _render_overall_leaderboard(team_data: dict) -> None:
-    """Ranked leaderboard table + bar chart."""
-    st.subheader("🏆 Overall Team Leaderboard")
+def _render_overall_ranking(team_data: dict) -> None:
+    """Ranked ranking table + bar chart."""
+    st.subheader("🏆 Overall Batch Analytics and Ranking")
 
     lb_rows = [
         {
@@ -2277,7 +2284,7 @@ def _render_individual_table_html(individual_rows: list[dict]) -> None:
 
 def _render_ranking_page() -> None:
     """Ranking-only view that reuses previously computed summary rows."""
-    st.markdown("### 🏅 Leaderboard Ranking")
+    st.markdown("### 🏅 Batch Ranking")
     st.caption("Structured ranking table with badge placeholders for top 6 teams.")
 
     ranked_rows = st.session_state.get("_lb_last_ranking_rows", [])
@@ -2318,7 +2325,7 @@ def _render_ranking_page() -> None:
 # ---------------------------------------------------------------------------
 
 
-def render_team_leaderboard(client) -> None:
+def render_batch_analytics(client) -> None:
     """Main render function. Called from app.py with the GitLabClient instance."""
     _init_state()
 
@@ -2331,10 +2338,10 @@ def render_team_leaderboard(client) -> None:
 
     if not st.session_state.get("_lb_corpus_token"):
         st.warning(
-            "📻 **Corpus Audio Missing**: Please login with your Corpus credentials in the sidebar to include audio contributions in the leaderboard."
+            "📻 **Corpus Audio Missing**: Please login with your Corpus credentials in the sidebar to include audio contributions in the batch analytics."
         )
 
-    st.subheader("🏆 Team Leaderboard")
+    st.subheader("🏆 Batch Analytics and Ranking")
     st.markdown(
         "Create and manage teams, then run analytics to compare productivity scores.\n\n"
         "**Score formula:** `Commits × 1 + Merged MRs × 5 + Total MRs × 2 + Issues Closed × 3`"
@@ -2343,6 +2350,86 @@ def render_team_leaderboard(client) -> None:
     # ── Scoped UI Restyling CSS ──────────────────────────────────────────
     # Removed temporarily for debugging
     pass
+
+    # Load data
+
+    batches = get_all_batches()
+    batch_names = ["All Batches"] + [b["name"] for b in batches]
+
+    st.markdown("### 🎯 Data Filter")
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        selected_batch = st.selectbox(
+            "Select Batch",
+            options=batch_names,
+            index=batch_names.index(st.session_state["_lb_selected_batch"])
+            if st.session_state["_lb_selected_batch"] in batch_names
+            else 0,
+            key="_lb_batch_sel",
+            help="Filter teams by batch.",
+        )
+        if selected_batch != st.session_state["_lb_selected_batch"]:
+            st.session_state["_lb_selected_batch"] = selected_batch
+            st.session_state["_lb_selected_teams"] = ["All Teams"]
+            st.session_state["_lb_selected_member"] = "All Members"
+            st.rerun()
+
+    # Get teams for selected batch
+    if not selected_batch:
+        selected_batch = "All Batches"
+    teams_in_batch = get_teams_by_batch(selected_batch)
+    team_options = ["All Teams"] + [t["name"] for t in teams_in_batch]
+
+    with c2:
+        selected_teams = st.multiselect(
+            "Select Team(s)",
+            options=team_options,
+            default=st.session_state["_lb_selected_teams"]
+            if all(t in team_options for t in st.session_state["_lb_selected_teams"])
+            else ["All Teams"],
+            key="_lb_teams_sel",
+            help="Select one or more teams, or 'All Teams' for an overall comparison.",
+        )
+        if selected_teams != st.session_state["_lb_selected_teams"]:
+            st.session_state["_lb_selected_teams"] = selected_teams
+            # Reset members list when teams change
+            st.session_state["_lb_selected_members"] = ["All Members"]
+            st.rerun()
+
+    # Individual Selection - Gather members from all selected teams
+    all_potential_members = []
+
+    # Define which teams to pull members from
+    if "All Teams" in selected_teams:
+        teams_for_members = teams_in_batch
+    else:
+        teams_for_members = [t for t in teams_in_batch if t["name"] in selected_teams]
+
+    for t in teams_for_members:
+        team_members = get_members_by_team(t["name"], str(selected_batch))
+        for m in team_members:
+            # Format: Name (@username) [Team]
+            label = f"{m['name']} (@{m['gitlab_username']}) [{t['name']}]"
+            all_potential_members.append(label)
+
+    member_options = ["All Members"] + sorted(all_potential_members)
+
+    with c3:
+        selected_members = st.multiselect(
+            "Select Individual(s)",
+            options=member_options,
+            default=st.session_state["_lb_selected_members"]
+            if all(m in member_options for m in st.session_state["_lb_selected_members"])
+            else ["All Members"],
+            key="_lb_members_sel",
+            help="Select specific individuals across the selected teams. Leave as 'All Members' to analyze everyone.",
+        )
+        if selected_members != st.session_state["_lb_selected_members"]:
+            st.session_state["_lb_selected_members"] = selected_members
+            st.rerun()
+
+    st.divider()
 
     # ── Page selector (Button Toggle) ────────────────────────────────────
     st.markdown('<div class="lb-toggle-container">', unsafe_allow_html=True)
@@ -2354,56 +2441,68 @@ def render_team_leaderboard(client) -> None:
             "Workspace",
             width="stretch",
             key="_btn_workspace",
-            type="secondary" if current_page == "Leaderboard Ranking" else "primary",
+            type="secondary" if current_page == "Batch Ranking" else "primary",
         ):
             st.session_state["_lb_page"] = "Workspace"
             st.rerun()
 
     with col2:
         if st.button(
-            "Leaderboard Ranking",
+            "Batch Ranking",
             width="stretch",
             key="_btn_ranking",
             type="secondary" if current_page == "Workspace" else "primary",
         ):
-            st.session_state["_lb_page"] = "Leaderboard Ranking"
+            st.session_state["_lb_page"] = "Batch Ranking"
             st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
     page = st.session_state["_lb_page"]
     st.divider()
 
-    if page == "Leaderboard Ranking":
+    if page == "Batch Ranking":
         _render_ranking_page()
         return
-
-    # Load teams from database if state is empty
-    if not st.session_state.get("teams"):
-        st.session_state["teams"] = get_all_teams_with_members()
-    all_teams: list[dict] = st.session_state["teams"]
-    team_names = [t["team_name"] for t in all_teams]
-
-    # Dropdown shows All Teams + specific teams only
-    st.markdown("### 🎯 Team Filter")
-    selected_team = st.selectbox(
-        "Select Team to Analyze",
-        options=["All Teams"] + team_names,
-        index=0,
-        key="_lb_selected_team_dropdown",
-        help="Choose a specific team to view detailed metrics, or 'All Teams' for an overall comparison.",
-    )
-    st.divider()
 
     # Removed Sections 1 & 2 (Team creation/management)
 
     # ── Section 3: Analysis ───────────────────────────────────────────────
     # Only use teams corresponding to the current scope
-    if selected_team == "All Teams":
-        teams = all_teams
-    else:
-        teams = [t for t in all_teams if t["team_name"] == selected_team]
+    all_available_teams = get_all_teams_with_members()
 
-    if not teams:
+    if "All Teams" in selected_teams:
+        if selected_batch == "All Batches":
+            teams_to_process = all_available_teams
+        else:
+            # All teams in a specific batch
+            teams_to_process = [t for t in all_available_teams if t.get("batch_name") == selected_batch]
+    else:
+        # Specific multiple teams
+        teams_to_process = [
+            t
+            for t in all_available_teams
+            if t["team_name"] in selected_teams
+            and (selected_batch == "All Batches" or t.get("batch_name") == selected_batch)
+        ]
+
+    # Further filter by members if needed
+    if "All Members" not in selected_members and selected_members:
+        # Extract usernames from labels: "Name (@username) [Team]"
+        target_usernames = []
+        for label in selected_members:
+            if "(@" in label:
+                username = label.split("(@")[1].split(")")[0]
+                target_usernames.append(username)
+
+        target_usernames_set = set(target_usernames)
+
+        for t in teams_to_process:
+            t["members"] = [m for m in t["members"] if m["username"] in target_usernames_set]
+
+        # Remove teams that now have no selected members
+        teams_to_process = [t for t in teams_to_process if t["members"]]
+
+    if not teams_to_process:
         st.info("Add at least one team above to enable analysis.")
         return
 
@@ -2417,22 +2516,17 @@ def render_team_leaderboard(client) -> None:
 
     # ── Run button ────────────────────────────────────────────────────────
     st.markdown('<div class="lb-run-btn">', unsafe_allow_html=True)
-    run_button_clicked = st.button("▶️ Run Leaderboard Analysis", type="primary", key="_lb_run_btn")
+    run_button_clicked = st.button("▶️ Run Batch Analysis", type="primary", key="_lb_run_btn")
     st.markdown("</div>", unsafe_allow_html=True)
     if run_button_clicked:
         st.session_state["_lb_triggered"] = True
 
     if not st.session_state.get("_lb_triggered"):
-        st.info("Click **▶️ Run Leaderboard Analysis** to fetch data for all teams.")
+        st.info("Click **▶️ Run Batch Analysis** to fetch data for all teams.")
         return
 
-    if selected_team != "All Teams":
-        teams_to_process = [t for t in teams if t["team_name"] == selected_team]
-    else:
-        teams_to_process = teams
-
     if not teams_to_process:
-        st.warning(f"The selected team '{selected_team}' could not be found.")
+        st.warning("No data found for the selected scope.")
         return
 
     # ── Cache key: fingerprint of current ALL teams configuration + date filters ────────────
@@ -2444,7 +2538,7 @@ def render_team_leaderboard(client) -> None:
                 "project_name": t.get("project_name", ""),
                 "members": sorted([m["username"] for m in t.get("members", []) if m.get("username")]),
             }
-            for t in teams
+            for t in teams_to_process
         ],
         "since": since_iso,
         "until": until_iso,
@@ -2606,13 +2700,13 @@ def render_team_leaderboard(client) -> None:
             meta, member_rows, totals = team_data[team_name]
             _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
 
-    if selected_team == "All Teams":
-        _render_overall_leaderboard(team_data)
+    if "All Teams" in selected_teams or len(selected_teams) > 1:
+        _render_overall_ranking(team_data)
 
     # ── Export ────────────────────────────────────────────────────────────
     st.subheader("📥 Export Report")
     now_ist = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
-    filename_full = f"team_leaderboard_{now_ist.strftime('%Y-%m-%d')}.xlsx"
+    filename_full = f"batch_analytics_{now_ist.strftime('%Y-%m-%d')}.xlsx"
     filename_indiv = f"individual_metrics_{now_ist.strftime('%Y-%m-%d')}.xlsx"
 
     try:

@@ -147,7 +147,7 @@ def process_single_user(
         user_mrs, mr_stats = f_mrs.result()
         user_issues, issue_stats = f_issues.result()
 
-        # 4. Timelogs (Special handling for Leaderboard all-time spent)
+        # 4. Timelogs (Special handling for Batch Analytics all-time spent)
         def _to_date(val, default):
             if not val:
                 return default
@@ -397,7 +397,7 @@ async def process_single_user_async(
             client, user_obj, all_projs_list, since=since, until=until
         )
 
-        # 5. Timelogs (Special handling for Leaderboard all-time spent)
+        # 5. Timelogs (Special handling for Batch Analytics all-time spent)
         def _to_date(val, default):
             if not val:
                 return default

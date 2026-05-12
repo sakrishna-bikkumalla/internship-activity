@@ -9,7 +9,7 @@ from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
 from gitlab_compliance_checker.services.roster_service import get_all_members_with_teams
 from gitlab_compliance_checker.ui.admin import render_admin_management
 from gitlab_compliance_checker.ui.batch import render_batch_analytics_ui
-from gitlab_compliance_checker.ui.leaderboard import render_team_leaderboard
+from gitlab_compliance_checker.ui.leaderboard import render_batch_analytics
 from gitlab_compliance_checker.ui.profile import render_user_profile
 from gitlab_compliance_checker.ui.weekly_performance import render_weekly_performance_ui
 
@@ -78,8 +78,8 @@ def main():
     role = st.session_state.get("user_role", "intern")
     full_options = [
         "User Profile Overview",
-        "Team Leaderboard",
-        "Batch Analytics",
+        "Batch Analytics and Ranking",
+        "Compliance Audit",
         "Weekly Performance Tracker",
     ]
 
@@ -189,11 +189,11 @@ def main():
         elif profile_data:
             render_user_profile(client, profile_data)
 
-    elif mode == "Batch Analytics":
+    elif mode == "Compliance Audit":
         render_batch_analytics_ui(client)
 
-    elif mode == "Team Leaderboard":
-        render_team_leaderboard(client)
+    elif mode == "Batch Analytics and Ranking":
+        render_batch_analytics(client)
 
     elif mode == "Weekly Performance Tracker":
         render_weekly_performance_ui(client)

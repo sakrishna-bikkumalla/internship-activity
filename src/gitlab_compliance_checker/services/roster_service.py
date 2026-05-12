@@ -97,7 +97,7 @@ def get_member_by_username(gitlab_username: str) -> InternCSVRow | None:
 
 
 def get_all_teams_with_members() -> List[dict]:
-    """Fetches all teams and their members from the database in a format compatible with Leaderboard."""
+    """Fetches all teams and their members from the database in a format compatible with Batch Analytics."""
     with get_session() as session:
         teams = session.query(Team).all()
         result = []
@@ -128,6 +128,43 @@ def get_all_teams() -> List[str]:
     """Fetches all team names from the database."""
     with get_session() as session:
         return [t.name for t in session.query(Team).all()]
+
+
+def get_teams_by_batch(batch_name: str) -> List[dict]:
+    """Fetches all teams belonging to a specific batch."""
+    with get_session() as session:
+        if batch_name == "All Batches":
+            teams = session.query(Team).all()
+        else:
+            teams = session.query(Team).join(Batch).filter(Batch.name == batch_name).all()
+
+        return [
+            {
+                "id": t.id,
+                "name": t.name,
+                "batch_name": t.batch.name if t.batch else "No Batch",
+            }
+            for t in teams
+        ]
+
+
+def get_members_by_team(team_name: str, batch_name: str = "All Batches") -> List[dict]:
+    """Fetches all members belonging to a specific team (within a batch context)."""
+    with get_session() as session:
+        query = session.query(Member).join(Team)
+        if batch_name != "All Batches":
+            query = query.join(Batch).filter(Batch.name == batch_name)
+
+        members = query.filter(Team.name == team_name).all()
+        return [
+            {
+                "id": m.id,
+                "name": m.name,
+                "gitlab_username": m.gitlab_username,
+                "team_name": m.team.name if m.team else "No Team",
+            }
+            for m in members
+        ]
 
 
 def add_or_update_member(session: Session, data: InternCSVRow, batch_id: int, member_id: int | None = None):

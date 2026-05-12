@@ -109,8 +109,8 @@ def test_main_mode_user_profile_not_found(monkeypatch, reimport_main):
 @pytest.mark.parametrize(
     "mode, expected_called",
     [
-        ("Batch Analytics", "batch"),
-        ("Team Leaderboard", "team"),
+        ("Compliance Audit", "batch"),
+        ("Batch Analytics and Ranking", "team"),
     ],
 )
 def test_main_other_modes(monkeypatch, reimport_main, mode, expected_called):
@@ -122,7 +122,7 @@ def test_main_other_modes(monkeypatch, reimport_main, mode, expected_called):
     called = {}
 
     monkeypatch.setattr(main_mod, "render_batch_analytics_ui", lambda c: called.setdefault("batch", True))
-    monkeypatch.setattr(main_mod, "render_team_leaderboard", lambda c: called.setdefault("team", True))
+    monkeypatch.setattr(main_mod, "render_batch_analytics", lambda c: called.setdefault("team", True))
 
     main_mod.main()
 

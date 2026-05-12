@@ -16,7 +16,7 @@ This project helps teams and mentors quickly evaluate whether repositories follo
   - Commit activity (including time-slot stats)
   - Groups, merge requests, and issues summary
 
-- 🚀 **Batch Analytics (Unified)**
+- 🚀 **Compliance Audit (Unified)**
   - Username Input (Text Area or .txt File)
   - Unified report including General Stats, Authored Issue Quality, and Assigned MR Quality
   - High-performance extraction with minimum API calls

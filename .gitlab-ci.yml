@@ -44,6 +44,13 @@ lint_job:
     - uv run ruff check .
     - uv run ruff format --check .
 
+docstring_coverage:
+  stage: lint
+  needs:
+    - job: setup_job
+  script:
+    - uv run interrogate src/ app.py
+
 babel_job:
   stage: lint
   needs:

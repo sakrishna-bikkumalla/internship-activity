@@ -81,10 +81,11 @@ def test_render_activity_heatmap():
 
 def test_render_team_result():
     with patch("streamlit.subheader"), \
-         patch("streamlit.columns", return_value=[MagicMock() for _ in range(6)]), \
+         patch("streamlit.columns", return_value=[MagicMock() for _ in range(7)]), \
          patch("streamlit.metric"), \
          patch("streamlit.dataframe"), \
          patch("streamlit.expander"), \
+         patch("streamlit.popover", create=True), \
          patch("streamlit.markdown"):
         
         totals = {

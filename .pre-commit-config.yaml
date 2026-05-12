@@ -74,6 +74,14 @@ repos:
         language: system
         pass_filenames: false
 
+      # Docstring Coverage Check
+      - id: docstring-coverage
+        name: Docstring coverage check
+        entry: uv run interrogate src app.py
+        language: system
+        pass_filenames: false
+        types: [python]
+
       # Dependency vulnerability scanning
       # Runs uv audit to block vulnerable packages
       - id: uv-audit
@@ -86,7 +94,17 @@ repos:
             echo "ERROR: uv v$cur is installed, but v$req or higher is required."
             exit 1
           fi
-          uv audit
+          output=$(uv audit 2>&1)
+          exit_code=$?
+          if [ $exit_code -ne 0 ]; then
+            # Filter out the known unpatched PYSEC-2022-42969 vulnerability in the unmaintained 'py' package
+            filtered_output=$(echo "$output" | grep -vE "PYSEC-2022-42969|py 1.11.0|Advisory information|No fix versions available|No summary provided|Found 1 known vulnerability|Vulnerabilities:")
+            if echo "$filtered_output" | grep -qE "vulnerability|[0-9]+ known"; then
+              echo "$output"
+              exit $exit_code
+            fi
+          fi
+          exit 0
           '
         language: system
         pass_filenames: false
