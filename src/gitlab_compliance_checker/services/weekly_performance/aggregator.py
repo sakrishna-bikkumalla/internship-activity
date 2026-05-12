@@ -110,9 +110,7 @@ def _fetch_mrs_by_date(gl_client, user_id: int, start_date: date, end_date: date
                         # Add state to title for clarity in UI events
                         state = mr.get("state", "opened").capitalize()
                         title = f"[{state}] {mr.get('title', '')}"
-                        events[date_str][hour].append(
-                            {"type": "mr", "title": title, "url": mr.get("web_url", "")}
-                        )
+                        events[date_str][hour].append({"type": "mr", "title": title, "url": mr.get("web_url", "")})
 
     logger.debug(f"[GitLab] Merged MRs by date: {dict(counts)}")
     return dict(counts), dict(active_hours), dict(events), raw_mrs
@@ -149,9 +147,7 @@ def _fetch_issues_by_date(
                     # Add state to title for clarity
                     state = issue.get("state", "opened").capitalize()
                     title = f"[{state}] {issue.get('title', '')}"
-                    events[date_str][hour].append(
-                        {"type": "issue", "title": title, "url": issue.get("web_url", "")}
-                    )
+                    events[date_str][hour].append({"type": "issue", "title": title, "url": issue.get("web_url", "")})
 
     logger.debug(f"[GitLab] Issues by date: {dict(counts)}")
     return dict(counts), dict(active_hours), dict(events), assigned
@@ -282,9 +278,7 @@ def aggregate_intern_data(
     logger.info(f"[Aggregator] Fetching timelogs for {gitlab_username} across {len(all_projs)} projects")
     timelogs = fetch_user_timelogs_from_projects(gl_client, user_id, all_projs, start_date, end_date)
     logger.info(f"[Aggregator] Timelogs fetched: {len(timelogs)}")
-    daily_times, daily_categorized, seen_iss, seen_mrs = aggregate_daily_time_categorized(
-        timelogs, raw_issues, raw_mrs
-    )
+    daily_times, daily_categorized, seen_iss, seen_mrs = aggregate_daily_time_categorized(timelogs, raw_issues, raw_mrs)
 
     # ── Strategy 2: Supplement with time_stats fallback ──
     logger.info(f"[Aggregator] Supplementing daily_times with issue/MR time_stats for {gitlab_username}")

@@ -333,14 +333,14 @@ STATUS_CARD_CSS = """
 
 
 def _render_summary_card(
-    mrs: int, 
-    issues: int, 
-    commits: int, 
+    mrs: int,
+    issues: int,
+    commits: int,
     time_str: str,
     mrs_open_str: str = "0m",
     mrs_merged_str: str = "0m",
     issues_open_str: str = "0m",
-    issues_closed_str: str = "0m"
+    issues_closed_str: str = "0m",
 ) -> None:
     """Render a unified summary card with 4 metrics and a detailed time breakdown."""
     html = f"""
@@ -376,7 +376,7 @@ def _render_summary_card(
             </div>
         </div>
     </div>
-    
+
     <div class="time-breakdown">
         <div class="breakdown-item">
             <span class="breakdown-label">MRs Open</span>
@@ -693,7 +693,8 @@ def _render_performance_grid(
                 time_spent = gitlab.get("time_spent_seconds", 0)
 
                 def _fmt_h_m(s):
-                    if not s: return "0m"
+                    if not s:
+                        return "0m"
                     h = s // 3600
                     m = (s % 3600) // 60
                     return f"{h}h {m}m" if h > 0 else f"{m}m"
@@ -705,14 +706,14 @@ def _render_performance_grid(
                 issues_closed_str = _fmt_h_m(gitlab.get("issues_closed_time", 0))
 
                 _render_summary_card(
-                    mrs, 
-                    issues, 
-                    commits, 
+                    mrs,
+                    issues,
+                    commits,
                     time_str,
                     mrs_open_str=mrs_open_str,
                     mrs_merged_str=mrs_merged_str,
                     issues_open_str=issues_open_str,
-                    issues_closed_str=issues_closed_str
+                    issues_closed_str=issues_closed_str,
                 )
 
                 # Activity Slots: Office Hours (9 AM - 5 PM)

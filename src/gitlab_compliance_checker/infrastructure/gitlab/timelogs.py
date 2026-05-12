@@ -224,10 +224,10 @@ def build_daily_time_from_time_stats(
                 ts = gl_client._get(f"/projects/{pid}/issues/{iid}/time_stats") or {}
             except Exception:
                 ts = {}
-        
+
         total_ts = ts.get("total_time_spent", 0)
         formal_ts = f_issues.get(gid, 0) if gid else 0
-        
+
         if total_ts > formal_ts:
             extra = int(total_ts - formal_ts)
             daily_totals[date_str] += extra
@@ -254,7 +254,7 @@ def build_daily_time_from_time_stats(
                 ts = gl_client._get(f"/projects/{pid}/merge_requests/{iid}/time_stats") or {}
             except Exception:
                 ts = {}
-        
+
         total_ts = ts.get("total_time_spent", 0)
         formal_ts = f_mrs.get(gid, 0) if gid else 0
 
@@ -287,10 +287,10 @@ def aggregate_daily_time_categorized(
 
     # Build lookup for state by ID or IID
     # Since timelogs from global endpoint might only have global IDs, we'll try to match both
-    issue_states = {} # issue_id -> state
-    mr_states = {} # mr_id -> state
-    issue_iid_states = {} # (project_id, iid) -> state
-    mr_iid_states = {} # (project_id, iid) -> state
+    issue_states = {}  # issue_id -> state
+    mr_states = {}  # mr_id -> state
+    issue_iid_states = {}  # (project_id, iid) -> state
+    mr_iid_states = {}  # (project_id, iid) -> state
 
     for iss in issues:
         state = iss.get("state", "opened")
@@ -328,7 +328,11 @@ def aggregate_daily_time_categorized(
         mr_id = log.get("merge_request_id") or (log.get("merge_request") or {}).get("id")
         iss_iid = log.get("issue_iid") or (log.get("issue") or {}).get("iid")
         mr_iid = log.get("merge_request_iid") or (log.get("merge_request") or {}).get("iid")
-        pid = log.get("project_id") or (log.get("issue") or {}).get("project_id") or (log.get("merge_request") or {}).get("project_id")
+        pid = (
+            log.get("project_id")
+            or (log.get("issue") or {}).get("project_id")
+            or (log.get("merge_request") or {}).get("project_id")
+        )
 
         if mr_id and mr_id in mr_states:
             cat = "mrs_merged" if mr_states[mr_id] == "merged" else "mrs_open"
@@ -343,13 +347,19 @@ def aggregate_daily_time_categorized(
         else:
             # Fallback if we can't find the item in our fetched lists
             if mr_iid or mr_id:
-                cat = "mrs_open" # Default to open if state unknown
+                cat = "mrs_open"  # Default to open if state unknown
             elif iss_iid or iss_id:
                 cat = "issues_open"
 
         categorized[log_date][cat] += spent_int
 
-    return dict(daily_totals), {d: dict(c) for d, c in categorized.items()}, dict(issue_formal_totals), dict(mr_formal_totals)
+    return (
+        dict(daily_totals),
+        {d: dict(c) for d, c in categorized.items()},
+        dict(issue_formal_totals),
+        dict(mr_formal_totals),
+    )
+
 
 def aggregate_daily_time(
     timelogs: list[dict[str, Any]],

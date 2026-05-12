@@ -208,26 +208,30 @@ def process_single_user(
                 ts_time = mr.get("time_stats", {}).get("total_time_spent", 0)
                 total = max(f_time, ts_time)
                 if total > 0:
-                    item_time_list.append({
-                        "id": f"!{mr.get('iid')}",
-                        "title": mr.get("title"),
-                        "seconds": int(total),
-                        "type": "mr",
-                        "state": mr.get("state")
-                    })
+                    item_time_list.append(
+                        {
+                            "id": f"!{mr.get('iid')}",
+                            "title": mr.get("title"),
+                            "seconds": int(total),
+                            "type": "mr",
+                            "state": mr.get("state"),
+                        }
+                    )
             for iss in user_issues:
                 gid = iss.get("id")
                 f_time = i_formal.get(gid, 0)
                 ts_time = iss.get("time_stats", {}).get("total_time_spent", 0)
                 total = max(f_time, ts_time)
                 if total > 0:
-                    item_time_list.append({
-                        "id": f"#{iss.get('iid')}",
-                        "title": iss.get("title"),
-                        "seconds": int(total),
-                        "type": "issue",
-                        "state": iss.get("state")
-                    })
+                    item_time_list.append(
+                        {
+                            "id": f"#{iss.get('iid')}",
+                            "title": iss.get("title"),
+                            "seconds": int(total),
+                            "type": "issue",
+                            "state": iss.get("state"),
+                        }
+                    )
             result["data"]["item_time_breakdown"] = item_time_list
         except Exception as te:
             # Don't crash the whole user if timelogs fail
@@ -454,26 +458,30 @@ async def process_single_user_async(
                 ts_time = mr.get("time_stats", {}).get("total_time_spent", 0)
                 total = max(f_time, ts_time)
                 if total > 0:
-                    item_time_list.append({
-                        "id": f"!{mr.get('iid')}",
-                        "title": mr.get("title"),
-                        "seconds": int(total),
-                        "type": "mr",
-                        "state": mr.get("state")
-                    })
+                    item_time_list.append(
+                        {
+                            "id": f"!{mr.get('iid')}",
+                            "title": mr.get("title"),
+                            "seconds": int(total),
+                            "type": "mr",
+                            "state": mr.get("state"),
+                        }
+                    )
             for iss in user_issues:
                 gid = iss.get("id")
                 f_time = i_formal.get(gid, 0)
                 ts_time = iss.get("time_stats", {}).get("total_time_spent", 0)
                 total = max(f_time, ts_time)
                 if total > 0:
-                    item_time_list.append({
-                        "id": f"#{iss.get('iid')}",
-                        "title": iss.get("title"),
-                        "seconds": int(total),
-                        "type": "issue",
-                        "state": iss.get("state")
-                    })
+                    item_time_list.append(
+                        {
+                            "id": f"#{iss.get('iid')}",
+                            "title": iss.get("title"),
+                            "seconds": int(total),
+                            "type": "issue",
+                            "state": iss.get("state"),
+                        }
+                    )
             result["data"]["item_time_breakdown"] = item_time_list
         except Exception as te:
             import logging
