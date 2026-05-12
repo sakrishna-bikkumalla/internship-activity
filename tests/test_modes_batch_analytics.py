@@ -101,3 +101,12 @@ class TestRenderBatchAnalyticsUI:
             mock_streamlit.text_area.return_value = "bad/repo"
             batch_analytics.render_batch_analytics_ui(mock_client)
             mock_streamlit.error.assert_called()
+
+
+def test_init_ba_state():
+    with patch("gitlab_compliance_checker.ui.batch.st") as mock_st:
+        mock_st.session_state = {}
+        batch_analytics._init_ba_state()
+        assert "_ba_selected_batch" in mock_st.session_state
+        assert "_ba_selected_teams" in mock_st.session_state
+        assert "_ba_selected_members" in mock_st.session_state

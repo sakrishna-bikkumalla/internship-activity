@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import date, timedelta
 from typing import Any, cast
 
@@ -7,8 +6,11 @@ import streamlit as st
 
 from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
 from gitlab_compliance_checker.services.roster_service import (
+    get_all_batches,
     get_all_members_with_teams,
     get_member_by_username,
+    get_members_by_team,
+    get_teams_by_batch,
 )
 from gitlab_compliance_checker.services.weekly_performance.aggregator import (
     _get_ist_hour,
@@ -343,60 +345,21 @@ def _render_summary_card(
     issues_closed_str: str = "0m",
 ) -> None:
     """Render a unified summary card with 4 metrics and a detailed time breakdown."""
-    html = f"""
-<div class="summary-card">
+    html = f"""<div class="summary-card">
     <div class="summary-title">Daily Summary</div>
     <div class="metrics-grid">
-        <div class="metric-item m-mrs">
-            <div class="metric-label">MRs</div>
-            <div class="metric-value-container">
-                <span class="metric-icon">🔀</span>
-                <span class="metric-value">{mrs}</span>
-            </div>
-        </div>
-        <div class="metric-item m-issues">
-            <div class="metric-label">Issues</div>
-            <div class="metric-value-container">
-                <span class="metric-icon">📝</span>
-                <span class="metric-value">{issues}</span>
-            </div>
-        </div>
-        <div class="metric-item m-commits">
-            <div class="metric-label">Commits</div>
-            <div class="metric-value-container">
-                <span class="metric-icon">💻</span>
-                <span class="metric-value">{commits}</span>
-            </div>
-        </div>
-        <div class="metric-item m-time">
-            <div class="metric-label">Total Time</div>
-            <div class="metric-value-container">
-                <span class="metric-icon">⌛</span>
-                <span class="metric-value">{time_str}</span>
-            </div>
-        </div>
+        <div class="metric-item m-mrs"><div class="metric-label">MRs</div><div class="metric-value-container"><span class="metric-icon">🔀</span><span class="metric-value">{mrs}</span></div></div>
+        <div class="metric-item m-issues"><div class="metric-label">Issues</div><div class="metric-value-container"><span class="metric-icon">📝</span><span class="metric-value">{issues}</span></div></div>
+        <div class="metric-item m-commits"><div class="metric-label">Commits</div><div class="metric-value-container"><span class="metric-icon">💻</span><span class="metric-value">{commits}</span></div></div>
+        <div class="metric-item m-time"><div class="metric-label">Total Time</div><div class="metric-value-container"><span class="metric-icon">⌛</span><span class="metric-value">{time_str}</span></div></div>
     </div>
-
     <div class="time-breakdown">
-        <div class="breakdown-item">
-            <span class="breakdown-label">MRs Open</span>
-            <span class="breakdown-value">{mrs_open_str}</span>
-        </div>
-        <div class="breakdown-item">
-            <span class="breakdown-label">MRs Merged</span>
-            <span class="breakdown-value">{mrs_merged_str}</span>
-        </div>
-        <div class="breakdown-item">
-            <span class="breakdown-label">Issues Open</span>
-            <span class="breakdown-value">{issues_open_str}</span>
-        </div>
-        <div class="breakdown-item">
-            <span class="breakdown-label">Issues Closed</span>
-            <span class="breakdown-value">{issues_closed_str}</span>
-        </div>
+        <div class="breakdown-item"><span class="breakdown-label">MRs Open</span><span class="breakdown-value">{mrs_open_str}</span></div>
+        <div class="breakdown-item"><span class="breakdown-label">MRs Merged</span><span class="breakdown-value">{mrs_merged_str}</span></div>
+        <div class="breakdown-item"><span class="breakdown-label">Issues Open</span><span class="breakdown-value">{issues_open_str}</span></div>
+        <div class="breakdown-item"><span class="breakdown-label">Issues Closed</span><span class="breakdown-value">{issues_closed_str}</span></div>
     </div>
-</div>
-"""
+</div>"""
     st.markdown(html, unsafe_allow_html=True)
 
 
@@ -506,6 +469,15 @@ def _init_state() -> None:
 
     if "wp_activity_cache" not in st.session_state:
         st.session_state["wp_activity_cache"] = {}
+
+    if "_wp_selected_batch" not in st.session_state:
+        st.session_state["_wp_selected_batch"] = "All Batches"
+
+    if "_wp_selected_teams" not in st.session_state:
+        st.session_state["_wp_selected_teams"] = ["All Teams"]
+
+    if "_wp_selected_members" not in st.session_state:
+        st.session_state["_wp_selected_members"] = ["All Members"]
 
 
 def _get_interns() -> list[InternCSVRow]:
@@ -628,40 +600,88 @@ def _render_date_selector() -> tuple[Any, str]:
             return start_date, view_mode
 
 
-def _render_intern_selector(interns: list[InternCSVRow]) -> Any:
-    if not interns:
-        st.info("No interns found in the database.")
-        return None
+def _render_hierarchical_selector(db_members):
+    """Render the 3-level Batch -> Team -> Member selector."""
+    batches = get_all_batches()
+    batch_names = ["All Batches"] + [b["name"] for b in batches]
 
-    options = ["All Interns"] + [f"{r['name']} (@{r['gitlab_username']})" for r in interns]
-    intern_map = {f"{r['name']} (@{r['gitlab_username']})": r for r in interns}
+    with st.expander("🎯 Filter Selection", expanded=True):
+        c1, c2, c3 = st.columns(3)
 
-    selected = st.selectbox("Select Intern", options=options, key="wp_intern_select")
-    if selected == "All Interns":
-        return "ALL"
-    return intern_map.get(selected)
+        with c1:
+            selected_batch = st.selectbox(
+                "Select Batch",
+                options=batch_names,
+                index=batch_names.index(st.session_state["_wp_selected_batch"])
+                if st.session_state["_wp_selected_batch"] in batch_names
+                else 0,
+                key="_wp_batch_sel_widget",
+                help="Filter teams by batch.",
+            )
+            if selected_batch != st.session_state["_wp_selected_batch"]:
+                st.session_state["_wp_selected_batch"] = selected_batch
+                st.session_state["_wp_selected_teams"] = ["All Teams"]
+                st.session_state["_wp_selected_members"] = ["All Members"]
+                st.rerun()
 
+        # Teams logic
+        teams_in_batch = get_teams_by_batch(selected_batch)
+        team_options = ["All Teams"] + sorted([t["name"] for t in teams_in_batch])
 
-def _render_group_member_selector() -> Any:
-    group_members = st.session_state.get("fetched_group_members", [])
-    if not group_members:
-        st.info("No group members found. Please fetch them in the Admin panel.")
-        return None
+        with c2:
+            selected_teams = st.multiselect(
+                "Select Team(s)",
+                options=team_options,
+                default=st.session_state["_wp_selected_teams"]
+                if all(t in team_options for t in st.session_state["_wp_selected_teams"])
+                else ["All Teams"],
+                key="_wp_teams_sel_widget",
+                help="Select one or more teams.",
+            )
+            if selected_teams != st.session_state["_wp_selected_teams"]:
+                st.session_state["_wp_selected_teams"] = selected_teams
+                st.session_state["_wp_selected_members"] = ["All Members"]
+                st.rerun()
 
-    options = [f"{m['name']} (@{m['username']})" for m in group_members]
-    member_map = {
-        f"{m['name']} (@{m['username']})": {
-            "gitlab_username": m["username"],
-            "name": m["name"],
-            "corpus_username": None,
-            "override_email": m.get("email"),
-            "override_username": m.get("username"),
-        }
-        for m in group_members
-    }
+        # Determine members to show
+        if "All Teams" in selected_teams:
+            filtered_members_for_sel = (
+                db_members
+                if selected_batch == "All Batches"
+                else [m for t in teams_in_batch for m in get_members_by_team(t["name"], selected_batch)]
+            )
+        else:
+            filtered_members_for_sel = [
+                m for t_name in selected_teams for m in get_members_by_team(t_name, selected_batch)
+            ]
 
-    selected = st.selectbox("Select Group Member", options=options, key="wp_group_member_select")
-    return member_map.get(selected)
+        all_potential_members = sorted({f"{m['name']} (@{m['gitlab_username']})" for m in filtered_members_for_sel})
+        member_options = ["All Members"] + all_potential_members
+
+        with c3:
+            selected_members_labels = st.multiselect(
+                "Select Individual(s)",
+                options=member_options,
+                default=st.session_state["_wp_selected_members"]
+                if all(m in member_options for m in st.session_state["_wp_selected_members"])
+                else ["All Members"],
+                key="_wp_members_sel_widget",
+                help="Select specific individuals.",
+            )
+            if selected_members_labels != st.session_state["_wp_selected_members"]:
+                st.session_state["_wp_selected_members"] = selected_members_labels
+                st.rerun()
+
+    # Final member list for analysis
+    if "All Members" in selected_members_labels:
+        return filtered_members_for_sel
+    else:
+        return [
+            m
+            for label in selected_members_labels
+            for m in filtered_members_for_sel
+            if f"{m['name']} (@{m['gitlab_username']})" == label
+        ]
 
 
 def _render_performance_grid(
@@ -801,7 +821,7 @@ def _fetch_all_activity(
         activity = WeeklyActivity(
             intern_name=selected_intern["name"],
             gitlab_username=selected_intern["gitlab_username"],
-            corpus_uid=selected_intern["corpus_username"],
+            corpus_uid=selected_intern.get("corpus_username"),
         )
         is_enrichment = False
 
@@ -833,7 +853,7 @@ def _fetch_all_activity(
             gitlab_activity = aggregate_intern_data(
                 gl_client,
                 gitlab_username=selected_intern["gitlab_username"],
-                corpus_uid=selected_intern["corpus_username"],
+                corpus_uid=selected_intern.get("corpus_username"),
                 intern_name=selected_intern["name"],
                 start_date=start_date,
                 end_date=end_date,
@@ -962,102 +982,78 @@ def render_weekly_performance_ui(gl_client) -> None:
         return
 
     if role == "intern":
-        selected_intern = interns[0] if interns else None
+        selected_interns = interns
     else:
-        if group_members:
-            lookup_mode = st.radio(
-                "Select Intern From:", options=["Roster", "Group Names"], horizontal=True, key="wp_lookup_mode"
-            )
-            if lookup_mode == "Roster":
-                selected_intern = _render_intern_selector(interns)
-            else:
-                selected_intern = _render_group_member_selector()
-        else:
-            selected_intern = _render_intern_selector(interns)
+        # Hierarchical selection for Admins/Mentors
+        selected_interns = _render_hierarchical_selector(interns)
 
-    if selected_intern == "ALL":
+    if not selected_interns:
+        st.warning("Please select at least one intern to view performance.")
+        return
+
+    # Check if we are analyzing multiple people or just one
+    is_multi = len(selected_interns) > 1 or (
+        len(selected_interns) == 1 and st.session_state.get("_wp_selected_members") == ["All Members"]
+    )
+    # ── Fetch & Render Loop ───────────────────────────────────────────────
+    # For multiple interns, show a "Fetch All" button
+    if is_multi:
         is_all_cached = all(
             (start_date.isoformat(), num_days, intern["gitlab_username"])
             in st.session_state.get("wp_activity_cache", {})
-            for intern in interns
+            for intern in selected_interns
         )
-
-        fetch_button_clicked = st.button("🚀 Fetch Team Performance", width="stretch")
+        fetch_button_clicked = st.button(f"🚀 Fetch Performance for {len(selected_interns)} Intern(s)", width="stretch")
 
         if not fetch_button_clicked and not is_all_cached:
-            st.warning("👈 Click **Fetch Team Performance** to load the results for the entire team.")
+            st.warning(
+                f"👈 Click **Fetch Performance** to load results for the {len(selected_interns)} selected interns."
+            )
             return
-
-        st.divider()
-        st.info(f"📋 Showing performance for all {len(interns)} interns.")
-
-        corpus_client = st.session_state.get("wp_corpus_client")
-
-        team_audio_data = {}
-        if corpus_client:
-            with st.spinner("Pre-fetching team audio records..."):
-                start_date_str = start_date.isoformat()
-                end_date_str = (start_date + timedelta(days=num_days - 1)).isoformat()
-                team_audio_data = fetch_team_audio_urls(corpus_client, interns, start_date_str, end_date_str)
-
-        for intern in interns:
-            st.markdown(f"### {intern['name']}")
-            st.caption(f"GitLab: @{intern['gitlab_username']} | Corpus UID: {intern['corpus_username']}")
-
-            if (start_date.isoformat(), num_days, intern["gitlab_username"]) not in st.session_state.get(
-                "wp_activity_cache", {}
-            ):
-                time.sleep(1)
-
-            intern_audio = team_audio_data.get(intern["corpus_username"], {})
-            try:
-                activity = _fetch_all_activity(
-                    gl_client,
-                    intern,
-                    start_date,
-                    num_days,
-                    corpus_client,
-                    pre_fetched_audio=intern_audio,
-                )
-                _render_performance_grid(start_date, activity, num_days=num_days, show_audio=True)
-            except Exception as e:
-                error_str = str(e)
-                if "Rate Limit" in error_str:
-                    st.error(
-                        f"🛑 **GitLab Rate Limit Reached** for {intern['name']}\n\n{error_str}\n\nPlease wait a few minutes."
-                    )
-                    # We might want to break here if it's a global rate limit
-                    if "429" in error_str:
-                        break
-                elif "Timeout context manager" in error_str:
-                    st.error(
-                        f"⚠️ **Async Context Error** for {intern['name']}\n\nThe background event loop encountered a synchronization issue. Please try clicking 'Refresh Data' in the sidebar."
-                    )
-                else:
-                    st.error(f"❌ **Error fetching data** for {intern['name']}\n\n{error_str}")
-
-            st.divider()
-
-    elif isinstance(selected_intern, dict):
-        cache_key = (start_date.isoformat(), num_days, selected_intern["gitlab_username"])
+    else:
+        # Single intern mode
+        intern = selected_interns[0]
+        cache_key = (start_date.isoformat(), num_days, intern["gitlab_username"])
         is_cached = cache_key in st.session_state.get("wp_activity_cache", {})
 
-        fetch_button_clicked = st.button(f"🚀 Fetch Performance for {selected_intern['name']}", width="stretch")
+        if not is_cached:
+            if st.button(f"🚀 Fetch Performance for {intern['name']}", width="stretch"):
+                pass  # Continue to fetch
+            else:
+                st.warning(f"👈 Click **Fetch Performance** to load results for {intern['name']}.")
+                return
 
-        if not fetch_button_clicked and not is_cached:
-            st.warning(f"👈 Click **Fetch Performance** to load the results for {selected_intern['name']}.")
-            return
+    st.divider()
+    corpus_client = st.session_state.get("wp_corpus_client")
 
-        st.divider()
-        st.markdown(f"### {selected_intern['name']}")
-        st.caption(f"GitLab: @{selected_intern['gitlab_username']} | Corpus UID: {selected_intern['corpus_username']}")
+    # Pre-fetch audio if in multi-mode and corpus is available
+    team_audio_data = {}
+    if is_multi and corpus_client:
+        with st.spinner("Pre-fetching audio records for selected group..."):
+            start_date_str = start_date.isoformat()
+            end_date_str = (start_date + timedelta(days=num_days - 1)).isoformat()
+            team_audio_data = fetch_team_audio_urls(corpus_client, selected_interns, start_date_str, end_date_str)
 
-        corpus_client = st.session_state.get("wp_corpus_client")
+    # Render each intern
+    for intern in selected_interns:
+        st.markdown(f"### {intern['name']}")
+        st.caption(
+            f"GitLab: @{intern['gitlab_username']} | Team: {intern.get('team_name', 'N/A')} | Corpus: {intern.get('corpus_username', 'N/A')}"
+        )
+
+        intern_audio = team_audio_data.get(intern.get("corpus_username"), {}) if is_multi else None
+
         try:
-            activity = _fetch_all_activity(gl_client, selected_intern, start_date, num_days, corpus_client)
+            activity = _fetch_all_activity(
+                gl_client,
+                intern,
+                start_date,
+                num_days,
+                corpus_client,
+                pre_fetched_audio=intern_audio,
+            )
             _render_performance_grid(start_date, activity, num_days=num_days, show_audio=True)
         except Exception as e:
-            if "Rate Limit" in str(e):
-                st.error(f"🛑 **GitLab Rate Limit Reached**\n\n{e}")
-            else:
-                st.error(f"Error: {e}")
+            st.error(f"❌ Error fetching data for {intern['name']}: {e}")
+
+        st.divider()

@@ -25,12 +25,67 @@ def test_render_activity_slots_strict_idle(mock_st):
     mock_st.markdown.assert_called()
 
 @patch("gitlab_compliance_checker.ui.weekly_performance.st")
-def test_render_group_member_selector(mock_st):
-    members = [{"name": "User", "username": "user"}]
-    mock_st.session_state = {"fetched_group_members": members}
-    mock_st.selectbox.return_value = "User (@user)"
-    res = weekly_performance._render_group_member_selector()
-    assert res["gitlab_username"] == "user"
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_all_batches")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_teams_by_batch")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_members_by_team")
+def test_render_hierarchical_selector(mock_members, mock_teams, mock_batches, mock_st):
+    mock_batches.return_value = [{"id": 1, "name": "Batch 1"}]
+    mock_teams.return_value = [{"id": 1, "name": "Team 1"}]
+    mock_members.return_value = [{"name": "User", "gitlab_username": "user"}]
+    mock_st.session_state = {
+        "_wp_selected_batch": "Batch 1",
+        "_wp_selected_teams": ["All Teams"],
+        "_wp_selected_members": ["All Members"],
+    }
+    mock_st.selectbox.return_value = "Batch 1"
+    mock_st.multiselect.side_effect = [["All Teams"], ["All Members"]]
+    mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+    
+    res = weekly_performance._render_hierarchical_selector([{"name": "User", "gitlab_username": "user"}])
+    assert len(res) == 1
+    assert res[0]["gitlab_username"] == "user"
+
+@patch("gitlab_compliance_checker.ui.weekly_performance.st")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_all_batches")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_teams_by_batch")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_members_by_team")
+def test_render_hierarchical_selector_no_matches(mock_members, mock_teams, mock_batches, mock_st):
+    mock_batches.return_value = [{"id": 1, "name": "Batch 1"}]
+    mock_teams.return_value = [{"id": 1, "name": "Team 1"}]
+    mock_members.return_value = []
+    mock_st.session_state = {
+        "_wp_selected_batch": "Batch 1",
+        "_wp_selected_teams": ["Team 1"],
+        "_wp_selected_members": ["Specific Member"],
+    }
+    mock_st.selectbox.return_value = "Batch 1"
+    mock_st.multiselect.side_effect = [["Team 1"], ["Specific Member"]]
+    mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+    
+    res = weekly_performance._render_hierarchical_selector([{"name": "User", "gitlab_username": "user", "team_name": "Team 1"}])
+    # Should return empty list because "Specific Member" doesn't match "User"
+    assert len(res) == 0
+
+@patch("gitlab_compliance_checker.ui.weekly_performance.st")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_all_batches")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_teams_by_batch")
+@patch("gitlab_compliance_checker.ui.weekly_performance.get_members_by_team")
+def test_render_hierarchical_selector_single_mode(mock_members, mock_teams, mock_batches, mock_st):
+    mock_batches.return_value = [{"id": 1, "name": "Batch 1"}]
+    mock_teams.return_value = [{"id": 1, "name": "Team 1"}]
+    mock_members.return_value = [{"name": "User", "gitlab_username": "user"}]
+    mock_st.session_state = {
+        "_wp_selected_batch": "Batch 1",
+        "_wp_selected_teams": ["Team 1"],
+        "_wp_selected_members": ["User (@user)"],
+    }
+    mock_st.selectbox.return_value = "Batch 1"
+    mock_st.multiselect.side_effect = [["Team 1"], ["User (@user)"]]
+    mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+    
+    res = weekly_performance._render_hierarchical_selector([{"name": "User", "gitlab_username": "user", "team_name": "Team 1"}])
+    assert len(res) == 1
+    assert res[0]["gitlab_username"] == "user"
 
 @patch("gitlab_compliance_checker.ui.weekly_performance.st")
 @patch("gitlab_compliance_checker.ui.weekly_performance._init_state")
@@ -50,4 +105,5 @@ def test_init_state_full():
         mock_st.session_state = {}
         weekly_performance._init_state()
         assert "wp_view_mode" in mock_st.session_state
-        assert "wp_interns" in mock_st.session_state
+        assert "_wp_selected_batch" in mock_st.session_state
+        assert "_wp_selected_teams" in mock_st.session_state
