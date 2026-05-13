@@ -110,7 +110,9 @@ def _fetch_mrs_by_date(gl_client, user_id: int, start_date: date, end_date: date
                         # Add state to title for clarity in UI events
                         state = mr.get("state", "opened").capitalize()
                         title = f"[{state}] {mr.get('title', '')}"
-                        events[date_str][hour].append({"type": "mr", "title": title, "url": mr.get("web_url", "")})
+                        events[date_str][hour].append(
+                            {"type": "mr", "title": title, "url": mr.get("web_url", ""), "timestamp": act_timestamp}
+                        )
 
     logger.debug(f"[GitLab] Merged MRs by date: {dict(counts)}")
     return dict(counts), dict(active_hours), dict(events), raw_mrs
@@ -147,7 +149,9 @@ def _fetch_issues_by_date(
                     # Add state to title for clarity
                     state = issue.get("state", "opened").capitalize()
                     title = f"[{state}] {issue.get('title', '')}"
-                    events[date_str][hour].append({"type": "issue", "title": title, "url": issue.get("web_url", "")})
+                    events[date_str][hour].append(
+                        {"type": "issue", "title": title, "url": issue.get("web_url", ""), "timestamp": act_timestamp}
+                    )
 
     logger.debug(f"[GitLab] Issues by date: {dict(counts)}")
     return dict(counts), dict(active_hours), dict(events), assigned
@@ -209,7 +213,12 @@ def _fetch_commits_by_date(
                     active_hours[commit_date].add(hour)
                     c_title = commit.get("message", "Commit").split("\n")[0]
                     events[commit_date][hour].append(
-                        {"type": "commit", "title": c_title, "url": commit.get("web_url", "")}
+                        {
+                            "type": "commit",
+                            "title": c_title,
+                            "url": commit.get("web_url", ""),
+                            "timestamp": commit.get("created_at") or commit.get("date"),
+                        }
                     )
                 except Exception:
                     pass
@@ -278,7 +287,9 @@ def aggregate_intern_data(
     logger.info(f"[Aggregator] Fetching timelogs for {gitlab_username} across {len(all_projs)} projects")
     timelogs = fetch_user_timelogs_from_projects(gl_client, user_id, all_projs, start_date, end_date)
     logger.info(f"[Aggregator] Timelogs fetched: {len(timelogs)}")
-    daily_times, daily_categorized, seen_iss, seen_mrs = aggregate_daily_time_categorized(timelogs, raw_issues, raw_mrs)
+    daily_times, daily_categorized, seen_iss, seen_mrs, activity_timestamps = aggregate_daily_time_categorized(
+        timelogs, raw_issues, raw_mrs
+    )
 
     # ── Strategy 2: Supplement with time_stats fallback ──
     logger.info(f"[Aggregator] Supplementing daily_times with issue/MR time_stats for {gitlab_username}")
@@ -332,6 +343,9 @@ def aggregate_intern_data(
             combined_events[hr].extend(commit_events[date_str][hr])
 
         cats = daily_categorized.get(date_str, {})
+        # Filter timestamps for this specific date
+        day_timestamps = [ts for ts in activity_timestamps if ts.startswith(date_str)]
+
         gitlab: GitLabDailyData = {
             "mrs": mr_counts.get(date_str, 0),
             "issues": issue_counts.get(date_str, 0),
@@ -342,6 +356,7 @@ def aggregate_intern_data(
             "issues_open_time": cats.get("issues_open", 0),
             "issues_closed_time": cats.get("issues_closed", 0),
             "active_hours": sorted(combined_hours),
+            "activity_timestamps": day_timestamps,
             "events_by_hour": dict(combined_events),
         }
         corpus: CorpusDailyData = {"audio_urls": []}

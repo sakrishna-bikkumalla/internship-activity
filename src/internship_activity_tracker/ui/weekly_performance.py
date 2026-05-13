@@ -420,7 +420,26 @@ def _render_activity_slots(
                 type_class = event.get("type", "").lower()
                 e_title = event.get("title", "")
                 e_url = event.get("url", "#")
-                popover_html += f'<a href="{e_url}" target="_blank" class="popover-item type-{type_class}"><span class="badge">{e_type}</span><span class="item-title">{e_title}</span></a>'
+                e_ts = event.get("timestamp", "")
+
+                # Format timestamp for better display (strip date if it's the same day)
+                display_ts = ""
+                if e_ts:
+                    try:
+                        # Extract time part HH:MM:SS
+                        if "T" in e_ts:
+                            display_ts = e_ts.split("T")[1][:8]
+                        elif " " in e_ts:
+                            display_ts = e_ts.split(" ")[1][:8]
+                        else:
+                            display_ts = e_ts[-8:]
+                        display_ts = (
+                            f'<span style="opacity: 0.7; font-size: 0.65rem; margin-left: auto;">{display_ts}</span>'
+                        )
+                    except Exception:
+                        pass
+
+                popover_html += f'<a href="{e_url}" target="_blank" class="popover-item type-{type_class}"><span class="badge">{e_type}</span><span class="item-title">{e_title}</span>{display_ts}</a>'
             popover_html += "</div>"
 
             svg_html += f"""

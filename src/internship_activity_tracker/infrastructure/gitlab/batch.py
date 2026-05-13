@@ -174,7 +174,7 @@ def process_single_user(
                     seen_t_pids.add(pid)
 
             timelogs_raw = fetch_user_timelogs_from_projects(client, user_id, timelog_projs, t_since, t_until)
-            daily_times, daily_categorized, i_formal, m_formal = aggregate_daily_time_categorized(
+            daily_times, daily_categorized, i_formal, m_formal, _ = aggregate_daily_time_categorized(
                 timelogs_raw, user_issues, user_mrs
             )
 
@@ -215,6 +215,7 @@ def process_single_user(
                             "seconds": int(total),
                             "type": "mr",
                             "state": mr.get("state"),
+                            "url": mr.get("web_url"),
                         }
                     )
             for iss in user_issues:
@@ -230,6 +231,7 @@ def process_single_user(
                             "seconds": int(total),
                             "type": "issue",
                             "state": iss.get("state"),
+                            "url": iss.get("web_url"),
                         }
                     )
             result["data"]["item_time_breakdown"] = item_time_list
@@ -424,7 +426,7 @@ async def process_single_user_async(
             timelogs_raw = await fetch_user_timelogs_from_projects_async(
                 client, user_id, timelog_projs, t_since, t_until
             )
-            daily_times, daily_categorized, i_formal, m_formal = aggregate_daily_time_categorized(
+            daily_times, daily_categorized, i_formal, m_formal, _ = aggregate_daily_time_categorized(
                 timelogs_raw, user_issues, user_mrs
             )
 
@@ -465,6 +467,7 @@ async def process_single_user_async(
                             "seconds": int(total),
                             "type": "mr",
                             "state": mr.get("state"),
+                            "url": mr.get("web_url"),
                         }
                     )
             for iss in user_issues:
@@ -480,6 +483,7 @@ async def process_single_user_async(
                             "seconds": int(total),
                             "type": "issue",
                             "state": iss.get("state"),
+                            "url": iss.get("web_url"),
                         }
                     )
             result["data"]["item_time_breakdown"] = item_time_list

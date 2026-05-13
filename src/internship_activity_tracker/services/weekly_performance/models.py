@@ -6,6 +6,7 @@ class EventDetail(TypedDict):
     type: str
     title: str
     url: str
+    timestamp: NotRequired[str]
 
 
 class GitLabDailyData(TypedDict):
@@ -18,6 +19,7 @@ class GitLabDailyData(TypedDict):
     issues_open_time: int
     issues_closed_time: int
     active_hours: list[int]
+    activity_timestamps: NotRequired[list[str]]
     events_by_hour: dict[int, list[EventDetail]]
 
 

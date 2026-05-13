@@ -1559,16 +1559,32 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                     if item_breakdown:
                         st.divider()
                         st.markdown("#### 🕒 Per-Item Breakdown")
-                        # Sort by time spent (seconds) descending
-                        sorted_items = sorted(item_breakdown, key=lambda x: x.get("seconds", 0), reverse=True)
-                        for item in sorted_items:
-                            col_a, col_b = st.columns([0.3, 0.7])
-                            with col_a:
-                                st.write(f"**{item['id']}**")
-                            with col_b:
-                                st.write(f"{format_time_spent(item['seconds'])} ({item['state']})")
-                            st.caption(f"{item['title']}")
-                            st.divider()
+
+                        # Define categories
+                        categories = [
+                            ("MRs Open", "mr", "opened"),
+                            ("MRs Merged", "mr", "merged"),
+                            ("MRs Closed", "mr", "closed"),
+                            ("Issues Open", "issue", "opened"),
+                            ("Issues Closed", "issue", "closed"),
+                        ]
+
+                        for label, item_type, state in categories:
+                            cat_items = [
+                                i for i in item_breakdown if i.get("type") == item_type and i.get("state") == state
+                            ]
+                            if cat_items:
+                                st.markdown(f"**{label}**")
+                                # Sort by time spent (seconds) descending
+                                sorted_items = sorted(cat_items, key=lambda x: x.get("seconds", 0), reverse=True)
+                                for item in sorted_items:
+                                    col_a, col_b = st.columns([0.3, 0.7])
+                                    with col_a:
+                                        st.markdown(f"[**{item['id']}**]({item.get('url', '#')})")
+                                    with col_b:
+                                        st.write(f"{format_time_spent(item['seconds'])}")
+                                    st.caption(f"{item['title']}")
+                                st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 
             if joining_date:
                 idx_c6.metric("Attendance", f"{attendance_pct:.1f}%")

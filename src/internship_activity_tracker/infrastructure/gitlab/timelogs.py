@@ -274,16 +274,17 @@ def aggregate_daily_time_categorized(
     timelogs: list[dict[str, Any]],
     issues: list[dict[str, Any]],
     mrs: list[dict[str, Any]],
-) -> tuple[dict[str, int], dict[str, dict[str, int]], dict[int, int], dict[int, int]]:
+) -> tuple[dict[str, int], dict[str, dict[str, int]], dict[int, int], dict[int, int], list[str]]:
     """Aggregate timelogs into daily totals and categories.
 
     Returns:
-        (total_daily, categorized_daily, issue_formal_totals, mr_formal_totals)
+        (total_daily, categorized_daily, issue_formal_totals, mr_formal_totals, activity_timestamps)
     """
     daily_totals: dict[str, int] = defaultdict(int)
     categorized: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     issue_formal_totals: dict[int, int] = defaultdict(int)
     mr_formal_totals: dict[int, int] = defaultdict(int)
+    activity_timestamps: list[str] = []
 
     # Build lookup for state by ID or IID
     # Since timelogs from global endpoint might only have global IDs, we'll try to match both
@@ -309,10 +310,14 @@ def aggregate_daily_time_categorized(
             mr_iid_states[(pid, iid)] = state
 
     for log in timelogs:
-        log_date = log.get("spent_at") or log.get("date", "")
-        if not log_date:
+        spent_at = log.get("spent_at") or log.get("date", "")
+        if not spent_at:
             continue
-        log_date = str(log_date)[:10]
+
+        # Keep track of the full timestamp for exact activity tracking
+        activity_timestamps.append(str(spent_at))
+
+        log_date = str(spent_at)[:10]
 
         time_spent = log.get("time_spent", 0)
         if not isinstance(time_spent, (int, float)):
@@ -358,6 +363,7 @@ def aggregate_daily_time_categorized(
         {d: dict(c) for d, c in categorized.items()},
         dict(issue_formal_totals),
         dict(mr_formal_totals),
+        sorted(set(activity_timestamps)),
     )
 
 
@@ -365,5 +371,5 @@ def aggregate_daily_time(
     timelogs: list[dict[str, Any]],
 ) -> dict[str, int]:
     """Backward compatible wrapper for aggregate_daily_time_categorized."""
-    totals, _, _, _ = aggregate_daily_time_categorized(timelogs, [], [])
+    totals, _, _, _, _ = aggregate_daily_time_categorized(timelogs, [], [])
     return totals
