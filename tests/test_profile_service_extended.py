@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.services.profile import profile_service
+from internship_activity_tracker.services.profile import profile_service
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def test_get_user_profile(mock_gl):
     assert res == {"id": 2}
 
 def test_get_user_counts(mock_gl):
-    with patch("gitlab_compliance_checker.services.profile.profile_service._get_total_count_from_api", return_value=5):
+    with patch("internship_activity_tracker.services.profile.profile_service._get_total_count_from_api", return_value=5):
         assert profile_service.get_user_projects_count(mock_gl, 123) == 5
         assert profile_service.get_user_groups_count(mock_gl, 123) == 5
         assert profile_service.get_user_open_mrs_count(mock_gl, 123) == 5
@@ -69,7 +69,7 @@ def test_get_user_issues_details(mock_gl):
         {"state": "opened", "created_at": "2024-01-01T10:00:00Z"},
         {"state": "closed", "created_at": "2024-01-01T14:00:00Z"}
     ]
-    with patch("gitlab_compliance_checker.services.profile.profile_service._fetch_user_related_issues_by_state", return_value=issues):
+    with patch("internship_activity_tracker.services.profile.profile_service._fetch_user_related_issues_by_state", return_value=issues):
         stats = profile_service.get_user_issues_details(mock_gl, 123)
         assert stats["total"] == 2
         assert stats["open"] == 1

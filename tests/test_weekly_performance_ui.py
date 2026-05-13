@@ -1,7 +1,7 @@
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-from gitlab_compliance_checker.ui import weekly_performance
+from internship_activity_tracker.ui import weekly_performance
 
 
 def test_fetch_team_audio_urls():
@@ -21,8 +21,8 @@ def test_fetch_team_audio_urls():
 
 @patch("streamlit.session_state", {"wp_activity_cache": {}})
 @patch("streamlit.spinner")
-@patch("gitlab_compliance_checker.ui.weekly_performance.fetch_team_audio_urls")
-@patch("gitlab_compliance_checker.ui.weekly_performance.aggregate_intern_data")
+@patch("internship_activity_tracker.ui.weekly_performance.fetch_team_audio_urls")
+@patch("internship_activity_tracker.ui.weekly_performance.aggregate_intern_data")
 def test_fetch_all_activity_new(mock_agg, mock_fetch_audio, mock_spinner):
     mock_gl = MagicMock()
     mock_corpus = MagicMock()
@@ -39,7 +39,7 @@ def test_fetch_all_activity_new(mock_agg, mock_fetch_audio, mock_spinner):
 
     # We must patch session_state in the module where it's used
     with patch(
-        "gitlab_compliance_checker.ui.weekly_performance.st.session_state", {"wp_activity_cache": {}}
+        "internship_activity_tracker.ui.weekly_performance.st.session_state", {"wp_activity_cache": {}}
     ) as mock_state:
         # Pass 7 for num_days and mock_corpus for corpus_client
         activity = weekly_performance._fetch_all_activity(mock_gl, intern, start, 7, mock_corpus)
@@ -50,7 +50,7 @@ def test_fetch_all_activity_new(mock_agg, mock_fetch_audio, mock_spinner):
 
 
 def test_parse_intern_csv_integration():
-    from gitlab_compliance_checker.services.weekly_performance.models import parse_intern_csv
+    from internship_activity_tracker.services.weekly_performance.models import parse_intern_csv
 
     content = b"Team Name,Full Name,GitLab Username,Corpus UID\nBackend,John Doe,jdo,juid"
     rows = parse_intern_csv(content)

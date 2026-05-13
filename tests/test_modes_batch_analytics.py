@@ -1,10 +1,8 @@
-import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-import streamlit as st
 
-from gitlab_compliance_checker.ui import batch as batch_analytics
+from internship_activity_tracker.ui import batch as batch_analytics
 
 
 @pytest.fixture
@@ -29,7 +27,7 @@ class DummyCM:
 
 @pytest.fixture
 def mock_streamlit():
-    with patch("gitlab_compliance_checker.ui.batch.st") as mock_st:
+    with patch("internship_activity_tracker.ui.batch.st") as mock_st:
         mock_st.session_state = {
             "_ba_selected_batch": "All Batches",
             "_ba_selected_teams": ["All Teams"],
@@ -64,39 +62,39 @@ def mock_streamlit():
 class TestRenderBatchAnalyticsUI:
     def test_render_success(self, mock_client, mock_streamlit):
         sample_results = [{"username": "user1", "status": "Success", "data": {}}]
-        with patch("gitlab_compliance_checker.ui.batch.get_all_members_with_teams", return_value=[{"name": "User 1", "gitlab_username": "user1"}]), \
-             patch("gitlab_compliance_checker.ui.batch.get_all_batches", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.get_teams_by_batch", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.get_members_by_team", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users", return_value=sample_results):
+        with patch("internship_activity_tracker.ui.batch.get_all_members_with_teams", return_value=[{"name": "User 1", "gitlab_username": "user1"}]), \
+             patch("internship_activity_tracker.ui.batch.get_all_batches", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.get_teams_by_batch", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.get_members_by_team", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.cached_process_batch_users", return_value=sample_results):
             
             batch_analytics.render_batch_analytics_ui(mock_client)
             mock_streamlit.success.assert_called()
 
     def test_no_members_in_db(self, mock_client, mock_streamlit):
-        with patch("gitlab_compliance_checker.ui.batch.get_all_members_with_teams", return_value=[]):
+        with patch("internship_activity_tracker.ui.batch.get_all_members_with_teams", return_value=[]):
             batch_analytics.render_batch_analytics_ui(mock_client)
             mock_streamlit.warning.assert_called()
 
     def test_repo_filter(self, mock_client, mock_streamlit):
         sample_results = [{"username": "user1", "status": "Success", "data": {}}]
-        with patch("gitlab_compliance_checker.ui.batch.get_all_members_with_teams", return_value=[{"name": "User 1", "gitlab_username": "user1"}]), \
-             patch("gitlab_compliance_checker.ui.batch.get_all_batches", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.get_teams_by_batch", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.get_members_by_team", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.batch.resolve_project_paths", return_value=([123], [])), \
-             patch("gitlab_compliance_checker.ui.batch.cached_process_batch_users", return_value=sample_results):
+        with patch("internship_activity_tracker.ui.batch.get_all_members_with_teams", return_value=[{"name": "User 1", "gitlab_username": "user1"}]), \
+             patch("internship_activity_tracker.ui.batch.get_all_batches", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.get_teams_by_batch", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.get_members_by_team", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.batch.resolve_project_paths", return_value=([123], [])), \
+             patch("internship_activity_tracker.ui.batch.cached_process_batch_users", return_value=sample_results):
             
             mock_streamlit.text_area.return_value = "group/repo"
             batch_analytics.render_batch_analytics_ui(mock_client)
             mock_streamlit.info.assert_called()
 
     def test_repo_resolve_fail(self, mock_client, mock_streamlit):
-        with patch("gitlab_compliance_checker.ui.batch.get_all_members_with_teams", return_value=[{"name": "User 1", "gitlab_username": "user1"}]), \
-             patch("gitlab_compliance_checker.ui.batch.get_all_batches", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.get_teams_by_batch", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.get_members_by_team", return_value=[]), \
-             patch("gitlab_compliance_checker.ui.batch.batch.resolve_project_paths", return_value=([], ["bad/repo"])):
+        with patch("internship_activity_tracker.ui.batch.get_all_members_with_teams", return_value=[{"name": "User 1", "gitlab_username": "user1"}]), \
+             patch("internship_activity_tracker.ui.batch.get_all_batches", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.get_teams_by_batch", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.get_members_by_team", return_value=[]), \
+             patch("internship_activity_tracker.ui.batch.batch.resolve_project_paths", return_value=([], ["bad/repo"])):
             
             mock_streamlit.text_area.return_value = "bad/repo"
             batch_analytics.render_batch_analytics_ui(mock_client)
@@ -104,7 +102,7 @@ class TestRenderBatchAnalyticsUI:
 
 
 def test_init_ba_state():
-    with patch("gitlab_compliance_checker.ui.batch.st") as mock_st:
+    with patch("internship_activity_tracker.ui.batch.st") as mock_st:
         mock_st.session_state = {}
         batch_analytics._init_ba_state()
         assert "_ba_selected_batch" in mock_st.session_state

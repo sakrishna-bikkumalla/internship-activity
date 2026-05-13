@@ -28,10 +28,10 @@ import dateutil.parser
 import pandas as pd
 import streamlit as st
 
-from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
-from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
-from gitlab_compliance_checker.infrastructure.gitlab.timelogs import format_time_spent
-from gitlab_compliance_checker.services.roster_service import (
+from internship_activity_tracker.infrastructure.corpus.client import CorpusClient
+from internship_activity_tracker.infrastructure.gitlab.batch import process_batch_users
+from internship_activity_tracker.infrastructure.gitlab.timelogs import format_time_spent
+from internship_activity_tracker.services.roster_service import (
     get_all_batches,
     get_all_teams_with_members,
     get_members_by_team,

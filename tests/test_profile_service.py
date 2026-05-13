@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gitlab_compliance_checker.services.profile.profile_service import (
+from internship_activity_tracker.services.profile.profile_service import (
     _extract_username_from_input,
     _fetch_user_related_issues_by_state,
     _get_issue_assignee_ids,

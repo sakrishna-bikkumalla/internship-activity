@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.services.batch import client
+from internship_activity_tracker.services.batch import client
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def test_decode():
     assert client._decode(b'invalid') == []
     assert client._decode(None) == []
 
-@patch("gitlab_compliance_checker.services.batch.client.get_global_loop")
+@patch("internship_activity_tracker.services.batch.client.get_global_loop")
 @patch("glabflow.Client")
 def test_gitlab_client_init(mock_gl_cls, mock_get_loop, mock_loop):
     mock_get_loop.return_value = mock_loop
@@ -30,7 +30,7 @@ def test_gitlab_client_init(mock_gl_cls, mock_get_loop, mock_loop):
     assert gc.base_url == "http://gitlab.com"
     assert gc.users is not None
 
-@patch("gitlab_compliance_checker.services.batch.client.get_global_loop")
+@patch("internship_activity_tracker.services.batch.client.get_global_loop")
 def test_gitlab_users_api_normalize(mock_get_loop, mock_loop):
     mock_get_loop.return_value = mock_loop
     ui = client.GitLabUsersAPI(MagicMock())
@@ -40,7 +40,7 @@ def test_gitlab_users_api_normalize(mock_get_loop, mock_loop):
     assert norm["email"] == "E"
     assert ui._normalize_user(None) is None
 
-@patch("gitlab_compliance_checker.services.batch.client.run_on_loop")
+@patch("internship_activity_tracker.services.batch.client.run_on_loop")
 def test_get_user_projects(mock_run_sync):
     mc = MagicMock()
     ui = client.GitLabUsersAPI(mc)
@@ -57,7 +57,7 @@ def test_get_user_projects(mock_run_sync):
     ids = {p["id"] for p in projects}
     assert ids == {1, 2}
 
-@patch("gitlab_compliance_checker.services.batch.client.run_on_loop")
+@patch("internship_activity_tracker.services.batch.client.run_on_loop")
 def test_get_user_counts_errors(mock_run_sync):
     mc = MagicMock()
     ui = client.GitLabUsersAPI(mc)

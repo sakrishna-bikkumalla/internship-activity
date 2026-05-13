@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.services.batch.client import GitLabClient, GitLabUsersAPI
+from internship_activity_tracker.services.batch.client import GitLabClient, GitLabUsersAPI
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ async def test_async_request_post_passes_payload_fields(mock_client):
 
 
 def test_users_api_get_by_username(mock_client):
-    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
+    with patch("internship_activity_tracker.services.batch.client.GitLabClient._get") as mock_get:
         mock_get.return_value = [{"id": 1, "username": "user1", "name": "User One"}]
         res = mock_client.users.get_by_username("user1")
         assert res["id"] == 1
@@ -43,14 +43,14 @@ def test_users_api_get_by_username(mock_client):
 
 
 def test_users_api_get_by_userid(mock_client):
-    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get") as mock_get:
+    with patch("internship_activity_tracker.services.batch.client.GitLabClient._get") as mock_get:
         mock_get.return_value = {"id": 1, "username": "user1"}
         res = mock_client.users.get_by_userid(1)
         assert res["id"] == 1
 
 
 def test_users_api_get_user_projects(mock_client):
-    with patch("gitlab_compliance_checker.services.batch.client.GitLabClient._get_paginated") as mock_paginated:
+    with patch("internship_activity_tracker.services.batch.client.GitLabClient._get_paginated") as mock_paginated:
         mock_paginated.side_effect = [
             [{"id": 1, "name": "Owned"}],
             [{"id": 1, "name": "Owned"}, {"id": 2, "name": "Member"}],
@@ -83,7 +83,7 @@ def test_users_api_get_user_commits(mock_client):
         mock_projs.return_value = [{"id": 101, "name": "Proj1", "namespace": {"full_path": "user1"}}]
 
         with patch(
-            "gitlab_compliance_checker.services.batch.client.GitLabClient._async_get_paginated"
+            "internship_activity_tracker.services.batch.client.GitLabClient._async_get_paginated"
         ) as mock_paginated:
             # Case 1: author query matches
 
@@ -114,7 +114,7 @@ def test_name_email_match_edge_cases(mock_client):
     user_info = {"id": 1, "username": "user.one", "name": "User One", "email": "user@gl.com"}
     with patch.object(GitLabUsersAPI, "get_user_projects", return_value=[{"id": 101}]):
         with patch(
-            "gitlab_compliance_checker.services.batch.client.GitLabClient._async_get_paginated"
+            "internship_activity_tracker.services.batch.client.GitLabClient._async_get_paginated"
         ) as mock_paginated:
             # Test name match with normalized names (dots to spaces)
 

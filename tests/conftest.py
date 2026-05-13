@@ -192,7 +192,7 @@ def patch_streamlit_module(monkeypatch):
     fake_st.messages = {"warning": [], "error": [], "info": []}
     monkeypatch.setitem(sys.modules, "streamlit", fake_st)
 
-    from gitlab_compliance_checker.infrastructure.gitlab import merge_requests
+    from internship_activity_tracker.infrastructure.gitlab import merge_requests
 
     def global_mock_compliance(*a, **k):
         return {

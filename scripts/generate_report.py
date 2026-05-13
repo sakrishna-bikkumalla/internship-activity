@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate comprehensive PDF report for GitLab Compliance Checker
+Generate comprehensive PDF report for Internship Activity Tracker
 """
 
 from datetime import datetime
@@ -13,7 +13,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 # Create PDF
-pdf_file = "GitLab_Compliance_Checker_Report.pdf"
+pdf_file = "Internship_Activity_Tracker_Report.pdf"
 doc = SimpleDocTemplate(pdf_file, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
 
 # Container for PDF elements
@@ -62,7 +62,7 @@ body_style = ParagraphStyle(
 
 # Title Page
 elements.append(Spacer(1, 0.5 * inch))
-elements.append(Paragraph("GitLab Compliance Checker", title_style))
+elements.append(Paragraph("Internship Activity Tracker", title_style))
 elements.append(Spacer(1, 0.2 * inch))
 elements.append(Paragraph("Technical Documentation Report", styles["Heading2"]))
 elements.append(Spacer(1, 0.1 * inch))
@@ -73,9 +73,9 @@ elements.append(Spacer(1, 0.5 * inch))
 elements.append(Paragraph("Executive Summary", heading_style))
 elements.append(
     Paragraph(
-        "This report provides a comprehensive technical analysis of the GitLab Compliance Checker application, "
+        "This report provides a comprehensive technical analysis of the Internship Activity Tracker application, "
         "including all APIs used, functions implemented, and detailed explanations of how the system works. "
-        "The application automatically analyzes GitLab projects for compliance with best practices and standards.",
+        "The application automatically tracks internship activities and evaluates project performance.",
         body_style,
     )
 )
@@ -115,9 +115,9 @@ elements.append(Paragraph("1. Overview & Architecture", heading_style))
 elements.append(Paragraph("1.1 Project Overview", subheading_style))
 elements.append(
     Paragraph(
-        "GitLab Compliance Checker is a Streamlit-based web application that automates the verification of GitLab "
-        "projects against predefined compliance standards. It detects programming languages, analyzes README quality, "
-        "checks for required files, and provides actionable recommendations.",
+        "Internship Activity Tracker is a Streamlit-based web application that automates the verification of GitLab "
+        "projects against internship standards. It tracks intern progress, analyzes project quality, "
+        "and provides actionable performance insights.",
         body_style,
     )
 )
@@ -800,7 +800,7 @@ elements.append(PageBreak())
 elements.append(Paragraph("9. Conclusion", heading_style))
 elements.append(
     Paragraph(
-        "The GitLab Compliance Checker is a comprehensive tool for automating project compliance verification. "
+        "The Internship Activity Tracker is a comprehensive tool for automating project performance and activity tracking. "
         "It leverages multiple APIs and libraries to provide a seamless user experience with actionable insights. "
         "The application successfully detects multiple programming languages, scores README quality objectively, "
         "and provides visual feedback through progress bars and color coding.<br/><br/>"
@@ -828,7 +828,7 @@ elements.append(Spacer(1, 0.3 * inch))
 elements.append(
     Paragraph(
         f"<b>Document Generated:</b> {datetime.now().strftime('%B %d, %Y at %H:%M:%S')}<br/>"
-        "<b>Application:</b> GitLab Compliance Checker v1.0.0<br/>"
+        "<b>Application:</b> Internship Activity Tracker v1.0.0<br/>"
         "<b>Framework:</b> Streamlit + Python 3.11+<br/>",
         styles["Normal"],
     )
@@ -837,4 +837,4 @@ elements.append(
 # Build PDF
 doc.build(elements)
 print(f"✅ PDF Report generated successfully: {pdf_file}")
-print(f"📄 File location: /home/kuruva-laxmi/Documents/gitlab-compliance-checker/{pdf_file}")
+print(f"📄 File location: ./ {pdf_file}")

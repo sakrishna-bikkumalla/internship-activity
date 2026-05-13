@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from gitlab_compliance_checker.infrastructure.gitlab import (
+from internship_activity_tracker.infrastructure.gitlab import (
     api_helper,
     files_reader,
     parse_uvlock,
@@ -26,8 +26,8 @@ def test_get_project_branches():
     assert api_helper.get_project_branches(mock_gl, 123) == []
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.glabflow.Client")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper._run_sync")
+@patch("internship_activity_tracker.infrastructure.gitlab.api_helper.glabflow.Client")
+@patch("internship_activity_tracker.infrastructure.gitlab.api_helper._run_sync")
 def test_get_user_from_token(mock_run_sync, mock_client):
     import asyncio
 
@@ -51,8 +51,8 @@ def test_get_user_from_token(mock_run_sync, mock_client):
     assert result.get("username") == "test_user"
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper.glabflow.Client")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.api_helper._run_sync")
+@patch("internship_activity_tracker.infrastructure.gitlab.api_helper.glabflow.Client")
+@patch("internship_activity_tracker.infrastructure.gitlab.api_helper._run_sync")
 def test_get_user_groups_by_token(mock_run_sync, mock_client):
     import asyncio
 

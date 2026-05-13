@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from gitlab_compliance_checker.services.weekly_performance.models import (
+from internship_activity_tracker.services.weekly_performance.models import (
     InternCSVRow,
     parse_intern_csv,
 )

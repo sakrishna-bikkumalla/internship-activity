@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import streamlit as st
 
-from gitlab_compliance_checker.ui import weekly_performance
+from internship_activity_tracker.ui import weekly_performance
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def test_render_date_selector_single(mock_date):
         assert res == date(2024, 1, 1)
 
 
-@patch("gitlab_compliance_checker.ui.weekly_performance.st")
+@patch("internship_activity_tracker.ui.weekly_performance.st")
 def test_render_performance_grid_empty(mock_st):
     mock_st.columns.return_value = [MagicMock(), MagicMock()]
     mock_st.container.return_value.__enter__.return_value = MagicMock()

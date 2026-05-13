@@ -18,8 +18,8 @@ class FakeClient:
 
 @pytest.fixture(autouse=True)
 def reimport_main(monkeypatch):
-    if "gitlab_compliance_checker.ui.main" in sys.modules:
-        del sys.modules["gitlab_compliance_checker.ui.main"]
+    if "internship_activity_tracker.ui.main" in sys.modules:
+        del sys.modules["internship_activity_tracker.ui.main"]
 
     fake_st = make_fake_st(["https://gitlab.com", "token"], "User Profile Overview")
     fake_st.session_state["user_info"] = {
@@ -37,11 +37,11 @@ def reimport_main(monkeypatch):
     sys.modules["dotenv"] = type("Dotenv", (), {"load_dotenv": lambda: None})
 
     # Mock init_db to avoid real DB setup
-    with patch("gitlab_compliance_checker.ui.main.init_db"):
-        from gitlab_compliance_checker.ui import main
+    with patch("internship_activity_tracker.ui.main.init_db"):
+        from internship_activity_tracker.ui import main
         yield main
 
-    for m in ["gitlab_compliance_checker.ui.main", "streamlit", "dotenv"]:
+    for m in ["internship_activity_tracker.ui.main", "streamlit", "dotenv"]:
         if m in sys.modules:
             del sys.modules[m]
 
@@ -87,7 +87,7 @@ def test_main_mode_user_profile_not_found(monkeypatch, reimport_main):
     monkeypatch.setattr(main_mod, "get_gitlab_client", lambda *a, **k: FakeClient(*a))
 
     # Mock DB call
-    monkeypatch.setattr("gitlab_compliance_checker.ui.main.get_all_members_with_teams", lambda: [])
+    monkeypatch.setattr("internship_activity_tracker.ui.main.get_all_members_with_teams", lambda: [])
     # Mock radio for lookup mode
     main_mod.st.radio = MagicMock(return_value="Manual Username Input")
     # Mock text_input for username
@@ -147,7 +147,7 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_main):
     main_mod.st = fake_st
     
     monkeypatch.setattr(main_mod, "get_gitlab_client", lambda *a, **k: FakeClient(*a))
-    monkeypatch.setattr("gitlab_compliance_checker.ui.main.get_all_members_with_teams", lambda: [])
+    monkeypatch.setattr("internship_activity_tracker.ui.main.get_all_members_with_teams", lambda: [])
     main_mod.st.radio = MagicMock(return_value="Manual Username Input")
     main_mod.st.text_input = MagicMock(return_value="ghost")
     main_mod.st.button = MagicMock(return_value=True)

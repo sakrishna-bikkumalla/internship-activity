@@ -1,7 +1,7 @@
 [project]
-name = "gitlab-compliance-checker"
+name = "internship-activity-tracker"
 version = "0.1.0"
-description = "A Python tool to check GitLab project compliance with predefined rules."
+description = "A Python tool to track internship activities and performance via GitLab."
 authors = [
   { name = "Lokesh Manchala", email = "manchalalokesh2003@gmail.com" }
 ]
@@ -39,7 +39,7 @@ dev = [
 ]
 
 [tool.hatch.build]
-packages = ["src/gitlab_compliance_checker"]
+packages = ["src/internship_activity_tracker"]
 include = [
   "README.md",
   "LICENSE",

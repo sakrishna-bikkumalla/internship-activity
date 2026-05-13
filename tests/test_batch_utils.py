@@ -4,7 +4,7 @@ import pytest
 
 # We remove 'from gitlab import GitlabGetError' as it is no longer available.
 # We will use a generic Exception mock in tests that check for errors.
-from gitlab_compliance_checker.services.batch import file_reader, retry_helper
+from internship_activity_tracker.services.batch import file_reader, retry_helper
 
 # --- Tests for file_reader.py ---
 

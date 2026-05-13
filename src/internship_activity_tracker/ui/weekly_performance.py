@@ -4,20 +4,20 @@ from typing import Any, cast
 
 import streamlit as st
 
-from gitlab_compliance_checker.infrastructure.corpus.client import CorpusClient
-from gitlab_compliance_checker.services.roster_service import (
+from internship_activity_tracker.infrastructure.corpus.client import CorpusClient
+from internship_activity_tracker.services.roster_service import (
     get_all_batches,
     get_all_members_with_teams,
     get_member_by_username,
     get_members_by_team,
     get_teams_by_batch,
 )
-from gitlab_compliance_checker.services.weekly_performance.aggregator import (
+from internship_activity_tracker.services.weekly_performance.aggregator import (
     _get_ist_hour,
     _parse_ist_date,
     aggregate_intern_data,
 )
-from gitlab_compliance_checker.services.weekly_performance.models import (
+from internship_activity_tracker.services.weekly_performance.models import (
     DailyData,
     InternCSVRow,
     WeeklyActivity,

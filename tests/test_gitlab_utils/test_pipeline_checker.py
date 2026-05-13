@@ -1,4 +1,4 @@
-from gitlab_compliance_checker.infrastructure.gitlab.pipeline_checker import check_ci_pipeline
+from internship_activity_tracker.infrastructure.gitlab.pipeline_checker import check_ci_pipeline
 
 
 def test_invalid_ci_pipeline():

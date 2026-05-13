@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users_async
+from internship_activity_tracker.infrastructure.gitlab.batch import process_batch_users_async
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,7 +49,7 @@ async def test_process_batch_users_async_returns_all_users():
     mock_client = MagicMock()
 
     with patch(
-        "gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user",
+        "internship_activity_tracker.infrastructure.gitlab.batch.process_single_user",
         side_effect=lambda client, u, *args, **kwargs: _make_mock_result(u),
     ):
         results = await process_batch_users_async(mock_client, usernames)
@@ -69,7 +69,7 @@ async def test_process_batch_users_async_concurrent():
     mock_client = MagicMock()
 
     with patch(
-        "gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user",
+        "internship_activity_tracker.infrastructure.gitlab.batch.process_single_user",
         side_effect=lambda client, u, *args, **kwargs: _make_mock_result(u),
     ):
         results = await process_batch_users_async(mock_client, usernames)
@@ -89,7 +89,7 @@ async def test_process_batch_users_async_handles_crash():
         return _make_mock_result(u)
 
     with patch(
-        "gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user_async", side_effect=side_effect
+        "internship_activity_tracker.infrastructure.gitlab.batch.process_single_user_async", side_effect=side_effect
     ):
         results = await process_batch_users_async(mock_client, usernames)
 
@@ -116,7 +116,7 @@ async def test_process_batch_users_async_skips_blank_usernames():
     mock_client = MagicMock()
 
     with patch(
-        "gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user",
+        "internship_activity_tracker.infrastructure.gitlab.batch.process_single_user",
         side_effect=lambda client, u, *args, **kwargs: _make_mock_result(u),
     ):
         results = await process_batch_users_async(mock_client, usernames)
@@ -131,11 +131,11 @@ async def test_process_batch_users_async_skips_blank_usernames():
 
 def test_process_batch_users_sync_wrapper():
     """Sync wrapper should call asyncio.run and return results."""
-    from gitlab_compliance_checker.infrastructure.gitlab.batch import process_batch_users
+    from internship_activity_tracker.infrastructure.gitlab.batch import process_batch_users
 
     mock_client = MagicMock()
     with patch(
-        "gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user",
+        "internship_activity_tracker.infrastructure.gitlab.batch.process_single_user",
         side_effect=lambda client, u, *args, **kwargs: _make_mock_result(u),
     ):
         results = process_batch_users(mock_client, ["user_x", "user_y"])

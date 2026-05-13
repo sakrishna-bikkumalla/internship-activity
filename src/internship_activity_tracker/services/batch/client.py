@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Union
 import glabflow
 import msgspec
 
-from gitlab_compliance_checker.infrastructure.gitlab.bridge import get_global_loop, run_on_loop
+from internship_activity_tracker.infrastructure.gitlab.bridge import get_global_loop, run_on_loop
 
 _JSON_DECODER = msgspec.json.Decoder()
 

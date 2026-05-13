@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.services.batch import client
+from internship_activity_tracker.services.batch import client
 
 
 @pytest.fixture

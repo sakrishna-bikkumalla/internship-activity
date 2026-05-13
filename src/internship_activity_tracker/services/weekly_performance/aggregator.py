@@ -4,9 +4,9 @@ from datetime import date, timedelta, timezone
 
 import dateutil.parser
 
-from gitlab_compliance_checker.infrastructure.gitlab import commits, users
-from gitlab_compliance_checker.infrastructure.gitlab import projects as gitlab_projects
-from gitlab_compliance_checker.services.weekly_performance.models import (
+from internship_activity_tracker.infrastructure.gitlab import commits, users
+from internship_activity_tracker.infrastructure.gitlab import projects as gitlab_projects
+from internship_activity_tracker.services.weekly_performance.models import (
     CorpusDailyData,
     DailyData,
     EventDetail,
@@ -237,7 +237,7 @@ def aggregate_intern_data(
         logger.warning(f"[Aggregator] Could not find GitLab user_id for {gitlab_username}")
         return WeeklyActivity(intern_name=intern_name, gitlab_username=gitlab_username, corpus_uid=corpus_uid)
 
-    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
+    from internship_activity_tracker.infrastructure.gitlab.timelogs import (
         aggregate_daily_time_categorized,
         build_daily_time_from_time_stats,
         fetch_user_timelogs_from_projects,

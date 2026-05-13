@@ -1,8 +1,8 @@
-# GitLab Compliance Checker
+# Internship Activity Tracker
 
-A Streamlit-based tool for checking GitLab repository compliance and generating user analytics.
+A Streamlit-based tool for tracking internship activities and performance via GitLab.
 
-This project helps teams and mentors quickly evaluate whether repositories follow expected standards (documentation, license, IDE config, templates, metadata), and also provides user-wise activity insights (projects, commits, groups, issues, merge requests).
+This project helps mentors and teams monitor intern progress, evaluate repository standards, and provide user-wise activity insights (commits, merge requests, issues, and time spent).
 
 ## Demo
 
@@ -27,7 +27,7 @@ This project helps teams and mentors quickly evaluate whether repositories follo
 ## Project Structure
 
 ```text
-gitlab-compliance-checker/
+internship-activity-tracker/
 ├── app.py
 ├── modes/
 │   ├── user_profile.py
@@ -53,8 +53,8 @@ gitlab-compliance-checker/
 1. Clone the repository:
 
    ```bash
-   git clone https://code.swecha.org/tools/gitlab-compliance-checker.git
-   cd gitlab-compliance-checker
+    git clone https://code.swecha.org/tools/internship-activity-tracker.git
+    cd internship-activity-tracker
    ```
 
 2. Install dependencies (using `uv`):
@@ -135,7 +135,7 @@ Open in browser: `http://localhost:8501`
 Build image:
 
 ```bash
-docker build -t gitlab-compliance-checker .
+docker build -t internship-activity-tracker .
 ```
 
 Run container:
@@ -144,7 +144,7 @@ Run container:
 docker run --rm -p 8501:8501 \
   -e GITLAB_URL="https://gitlab.com" \
   -e GITLAB_TOKEN="your_personal_access_token" \
-  gitlab-compliance-checker
+  internship-activity-tracker
 ```
 
 ## Testing

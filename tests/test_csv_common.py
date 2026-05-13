@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from gitlab_compliance_checker.ui import csv_common
+from internship_activity_tracker.ui import csv_common
 
 
 def test_map_row_to_member():
@@ -40,15 +40,15 @@ class DummyState(dict):
     def __getattr__(self, key): return self.get(key)
     def __setattr__(self, key, value): self[key] = value
 
-@patch("gitlab_compliance_checker.ui.csv_common.st")
+@patch("internship_activity_tracker.ui.csv_common.st")
 def test_render_csv_upload_section_no_file(mock_st):
     mock_st.file_uploader.return_value = None
     rows = csv_common.render_csv_upload_section("test_key")
     assert rows == []
     mock_st.file_uploader.assert_called_once()
 
-@patch("gitlab_compliance_checker.ui.csv_common.st")
-@patch("gitlab_compliance_checker.ui.csv_common.parse_intern_csv")
+@patch("internship_activity_tracker.ui.csv_common.st")
+@patch("internship_activity_tracker.ui.csv_common.parse_intern_csv")
 def test_render_csv_upload_section_with_file(mock_parse, mock_st):
     mock_file = MagicMock()
     mock_file.name = "test.csv"
@@ -62,8 +62,8 @@ def test_render_csv_upload_section_with_file(mock_parse, mock_st):
     assert rows[0]["name"] == "John"
     mock_st.success.assert_called()
 
-@patch("gitlab_compliance_checker.ui.csv_common.st")
-@patch("gitlab_compliance_checker.ui.csv_common.parse_intern_csv")
+@patch("internship_activity_tracker.ui.csv_common.st")
+@patch("internship_activity_tracker.ui.csv_common.parse_intern_csv")
 def test_render_csv_upload_section_error(mock_parse, mock_st):
     mock_file = MagicMock()
     mock_file.name = "test.csv"

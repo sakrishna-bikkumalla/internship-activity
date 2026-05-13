@@ -2,18 +2,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.ui import admin
+from internship_activity_tracker.ui import admin
 
 
 @pytest.fixture
 def mock_roster_service():
-    with patch("gitlab_compliance_checker.ui.admin.get_all_batches") as m_batches, \
-         patch("gitlab_compliance_checker.ui.admin.add_batch") as m_add_batch, \
-         patch("gitlab_compliance_checker.ui.admin.get_all_members_with_teams") as m_members, \
-         patch("gitlab_compliance_checker.ui.admin.bulk_import_members") as m_bulk, \
-         patch("gitlab_compliance_checker.ui.admin.delete_member") as m_delete, \
-         patch("gitlab_compliance_checker.ui.admin.add_or_update_member") as m_add_update, \
-         patch("gitlab_compliance_checker.ui.admin.get_session") as m_session:
+    with patch("internship_activity_tracker.ui.admin.get_all_batches") as m_batches, \
+         patch("internship_activity_tracker.ui.admin.add_batch") as m_add_batch, \
+         patch("internship_activity_tracker.ui.admin.get_all_members_with_teams") as m_members, \
+         patch("internship_activity_tracker.ui.admin.bulk_import_members") as m_bulk, \
+         patch("internship_activity_tracker.ui.admin.delete_member") as m_delete, \
+         patch("internship_activity_tracker.ui.admin.add_or_update_member") as m_add_update, \
+         patch("internship_activity_tracker.ui.admin.get_session") as m_session:
 
         m_batches.return_value = [{"id": 1, "name": "Batch 2024", "start_date": "Jan 2024"}]
         m_members.return_value = [
@@ -99,7 +99,7 @@ def test_render_member_form_add(mock_roster_service):
 def test_render_member_form_edit(mock_roster_service):
     with patch("streamlit.radio", return_value="Edit Existing"):
         with patch("streamlit.selectbox", side_effect=["John Doe (@jdoe)", "Batch 2024"]):
-            with patch("gitlab_compliance_checker.ui.admin.get_member_by_id") as m_get_id:
+            with patch("internship_activity_tracker.ui.admin.get_member_by_id") as m_get_id:
                 m_get_id.return_value = {
                     "id": 1,
                     "name": "John Doe",

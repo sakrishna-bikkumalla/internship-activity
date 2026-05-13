@@ -2,7 +2,7 @@ import asyncio
 import atexit
 import concurrent.futures
 
-from gitlab_compliance_checker.infrastructure.gitlab import commits, groups, issues, merge_requests, projects, users
+from internship_activity_tracker.infrastructure.gitlab import commits, groups, issues, merge_requests, projects, users
 
 # Global Thread Pool to limit total concurrent network operations across the app
 # This prevents "Connection Reset" errors when scanning multiple teams
@@ -63,7 +63,7 @@ def process_single_user(
     """
     from datetime import date
 
-    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
+    from internship_activity_tracker.infrastructure.gitlab.timelogs import (
         aggregate_daily_time_categorized,
         build_daily_time_from_time_stats,
         fetch_user_timelogs_from_projects,
@@ -333,7 +333,7 @@ async def process_single_user_async(
     """
     from datetime import date
 
-    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
+    from internship_activity_tracker.infrastructure.gitlab.timelogs import (
         aggregate_daily_time_categorized,
         build_daily_time_from_time_stats,
         fetch_user_timelogs_from_projects_async,

@@ -186,7 +186,7 @@ def check_extensions_json_for_ruff(gl_client, project_id, branch="main", read_fi
         True if charliermarsh.ruff is in recommendations.
     """
     if read_file_fn is None:
-        from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
+        from internship_activity_tracker.infrastructure.gitlab.files_reader import read_file_content
 
         read_file_fn = read_file_content
     content = read_file_fn(gl_client, project_id, ".vscode/extensions.json", branch)
@@ -248,7 +248,7 @@ def check_license_content(gl_client, project_id, branch="main", read_file_fn=Non
         A string indicating 'valid', 'gnu_other', 'invalid', or 'not_found'
     """
     if read_file_fn is None:
-        from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
+        from internship_activity_tracker.infrastructure.gitlab.files_reader import read_file_content
 
         read_file_fn = read_file_content
     content = read_file_fn(gl_client, project_id, "LICENSE", branch) or read_file_fn(
@@ -288,7 +288,7 @@ def check_project_compliance(gl_client, project_id, branch=None, read_file_fn=No
         Dict with compliance report results.
     """
     if read_file_fn is None:
-        from gitlab_compliance_checker.infrastructure.gitlab.files_reader import read_file_content
+        from internship_activity_tracker.infrastructure.gitlab.files_reader import read_file_content
 
         read_file_fn = read_file_content
     p_desc, p_tags = "", []

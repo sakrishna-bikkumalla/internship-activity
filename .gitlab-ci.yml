@@ -76,14 +76,14 @@ mypy:
   needs:
     - job: setup_job
   script:
-    - uv run mypy --config-file mypy.ini src/gitlab_compliance_checker app.py
+    - uv run mypy --config-file mypy.ini src/internship_activity_tracker app.py
 
 vulture_job:
   stage: test
   needs:
     - job: setup_job
   script:
-    - uv run vulture src/gitlab_compliance_checker app.py --min-confidence 100
+    - uv run vulture src/internship_activity_tracker app.py --min-confidence 100
 
 audit_job:
   stage: test

@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.services.batch.legacy_batch_service import BatchProcessingService
+from internship_activity_tracker.services.batch.legacy_batch_service import BatchProcessingService
 
 
 @pytest.fixture
@@ -17,13 +17,13 @@ def service(mock_gl):
 
 def test_process_project_success(service, mock_gl):
     # Mock dependencies
-    with patch("gitlab_compliance_checker.services.batch.legacy_batch_service.get_project_with_retries") as mock_get:
+    with patch("internship_activity_tracker.services.batch.legacy_batch_service.get_project_with_retries") as mock_get:
         # Mock project as a dict
         proj = {"id": 123, "path_with_namespace": "gp/p1", "default_branch": "main"}
         mock_get.return_value = proj
 
         with patch(
-            "gitlab_compliance_checker.services.batch.legacy_batch_service.check_project_compliance"
+            "internship_activity_tracker.services.batch.legacy_batch_service.check_project_compliance"
         ) as mock_comp:
             mock_comp.return_value = {
                 "license_status": "valid",
@@ -32,11 +32,11 @@ def test_process_project_success(service, mock_gl):
                 "readme_sections": ["s1"],
             }
 
-            with patch("gitlab_compliance_checker.services.batch.legacy_batch_service.list_all_files") as mock_list:
+            with patch("internship_activity_tracker.services.batch.legacy_batch_service.list_all_files") as mock_list:
                 mock_list.return_value = ["f1.py", "README.md"]
 
                 with patch(
-                    "gitlab_compliance_checker.services.batch.legacy_batch_service.classify_repository_files"
+                    "internship_activity_tracker.services.batch.legacy_batch_service.classify_repository_files"
                 ) as mock_class:
                     mock_class.return_value = {"python_files": ["f1.py"], "common_requirements": ["r1.txt"]}
 
@@ -53,7 +53,7 @@ def test_process_project_success(service, mock_gl):
 
 def test_process_project_failure(service, mock_gl):
     with patch(
-        "gitlab_compliance_checker.services.batch.legacy_batch_service.get_project_with_retries",
+        "internship_activity_tracker.services.batch.legacy_batch_service.get_project_with_retries",
         side_effect=Exception("API Error"),
     ):
         res = service.process_project("bad")

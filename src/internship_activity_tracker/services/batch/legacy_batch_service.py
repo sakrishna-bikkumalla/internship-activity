@@ -3,12 +3,12 @@ Batch processing service for analyzing multiple GitLab projects.
 No Streamlit dependencies - can be used in any context.
 """
 
-from gitlab_compliance_checker.services.batch.api_helper import (
+from internship_activity_tracker.services.batch.api_helper import (
     check_project_compliance,
     classify_repository_files,
     list_all_files,
 )
-from gitlab_compliance_checker.services.batch.retry_helper import get_project_with_retries
+from internship_activity_tracker.services.batch.retry_helper import get_project_with_retries
 
 
 class BatchProcessingService:

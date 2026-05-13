@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from gitlab_compliance_checker.services.batch import api_helper
+from internship_activity_tracker.services.batch import api_helper
 
 
 def test_extract_path_from_url():

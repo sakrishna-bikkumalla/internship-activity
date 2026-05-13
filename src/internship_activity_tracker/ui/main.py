@@ -3,15 +3,15 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from gitlab_compliance_checker.infrastructure.database import init_db
-from gitlab_compliance_checker.infrastructure.gitlab import users
-from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
-from gitlab_compliance_checker.services.roster_service import get_all_members_with_teams
-from gitlab_compliance_checker.ui.admin import render_admin_management
-from gitlab_compliance_checker.ui.batch import render_batch_analytics_ui
-from gitlab_compliance_checker.ui.leaderboard import render_batch_analytics
-from gitlab_compliance_checker.ui.profile import render_user_profile
-from gitlab_compliance_checker.ui.weekly_performance import render_weekly_performance_ui
+from internship_activity_tracker.infrastructure.database import init_db
+from internship_activity_tracker.infrastructure.gitlab import users
+from internship_activity_tracker.infrastructure.gitlab.client import GitLabClient
+from internship_activity_tracker.services.roster_service import get_all_members_with_teams
+from internship_activity_tracker.ui.admin import render_admin_management
+from internship_activity_tracker.ui.batch import render_batch_analytics_ui
+from internship_activity_tracker.ui.leaderboard import render_batch_analytics
+from internship_activity_tracker.ui.profile import render_user_profile
+from internship_activity_tracker.ui.weekly_performance import render_weekly_performance_ui
 
 
 def cleanup_gitlab_client(client: GitLabClient):
@@ -57,7 +57,7 @@ def main():
             st.rerun()
         st.sidebar.markdown("---")
 
-    st.title("GitLab Compliance Checker")
+    st.title("Internship Activity Tracker")
 
     # Sidebar: Config & Mode
     st.sidebar.header("Configuration")

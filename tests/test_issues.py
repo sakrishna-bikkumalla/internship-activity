@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from gitlab_compliance_checker.services.issues import issue_metrics, issue_service
+from internship_activity_tracker.services.issues import issue_metrics, issue_service
 
 # --- Tests for issue_metrics.py ---
 
@@ -107,7 +107,7 @@ def test_validate_issue_templates():
 
 def test_get_issue_summary():
     project = MagicMock()
-    with patch("gitlab_compliance_checker.services.issues.issue_service.check_templates_presence") as mock_presence:
+    with patch("internship_activity_tracker.services.issues.issue_service.check_templates_presence") as mock_presence:
         mock_presence.return_value = {"issue_template_files": ["f1.md"], "merge_request_template_files": []}
         res = issue_service.get_issue_summary(project)
         assert res["total_issue_templates"] == 1

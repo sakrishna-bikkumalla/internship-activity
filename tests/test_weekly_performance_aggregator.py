@@ -1,7 +1,7 @@
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-from gitlab_compliance_checker.services.weekly_performance import aggregator
+from internship_activity_tracker.services.weekly_performance import aggregator
 
 
 def test_parse_ist_date():
@@ -51,9 +51,9 @@ def test_fetch_issues_by_date():
     assert "2024-04-15" in events
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.users.get_user_by_username")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.projects.get_user_projects")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.commits.get_user_commits")
+@patch("internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username")
+@patch("internship_activity_tracker.infrastructure.gitlab.projects.get_user_projects")
+@patch("internship_activity_tracker.infrastructure.gitlab.commits.get_user_commits")
 def test_fetch_commits_by_date(mock_commits, mock_projs, mock_users):
     mock_client = MagicMock()
     mock_users.return_value = {"id": 1}
@@ -68,11 +68,11 @@ def test_fetch_commits_by_date(mock_commits, mock_projs, mock_users):
     assert "2024-04-15" in events
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.timelogs.fetch_user_timelogs_from_projects")
-@patch("gitlab_compliance_checker.services.weekly_performance.aggregator._get_user_id")
-@patch("gitlab_compliance_checker.services.weekly_performance.aggregator._fetch_mrs_by_date")
-@patch("gitlab_compliance_checker.services.weekly_performance.aggregator._fetch_issues_by_date")
-@patch("gitlab_compliance_checker.services.weekly_performance.aggregator._fetch_commits_by_date")
+@patch("internship_activity_tracker.infrastructure.gitlab.timelogs.fetch_user_timelogs_from_projects")
+@patch("internship_activity_tracker.services.weekly_performance.aggregator._get_user_id")
+@patch("internship_activity_tracker.services.weekly_performance.aggregator._fetch_mrs_by_date")
+@patch("internship_activity_tracker.services.weekly_performance.aggregator._fetch_issues_by_date")
+@patch("internship_activity_tracker.services.weekly_performance.aggregator._fetch_commits_by_date")
 def test_aggregate_intern_data(mock_commits, mock_issues, mock_mrs, mock_user_id, mock_timelogs):
     mock_client = MagicMock()
     mock_user_id.return_value = 123
@@ -94,7 +94,7 @@ def test_aggregate_intern_data(mock_commits, mock_issues, mock_mrs, mock_user_id
 
 def test_aggregate_batch_interns():
     mock_client = MagicMock()
-    with patch("gitlab_compliance_checker.services.weekly_performance.aggregator.aggregate_intern_data") as mock_agg:
+    with patch("internship_activity_tracker.services.weekly_performance.aggregator.aggregate_intern_data") as mock_agg:
         mock_agg.return_value = MagicMock()
         rows = [{"full_name": "Test", "gitlab_username": "user", "corpus_uid": "uid"}]
         results = aggregator.aggregate_batch_interns(mock_client, rows, date(2024, 4, 15), date(2024, 4, 19))

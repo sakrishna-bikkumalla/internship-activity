@@ -7,13 +7,13 @@ import streamlit as st
 
 @pytest.fixture(autouse=True)
 def reimport_leaderboard(monkeypatch):
-    if "gitlab_compliance_checker.ui.leaderboard" in sys.modules:
-        del sys.modules["gitlab_compliance_checker.ui.leaderboard"]
+    if "internship_activity_tracker.ui.leaderboard" in sys.modules:
+        del sys.modules["internship_activity_tracker.ui.leaderboard"]
     
     # Mock the service function directly in the module as it is being imported
-    with patch("gitlab_compliance_checker.ui.leaderboard.get_all_teams_with_members", return_value=[]), \
-         patch("gitlab_compliance_checker.ui.leaderboard.process_batch_users", return_value=[]):
-        from gitlab_compliance_checker.ui import leaderboard
+    with patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]), \
+         patch("internship_activity_tracker.ui.leaderboard.process_batch_users", return_value=[]):
+        from internship_activity_tracker.ui import leaderboard
         return leaderboard
 
 
@@ -29,7 +29,7 @@ def mock_columns(spec):
 def test_init_state(reimport_leaderboard):
     with patch("streamlit.session_state", {}):
         # We need to mock it again here because init_state calls it
-        with patch("gitlab_compliance_checker.ui.leaderboard.get_all_teams_with_members", return_value=[]):
+        with patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]):
             reimport_leaderboard._init_state()
             assert "teams" in st.session_state
 
@@ -108,8 +108,8 @@ def test_render_team_leaderboard_basic(reimport_leaderboard, mock_client):
         with patch("streamlit.columns", side_effect=mock_columns):
             with patch("streamlit.button", return_value=False):
                 # Mock the service function directly in the module
-                with patch("gitlab_compliance_checker.ui.leaderboard.get_all_batches", return_value=[], create=True), \
-                     patch("gitlab_compliance_checker.ui.leaderboard.get_teams_by_batch", return_value=[], create=True), \
-                     patch("gitlab_compliance_checker.ui.leaderboard.get_members_by_team", return_value=[], create=True), \
-                     patch("gitlab_compliance_checker.ui.leaderboard.get_all_teams_with_members", return_value=[]):
+                with patch("internship_activity_tracker.ui.leaderboard.get_all_batches", return_value=[], create=True), \
+                     patch("internship_activity_tracker.ui.leaderboard.get_teams_by_batch", return_value=[], create=True), \
+                     patch("internship_activity_tracker.ui.leaderboard.get_members_by_team", return_value=[], create=True), \
+                     patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]):
                     reimport_leaderboard.render_batch_analytics(mock_client)

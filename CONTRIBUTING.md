@@ -1,6 +1,6 @@
-# Contributing to gitlab-compliance-checker
+# Contributing to internship-activity-tracker
 
-Thank you for your interest in contributing to **gitlab-compliance-checker**! We welcome contributions of all kinds including bug reports, feature requests, documentation improvements, and code submissions.
+Thank you for your interest in contributing to **internship-activity-tracker**! We welcome contributions of all kinds including bug reports, feature requests, documentation improvements, and code submissions.
 
 ## How to Report Issues
 
@@ -99,7 +99,7 @@ Please read and follow the [Code of Conduct](CODE_OF_CONDUCT.md) to foster a wel
 
 ---
 
-Thank you for helping to improve **gitlab-compliance-checker**!
+Thank you for helping to improve **internship-activity-tracker**!
 
 ---
 

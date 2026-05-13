@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.infrastructure.gitlab import batch
+from internship_activity_tracker.infrastructure.gitlab import batch
 
 # ---------------- RESOLVE PROJECT PATHS TESTS ----------------
 
@@ -34,19 +34,19 @@ def test_process_single_user_empty():
     assert batch.process_single_user(MagicMock(), "  ") is None
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.users.get_user_by_username")
+@patch("internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username")
 def test_process_single_user_not_found(mock_get_user):
     mock_get_user.return_value = None
     res = batch.process_single_user(MagicMock(), "missing")
     assert res["status"] == "Not Found"
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.users.get_user_by_username")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.projects.get_user_projects")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.groups.get_user_groups")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.merge_requests.get_user_mrs")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.issues.get_user_issues")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.commits.get_user_commits")
+@patch("internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username")
+@patch("internship_activity_tracker.infrastructure.gitlab.projects.get_user_projects")
+@patch("internship_activity_tracker.infrastructure.gitlab.groups.get_user_groups")
+@patch("internship_activity_tracker.infrastructure.gitlab.merge_requests.get_user_mrs")
+@patch("internship_activity_tracker.infrastructure.gitlab.issues.get_user_issues")
+@patch("internship_activity_tracker.infrastructure.gitlab.commits.get_user_commits")
 def test_process_single_user_success(mock_commits, mock_issues, mock_mrs, mock_groups, mock_projects, mock_users):
     mock_client = MagicMock()
     mock_users.return_value = {"id": 1, "username": "user1"}
@@ -63,12 +63,12 @@ def test_process_single_user_success(mock_commits, mock_issues, mock_mrs, mock_g
     assert len(res["data"]["projects"]["contributed"]) == 1
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.users.get_user_by_username")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.projects.get_user_projects")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.groups.get_user_groups")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.merge_requests.get_user_mrs")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.issues.get_user_issues")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.commits.get_user_commits")
+@patch("internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username")
+@patch("internship_activity_tracker.infrastructure.gitlab.projects.get_user_projects")
+@patch("internship_activity_tracker.infrastructure.gitlab.groups.get_user_groups")
+@patch("internship_activity_tracker.infrastructure.gitlab.merge_requests.get_user_mrs")
+@patch("internship_activity_tracker.infrastructure.gitlab.issues.get_user_issues")
+@patch("internship_activity_tracker.infrastructure.gitlab.commits.get_user_commits")
 def test_process_single_user_with_project_ids(
     mock_commits, mock_issues, mock_mrs, mock_groups, mock_projects, mock_users
 ):
@@ -97,7 +97,7 @@ def test_process_single_user_with_project_ids(
 def test_process_single_user_exception():
     mock_client = MagicMock()
     with patch(
-        "gitlab_compliance_checker.infrastructure.gitlab.users.get_user_by_username", side_effect=Exception("Crash")
+        "internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username", side_effect=Exception("Crash")
     ):
         res = batch.process_single_user(mock_client, "user1")
     assert res["status"] == "Error"
@@ -107,7 +107,7 @@ def test_process_single_user_exception():
 # ---------------- BATCH PROCESSING TESTS ----------------
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user")
+@patch("internship_activity_tracker.infrastructure.gitlab.batch.process_single_user")
 def test_process_batch_users(mock_single):
     mock_single.side_effect = [{"username": "u1", "status": "Success"}, Exception("Critical")]
     res = batch.process_batch_users(MagicMock(), ["u1", "u2"])
@@ -117,7 +117,7 @@ def test_process_batch_users(mock_single):
 
 
 @pytest.mark.asyncio
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user_async", new_callable=MagicMock)
+@patch("internship_activity_tracker.infrastructure.gitlab.batch.process_single_user_async", new_callable=MagicMock)
 async def test_process_batch_users_async(mock_single):
     mock_single.return_value = {"username": "u1", "status": "Success"}
     res = await batch.process_batch_users_async(MagicMock(), ["u1"])
@@ -126,7 +126,7 @@ async def test_process_batch_users_async(mock_single):
 
 
 @pytest.mark.asyncio
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user_async", new_callable=MagicMock)
+@patch("internship_activity_tracker.infrastructure.gitlab.batch.process_single_user_async", new_callable=MagicMock)
 async def test_process_batch_users_async_error(mock_single):
     mock_single.side_effect = Exception("Async fail")
     res = await batch.process_batch_users_async(MagicMock(), ["u1"])

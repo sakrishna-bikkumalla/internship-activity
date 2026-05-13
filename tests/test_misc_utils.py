@@ -1,9 +1,9 @@
 from unittest.mock import MagicMock
 
-from gitlab_compliance_checker.infrastructure.gitlab.groups import get_user_groups
-from gitlab_compliance_checker.infrastructure.gitlab.issues import get_user_issues
-from gitlab_compliance_checker.infrastructure.gitlab.projects import get_user_projects, search_projects
-from gitlab_compliance_checker.infrastructure.gitlab.users import get_user_by_username
+from internship_activity_tracker.infrastructure.gitlab.groups import get_user_groups
+from internship_activity_tracker.infrastructure.gitlab.issues import get_user_issues
+from internship_activity_tracker.infrastructure.gitlab.projects import get_user_projects, search_projects
+from internship_activity_tracker.infrastructure.gitlab.users import get_user_by_username
 
 # ---------------- USERS TESTS ----------------
 

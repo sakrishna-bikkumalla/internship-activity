@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from gitlab_compliance_checker.infrastructure.gitlab import merge_requests
+from internship_activity_tracker.infrastructure.gitlab import merge_requests
 
 # ---------------------------------------------------------------------------
 # Tests for get_user_mrs
@@ -75,7 +75,7 @@ def test_get_single_user_live_mr_compliance_no_client():
     assert problematic == []
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.merge_requests.analyze_description")
+@patch("internship_activity_tracker.infrastructure.gitlab.merge_requests.analyze_description")
 def test_get_single_user_live_mr_compliance_full_flow(mock_analyze, monkeypatch):
     """Test the full compliance logic with successful and failing markers."""
     # Undo the global mock from conftest.py

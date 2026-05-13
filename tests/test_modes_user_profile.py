@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.ui import profile as user_profile
+from internship_activity_tracker.ui import profile as user_profile
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ def test_render_user_profile_no_info(mock_client):
         mock_err.assert_called_with("User info not provided.")
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user")
+@patch("internship_activity_tracker.infrastructure.gitlab.batch.process_single_user")
 def test_render_user_profile_success(
     mock_process_single_user, mock_client, sample_user_info, sample_success_data, mock_streamlit_base
 ):
@@ -87,7 +87,7 @@ def test_render_user_profile_success(
         mock_img.assert_called_once()
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user")
+@patch("internship_activity_tracker.infrastructure.gitlab.batch.process_single_user")
 def test_render_user_profile_fetch_error(mock_process_single_user, mock_client, mock_streamlit_base):
     mock_process_single_user.return_value = {"status": "Error", "error": "Fail"}
 
@@ -96,7 +96,7 @@ def test_render_user_profile_fetch_error(mock_process_single_user, mock_client, 
         mock_err.assert_called_with("Error fetching data: Fail")
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user")
+@patch("internship_activity_tracker.infrastructure.gitlab.batch.process_single_user")
 def test_render_user_profile_no_data(mock_process_single_user, mock_client, mock_streamlit_base):
     mock_process_single_user.return_value = None
 
@@ -105,7 +105,7 @@ def test_render_user_profile_no_data(mock_process_single_user, mock_client, mock
         mock_err.assert_called_with("Error fetching data: Unknown error")
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.batch.process_single_user")
+@patch("internship_activity_tracker.infrastructure.gitlab.batch.process_single_user")
 def test_render_user_profile_empty_sections(
     mock_process_single_user, mock_client, sample_empty_data, mock_streamlit_base
 ):

@@ -1,4 +1,4 @@
-from gitlab_compliance_checker.infrastructure.gitlab.description_quality import analyze_description
+from internship_activity_tracker.infrastructure.gitlab.description_quality import analyze_description
 
 
 def test_empty_description():

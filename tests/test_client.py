@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import glabflow
 import pytest
 
-from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient, safe_api_call_async
+from internship_activity_tracker.infrastructure.gitlab.client import GitLabClient, safe_api_call_async
 
 
 @pytest.mark.asyncio

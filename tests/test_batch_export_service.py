@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from gitlab_compliance_checker.services.batch import export_service
+from internship_activity_tracker.services.batch import export_service
 
 
 def test_reports_to_csv():

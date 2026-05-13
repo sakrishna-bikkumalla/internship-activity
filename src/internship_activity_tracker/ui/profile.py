@@ -3,8 +3,8 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-from gitlab_compliance_checker.infrastructure.gitlab import batch
-from gitlab_compliance_checker.services.profile.profile_service import check_profile_readme
+from internship_activity_tracker.infrastructure.gitlab import batch
+from internship_activity_tracker.services.profile.profile_service import check_profile_readme
 
 
 def render_user_profile(client, simple_user_info):

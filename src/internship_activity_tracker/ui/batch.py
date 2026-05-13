@@ -3,8 +3,8 @@ import datetime
 import pandas as pd
 import streamlit as st
 
-from gitlab_compliance_checker.infrastructure.gitlab import batch
-from gitlab_compliance_checker.services.roster_service import (
+from internship_activity_tracker.infrastructure.gitlab import batch
+from internship_activity_tracker.services.roster_service import (
     get_all_batches,
     get_all_members_with_teams,
     get_members_by_team,
@@ -125,7 +125,7 @@ def render_batch_analytics_ui(client):
         repo_input = st.text_area(
             "Project Repo Paths",
             height=80,
-            placeholder="tools/gitlab-compliance-checker\ngroup/another-repo",
+            placeholder="tools/internship-activity-tracker\ngroup/another-repo",
             key="batch_repo_input",
         )
         repo_paths = [line.strip() for line in repo_input.splitlines() if line.strip()]

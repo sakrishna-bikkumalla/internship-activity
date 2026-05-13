@@ -2,8 +2,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from gitlab_compliance_checker.infrastructure.database import Base
-from gitlab_compliance_checker.services import roster_service
+from internship_activity_tracker.infrastructure.database import Base
+from internship_activity_tracker.services import roster_service
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def db_session():
         session.commit()
 
     with pytest.MonkeyPatch().context() as mp:
-        mp.setattr("gitlab_compliance_checker.services.roster_service.get_session", mock_get_session)
+        mp.setattr("internship_activity_tracker.services.roster_service.get_session", mock_get_session)
         yield session
     
     session.close()
@@ -75,7 +75,7 @@ def test_get_member_by_id(db_session):
     roster_service.add_or_update_member(db_session, data, batch.id)
     
     # We need to get the actual ID from the DB
-    from gitlab_compliance_checker.infrastructure.models import Member
+    from internship_activity_tracker.infrastructure.models import Member
     m = db_session.query(Member).filter_by(gitlab_username="user_id_test").first()
     
     retrieved = roster_service.get_member_by_id(m.id)
@@ -96,7 +96,7 @@ def test_delete_member(db_session):
     batch = roster_service.add_batch("Batch E", "2024-01-01")
     roster_service.add_or_update_member(db_session, {"gitlab_username": "del_me", "name": "Bye"}, batch.id)
     
-    from gitlab_compliance_checker.infrastructure.models import Member
+    from internship_activity_tracker.infrastructure.models import Member
     m = db_session.query(Member).filter_by(gitlab_username="del_me").first()
     
     roster_service.delete_member(m.id)

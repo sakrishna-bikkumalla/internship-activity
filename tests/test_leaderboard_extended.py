@@ -2,12 +2,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.ui import leaderboard
+from internship_activity_tracker.ui import leaderboard
 
 
 @pytest.fixture(autouse=True)
 def mock_db_service():
-    with patch("gitlab_compliance_checker.ui.leaderboard.get_all_teams_with_members", return_value=[]):
+    with patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]):
         yield
 
 
@@ -15,7 +15,7 @@ def test_init_state_extended():
     # Test initialization when some keys exist but others don't
     # Set _lb_page to "Workspace" so it doesn't try to reload teams from DB and overwrite our test state
     state = {"teams": ["existing"], "_lb_page": "Workspace"}
-    with patch("gitlab_compliance_checker.ui.leaderboard.st.session_state", state):
+    with patch("internship_activity_tracker.ui.leaderboard.st.session_state", state):
         leaderboard._init_state()
         assert state["teams"] == ["existing"]
         assert "_lb_show_create_form" in state
@@ -28,7 +28,7 @@ def test_calculate_score():
     assert leaderboard._calculate_score(10, 2, 5, 3) == 39
 
 
-@patch("gitlab_compliance_checker.ui.leaderboard.st")
+@patch("internship_activity_tracker.ui.leaderboard.st")
 def test_render_sidebar_controls(mock_st):
     import datetime
     # Mock columns to return 3 mocks
@@ -36,7 +36,7 @@ def test_render_sidebar_controls(mock_st):
     mock_st.date_input.side_effect = [datetime.date(2024, 1, 1), datetime.date(2024, 1, 10)]
     
     state = {"_lb_from_date": None, "_lb_to_date": None, "_lb_clear_dates_requested": False}
-    with patch("gitlab_compliance_checker.ui.leaderboard.st.session_state", state):
+    with patch("internship_activity_tracker.ui.leaderboard.st.session_state", state):
         leaderboard._render_date_filter()
         # Verify date_input was called for From and To dates
         assert mock_st.date_input.call_count >= 2

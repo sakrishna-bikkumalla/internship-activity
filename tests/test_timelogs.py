@@ -1,11 +1,14 @@
 from datetime import date
 from unittest.mock import MagicMock
+
 import pytest
-from gitlab_compliance_checker.infrastructure.gitlab.timelogs import (
-    fetch_user_timelogs_from_projects,
+
+from internship_activity_tracker.infrastructure.gitlab.timelogs import (
     aggregate_daily_time,
+    fetch_user_timelogs_from_projects,
     format_time_spent,
 )
+
 
 def test_aggregate_daily_time():
     logs = [
@@ -36,7 +39,7 @@ def test_fetch_user_timelogs_from_projects():
     logs = fetch_user_timelogs_from_projects(mock_client, 123, projects, date(2024, 5, 1), date(2024, 5, 2))
     
     assert len(logs) == 2
-    assert {l["id"] for l in logs} == {1, 2}
+    assert {log["id"] for log in logs} == {1, 2}
 
 @pytest.mark.asyncio
 async def test_fetch_user_timelogs_from_projects_async():
@@ -51,8 +54,8 @@ async def test_fetch_user_timelogs_from_projects_async():
     ]
     
     projects = [{"id": 101}, {"id": 102}]
-    from gitlab_compliance_checker.infrastructure.gitlab.timelogs import fetch_user_timelogs_from_projects_async
+    from internship_activity_tracker.infrastructure.gitlab.timelogs import fetch_user_timelogs_from_projects_async
     logs = await fetch_user_timelogs_from_projects_async(mock_client, 123, projects, date(2024, 5, 1), date(2024, 5, 2))
     
     assert len(logs) == 3
-    assert {l["id"] for l in logs} == {1, 2, 3}
+    assert {log["id"] for log in logs} == {1, 2, 3}

@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gitlab_compliance_checker.infrastructure.gitlab import batch, projects
+from internship_activity_tracker.infrastructure.gitlab import batch, projects
 
 
 @pytest.fixture
@@ -40,12 +40,12 @@ def test_project_classification_personal(mock_client):
     assert res["contributed"][1]["id"] == 3
 
 
-@patch("gitlab_compliance_checker.infrastructure.gitlab.users.get_user_by_username")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.projects.get_user_projects")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.commits.get_user_commits")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.groups.get_user_groups")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.merge_requests.get_user_mrs")
-@patch("gitlab_compliance_checker.infrastructure.gitlab.issues.get_user_issues")
+@patch("internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username")
+@patch("internship_activity_tracker.infrastructure.gitlab.projects.get_user_projects")
+@patch("internship_activity_tracker.infrastructure.gitlab.commits.get_user_commits")
+@patch("internship_activity_tracker.infrastructure.gitlab.groups.get_user_groups")
+@patch("internship_activity_tracker.infrastructure.gitlab.merge_requests.get_user_mrs")
+@patch("internship_activity_tracker.infrastructure.gitlab.issues.get_user_issues")
 def test_process_single_user_success(
     mock_issues, mock_mrs, mock_groups, mock_commits, mock_projects, mock_users, mock_client
 ):

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import streamlit as st
 
-from gitlab_compliance_checker.ui import leaderboard
+from internship_activity_tracker.ui import leaderboard
 
 
 @pytest.fixture

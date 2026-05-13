@@ -9,13 +9,13 @@ class TestAsyncFetchPatterns:
 
     def test_gitlab_client_import(self):
         """Test GitLabClient import."""
-        from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
+        from internship_activity_tracker.infrastructure.gitlab.client import GitLabClient
 
         assert callable(GitLabClient)
 
     def test_gitlab_client_has_headers(self):
         """Test GitLabClient has private_token attribute."""
-        from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
+        from internship_activity_tracker.infrastructure.gitlab.client import GitLabClient
 
         client = GitLabClient("https://gitlab.com", "test_token")
         assert hasattr(client, "token")

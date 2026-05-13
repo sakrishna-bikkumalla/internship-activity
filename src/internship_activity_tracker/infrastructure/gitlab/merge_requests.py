@@ -1,6 +1,6 @@
 import asyncio
 
-from gitlab_compliance_checker.infrastructure.gitlab.description_quality import analyze_description
+from internship_activity_tracker.infrastructure.gitlab.description_quality import analyze_description
 
 
 async def get_user_mrs_async(client, user_id, username=None, since=None, until=None, project_ids=None):

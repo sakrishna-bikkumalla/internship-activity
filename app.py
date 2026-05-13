@@ -12,7 +12,7 @@ import httpx
 import streamlit as st
 from dotenv import load_dotenv
 
-from gitlab_compliance_checker.ui.main import main
+from internship_activity_tracker.ui.main import main
 
 # --- Configuration ---
 # Safely fetch auth secrets to avoid KeyError in Production
@@ -96,8 +96,8 @@ def check_login():
         load_dotenv()
 
     # 4. Not logged in, show the login screen
-    st.title("🔒 GitLab Compliance Checker")
-    st.write("Please sign in with your Swecha GitLab account to access the compliance dashboard.")
+    st.title("📈 Internship Activity Tracker")
+    st.write("Please sign in with your Swecha GitLab account to access the activity tracker dashboard.")
 
     auth_link = (
         f"{AUTHORIZE_URL}?client_id={CLIENT_ID}"
@@ -111,7 +111,7 @@ def check_login():
 
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="GitLab Compliance Checker", page_icon="🔍", layout="wide")
+    st.set_page_config(page_title="Internship Activity Tracker", page_icon="📈", layout="wide")
     check_login()
 
     # RBAC Check
@@ -120,8 +120,8 @@ if __name__ == "__main__":
     rbac_users = st.secrets.get("rbac", {}).get("users", {})
 
     # Initialize Database for the check
-    from gitlab_compliance_checker.infrastructure.database import init_db
-    from gitlab_compliance_checker.services.roster_service import is_member_registered
+    from internship_activity_tracker.infrastructure.database import init_db
+    from internship_activity_tracker.services.roster_service import is_member_registered
 
     init_db()
 
@@ -139,5 +139,5 @@ if __name__ == "__main__":
             st.rerun()
         st.stop()
 
-    logging.getLogger("gitlab_compliance_checker").setLevel(logging.DEBUG)
+    logging.getLogger("internship_activity_tracker").setLevel(logging.DEBUG)
     main()

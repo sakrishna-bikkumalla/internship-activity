@@ -4,7 +4,7 @@ import re
 
 from dotenv import load_dotenv
 
-from gitlab_compliance_checker.infrastructure.gitlab.client import GitLabClient
+from internship_activity_tracker.infrastructure.gitlab.client import GitLabClient
 
 load_dotenv()
 
