@@ -4,13 +4,14 @@ from urllib.parse import urlparse
 
 def extract_path_from_url(input_str: str) -> str:
     """Extract project path from GitLab URL or return input as is."""
+    input_str = input_str.strip()
     try:
         path = urlparse(input_str).path.strip("/")
         if path.endswith(".git"):
             return path[:-4]
         return path
     except Exception:
-        return input_str.strip()
+        return input_str
 
 
 def get_project_with_retries(gl_client, path_or_id):

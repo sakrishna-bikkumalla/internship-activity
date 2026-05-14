@@ -7,14 +7,15 @@ from internship_activity_tracker.ui import admin
 
 @pytest.fixture
 def mock_roster_service():
-    with patch("internship_activity_tracker.ui.admin.get_all_batches") as m_batches, \
-         patch("internship_activity_tracker.ui.admin.add_batch") as m_add_batch, \
-         patch("internship_activity_tracker.ui.admin.get_all_members_with_teams") as m_members, \
-         patch("internship_activity_tracker.ui.admin.bulk_import_members") as m_bulk, \
-         patch("internship_activity_tracker.ui.admin.delete_member") as m_delete, \
-         patch("internship_activity_tracker.ui.admin.add_or_update_member") as m_add_update, \
-         patch("internship_activity_tracker.ui.admin.get_session") as m_session:
-
+    with (
+        patch("internship_activity_tracker.ui.admin.get_all_batches") as m_batches,
+        patch("internship_activity_tracker.ui.admin.add_batch") as m_add_batch,
+        patch("internship_activity_tracker.ui.admin.get_all_members_with_teams") as m_members,
+        patch("internship_activity_tracker.ui.admin.bulk_import_members") as m_bulk,
+        patch("internship_activity_tracker.ui.admin.delete_member") as m_delete,
+        patch("internship_activity_tracker.ui.admin.add_or_update_member") as m_add_update,
+        patch("internship_activity_tracker.ui.admin.get_session") as m_session,
+    ):
         m_batches.return_value = [{"id": 1, "name": "Batch 2024", "start_date": "Jan 2024"}]
         m_members.return_value = [
             {
@@ -30,7 +31,7 @@ def mock_roster_service():
             }
         ]
         m_bulk.return_value = (1, [])
-        
+
         yield {
             "batches": m_batches,
             "add_batch": m_add_batch,
@@ -58,9 +59,9 @@ def test_render_batch_management_success(mock_roster_service):
                 with patch("streamlit.date_input") as m_date:
                     m_date.return_value = MagicMock()
                     m_date.return_value.strftime.return_value = "Feb 2024"
-                    
+
                     admin._render_batch_management()
-                    
+
                     mock_roster_service["add_batch"].assert_called_with("New Batch", "Feb 2024")
 
 
@@ -69,7 +70,7 @@ def test_render_roster_upload_success(mock_roster_service):
         m_file = MagicMock()
         m_file.read.return_value = b"csv_content"
         m_uploader.return_value = m_file
-        
+
         with patch("streamlit.button", return_value=True):
             # We need to mock selectbox for _get_active_batch_selection
             with patch("streamlit.selectbox", return_value="Batch 2024"):
@@ -91,7 +92,10 @@ def test_render_member_form_add(mock_roster_service):
             with patch("streamlit.form") as m_form:
                 m_form.return_value.__enter__.return_value = MagicMock()
                 with patch("streamlit.form_submit_button", return_value=True):
-                    with patch("streamlit.text_input", side_effect=["Name", "Team", "user", "email@example.com", "c", "g", "ge@example.com", "coll"]):
+                    with patch(
+                        "streamlit.text_input",
+                        side_effect=["Name", "Team", "user", "email@example.com", "c", "g", "ge@example.com", "coll"],
+                    ):
                         admin._render_member_form()
                         assert mock_roster_service["add_update"].called
 
@@ -115,6 +119,18 @@ def test_render_member_form_edit(mock_roster_service):
                     m_form.return_value.__enter__.return_value = MagicMock()
                     with patch("streamlit.form_submit_button", return_value=True):
                         # 8 text fields
-                        with patch("streamlit.text_input", side_effect=["Name", "Team", "user", "email@example.com", "c", "g", "ge@example.com", "coll"]):
+                        with patch(
+                            "streamlit.text_input",
+                            side_effect=[
+                                "Name",
+                                "Team",
+                                "user",
+                                "email@example.com",
+                                "c",
+                                "g",
+                                "ge@example.com",
+                                "coll",
+                            ],
+                        ):
                             admin._render_member_form()
                             assert mock_roster_service["add_update"].called

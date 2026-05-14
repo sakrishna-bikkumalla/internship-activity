@@ -31,10 +31,11 @@ def test_calculate_score():
 @patch("internship_activity_tracker.ui.leaderboard.st")
 def test_render_sidebar_controls(mock_st):
     import datetime
+
     # Mock columns to return 3 mocks
     mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
     mock_st.date_input.side_effect = [datetime.date(2024, 1, 1), datetime.date(2024, 1, 10)]
-    
+
     state = {"_lb_from_date": None, "_lb_to_date": None, "_lb_clear_dates_requested": False}
     with patch("internship_activity_tracker.ui.leaderboard.st.session_state", state):
         leaderboard._render_date_filter()

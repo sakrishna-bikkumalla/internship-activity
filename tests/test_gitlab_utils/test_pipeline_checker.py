@@ -49,22 +49,22 @@ def test_full_valid_pipeline():
       stage: test
       script:
         - pytest
-    
+
     lint_job:
       stage: lint
       script:
         - ruff
-    
+
     format_job:
       stage: format
       script:
         - black
-    
+
     type_job:
       stage: type_check
       script:
         - mypy
-    
+
     cov_job:
       stage: coverage
       script:

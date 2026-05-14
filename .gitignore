@@ -68,3 +68,6 @@ reports/*
 repro_timeout*.py
 data/
 scripts/debug/*
+*_coverage*.txt
+total_coverage.txt
+coverage_report.txt

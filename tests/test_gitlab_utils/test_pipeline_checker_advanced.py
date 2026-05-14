@@ -21,7 +21,7 @@ def test_coverage_fallback():
     content = """
     stages:
       - test
-    
+
     test_job:
       stage: test
       script:
@@ -38,7 +38,7 @@ def test_unconditional_when_never():
     content = """
     stages:
       - test
-    
+
     ignored_job:
       stage: test
       script:
@@ -68,7 +68,7 @@ def test_dx_score_calculation():
     content = """
     stages:
       - test
-    
+
     test_job:
       stage: test
       script:

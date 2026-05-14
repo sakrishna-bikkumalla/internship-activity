@@ -61,7 +61,7 @@ def test_render_date_filter(mock_date_input):
         # Mock session state
         st.session_state["_lb_from_date"] = None
         st.session_state["_lb_to_date"] = None
-        
+
         since, until = leaderboard._render_date_filter()
         assert since.startswith("2024-01-01")
         assert until.startswith("2024-01-07")
@@ -80,19 +80,15 @@ def test_render_activity_heatmap():
 
 
 def test_render_team_result():
-    with patch("streamlit.subheader"), \
-         patch("streamlit.columns", return_value=[MagicMock() for _ in range(7)]), \
-         patch("streamlit.metric"), \
-         patch("streamlit.dataframe"), \
-         patch("streamlit.expander"), \
-         patch("streamlit.popover", create=True), \
-         patch("streamlit.markdown"):
-        
-        totals = {
-            "Team Score": 10,
-            "Total Commits": 5,
-            "MR Merged": 2,
-            "Issues Closed": 1
-        }
+    with (
+        patch("streamlit.subheader"),
+        patch("streamlit.columns", return_value=[MagicMock() for _ in range(7)]),
+        patch("streamlit.metric"),
+        patch("streamlit.dataframe"),
+        patch("streamlit.expander"),
+        patch("streamlit.popover", create=True),
+        patch("streamlit.markdown"),
+    ):
+        totals = {"Team Score": 10, "Total Commits": 5, "MR Merged": 2, "Issues Closed": 1}
         leaderboard._render_team_result("Team A", "Project X", [{"Score": 10, "Username": "u1"}], totals)
         # Should finish without error

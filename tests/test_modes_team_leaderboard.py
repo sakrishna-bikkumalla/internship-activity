@@ -9,11 +9,14 @@ import streamlit as st
 def reimport_leaderboard(monkeypatch):
     if "internship_activity_tracker.ui.leaderboard" in sys.modules:
         del sys.modules["internship_activity_tracker.ui.leaderboard"]
-    
+
     # Mock the service function directly in the module as it is being imported
-    with patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]), \
-         patch("internship_activity_tracker.ui.leaderboard.process_batch_users", return_value=[]):
+    with (
+        patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]),
+        patch("internship_activity_tracker.ui.leaderboard.process_batch_users", return_value=[]),
+    ):
         from internship_activity_tracker.ui import leaderboard
+
         return leaderboard
 
 
@@ -108,8 +111,14 @@ def test_render_team_leaderboard_basic(reimport_leaderboard, mock_client):
         with patch("streamlit.columns", side_effect=mock_columns):
             with patch("streamlit.button", return_value=False):
                 # Mock the service function directly in the module
-                with patch("internship_activity_tracker.ui.leaderboard.get_all_batches", return_value=[], create=True), \
-                     patch("internship_activity_tracker.ui.leaderboard.get_teams_by_batch", return_value=[], create=True), \
-                     patch("internship_activity_tracker.ui.leaderboard.get_members_by_team", return_value=[], create=True), \
-                     patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]):
+                with (
+                    patch("internship_activity_tracker.ui.leaderboard.get_all_batches", return_value=[], create=True),
+                    patch(
+                        "internship_activity_tracker.ui.leaderboard.get_teams_by_batch", return_value=[], create=True
+                    ),
+                    patch(
+                        "internship_activity_tracker.ui.leaderboard.get_members_by_team", return_value=[], create=True
+                    ),
+                    patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]),
+                ):
                     reimport_leaderboard.render_batch_analytics(mock_client)

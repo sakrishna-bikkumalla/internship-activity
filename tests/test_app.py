@@ -26,12 +26,12 @@ def reimport_main(monkeypatch):
         "preferred_username": "Saikrishna_b",
         "is_logged_in": True,
         "access_token": "fake_token",
-        "name": "Saikrishna"
+        "name": "Saikrishna",
     }
     fake_st.secrets = {
         "auth": {"gitlab": {"client_id": "fake", "client_secret": "fake"}},
         "rbac": {"users": {"Saikrishna_b": "admin"}},
-        "database": {"url": "sqlite:///:memory:"}
+        "database": {"url": "sqlite:///:memory:"},
     }
     sys.modules["streamlit"] = fake_st
     sys.modules["dotenv"] = type("Dotenv", (), {"load_dotenv": lambda: None})
@@ -39,6 +39,7 @@ def reimport_main(monkeypatch):
     # Mock init_db to avoid real DB setup
     with patch("internship_activity_tracker.ui.main.init_db"):
         from internship_activity_tracker.ui import main
+
         yield main
 
     for m in ["internship_activity_tracker.ui.main", "streamlit", "dotenv"]:
@@ -145,7 +146,7 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_main):
     fake_st = make_fake_st(["https://gitlab.com"], "User Profile Overview")
     fake_st.session_state["user_role"] = "admin"
     main_mod.st = fake_st
-    
+
     monkeypatch.setattr(main_mod, "get_gitlab_client", lambda *a, **k: FakeClient(*a))
     monkeypatch.setattr("internship_activity_tracker.ui.main.get_all_members_with_teams", lambda: [])
     main_mod.st.radio = MagicMock(return_value="Manual Username Input")
@@ -162,7 +163,7 @@ def test_user_profile_render_user_profile(monkeypatch, reimport_main):
     monkeypatch.setattr(main_mod, "render_user_profile", fake_render_user_profile)
 
     main_mod.main()
-    
+
     assert called.get("render_user_profile") is not None
     assert called["render_user_profile"][1] == {"id": 1}
 

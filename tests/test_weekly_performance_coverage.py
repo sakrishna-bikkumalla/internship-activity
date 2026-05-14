@@ -9,10 +9,12 @@ def test_render_summary_card(mock_st):
     weekly_performance._render_summary_card(1, 2, 3, "1h")
     mock_st.markdown.assert_called()
 
+
 @patch("internship_activity_tracker.ui.weekly_performance.st")
 def test_render_activity_slots(mock_st):
     weekly_performance._render_activity_slots([9, 10], [9, 10, 11])
     mock_st.markdown.assert_called()
+
 
 @patch("internship_activity_tracker.ui.weekly_performance.st")
 def test_render_activity_slots_with_events(mock_st):
@@ -20,10 +22,12 @@ def test_render_activity_slots_with_events(mock_st):
     weekly_performance._render_activity_slots([9], [9], events_by_hour=events)
     mock_st.markdown.assert_called()
 
+
 @patch("internship_activity_tracker.ui.weekly_performance.st")
 def test_render_activity_slots_strict_idle(mock_st):
     weekly_performance._render_activity_slots([], [9, 10], use_strict_mode=True)
     mock_st.markdown.assert_called()
+
 
 @patch("internship_activity_tracker.ui.weekly_performance.st")
 @patch("internship_activity_tracker.ui.weekly_performance.get_all_batches")
@@ -41,10 +45,11 @@ def test_render_hierarchical_selector(mock_members, mock_teams, mock_batches, mo
     mock_st.selectbox.return_value = "Batch 1"
     mock_st.multiselect.side_effect = [["All Teams"], ["All Members"]]
     mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
-    
+
     res = weekly_performance._render_hierarchical_selector([{"name": "User", "gitlab_username": "user"}])
     assert len(res) == 1
     assert res[0]["gitlab_username"] == "user"
+
 
 @patch("internship_activity_tracker.ui.weekly_performance.st")
 @patch("internship_activity_tracker.ui.weekly_performance.get_all_batches")
@@ -62,10 +67,13 @@ def test_render_hierarchical_selector_no_matches(mock_members, mock_teams, mock_
     mock_st.selectbox.return_value = "Batch 1"
     mock_st.multiselect.side_effect = [["Team 1"], ["Specific Member"]]
     mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
-    
-    res = weekly_performance._render_hierarchical_selector([{"name": "User", "gitlab_username": "user", "team_name": "Team 1"}])
+
+    res = weekly_performance._render_hierarchical_selector(
+        [{"name": "User", "gitlab_username": "user", "team_name": "Team 1"}]
+    )
     # Should return empty list because "Specific Member" doesn't match "User"
     assert len(res) == 0
+
 
 @patch("internship_activity_tracker.ui.weekly_performance.st")
 @patch("internship_activity_tracker.ui.weekly_performance.get_all_batches")
@@ -83,10 +91,13 @@ def test_render_hierarchical_selector_single_mode(mock_members, mock_teams, mock
     mock_st.selectbox.return_value = "Batch 1"
     mock_st.multiselect.side_effect = [["Team 1"], ["User (@user)"]]
     mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
-    
-    res = weekly_performance._render_hierarchical_selector([{"name": "User", "gitlab_username": "user", "team_name": "Team 1"}])
+
+    res = weekly_performance._render_hierarchical_selector(
+        [{"name": "User", "gitlab_username": "user", "team_name": "Team 1"}]
+    )
     assert len(res) == 1
     assert res[0]["gitlab_username"] == "user"
+
 
 @patch("internship_activity_tracker.ui.weekly_performance.st")
 @patch("internship_activity_tracker.ui.weekly_performance._init_state")
@@ -100,6 +111,7 @@ def test_render_weekly_performance_ui_no_data(mock_all, mock_one, mock_date, moc
     weekly_performance.render_weekly_performance_ui(MagicMock())
     # Should call st.info since no interns or group members
     assert mock_st.info.called
+
 
 def test_init_state_full():
     with patch("internship_activity_tracker.ui.weekly_performance.st") as mock_st:

@@ -3,7 +3,7 @@
 # Matches the linting stage in .gitlab-ci.yml
 
 # 4. General Exclusions: strictly ignore environment, caches, generated files, and excluded directories
-exclude: '^(.venv/|__pycache__/|\.git/|assets/|\.gitlab/|\.vscode/|reports/|tests/|views/|repro_.*\.py|test_.*\.py)'
+exclude: '^(.venv/|__pycache__/|\.git/|assets/|\.gitlab/|\.vscode/|reports/|views/|repro_.*\.py|test_.*\.py)'
 
 default_language_version:
   python: python3.13

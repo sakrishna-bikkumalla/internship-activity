@@ -12,15 +12,9 @@ class FakeStreamlitModule(types.ModuleType):
         self.session_state = {}
         self.query_params = {}
         self.secrets = {
-            "auth": {
-                "gitlab": {"client_id": "fake", "client_secret": "fake"}
-            },
-            "rbac": {
-                "users": {"Saikrishna_b": "admin"}
-            },
-            "database": {
-                "url": "sqlite:///:memory:"
-            }
+            "auth": {"gitlab": {"client_id": "fake", "client_secret": "fake"}},
+            "rbac": {"users": {"Saikrishna_b": "admin"}},
+            "database": {"url": "sqlite:///:memory:"},
         }
         self.messages = {"warning": [], "error": [], "info": []}
 
@@ -37,7 +31,7 @@ class FakeStreamlitModule(types.ModuleType):
             success=lambda *a, **k: None,
             button=lambda *a, **k: False,
             checkbox=lambda label, value=True: value,
-            expander=lambda *a, **k: _DummyContextManager()
+            expander=lambda *a, **k: _DummyContextManager(),
         )
 
         self.set_page_config = lambda *a, **k: None
@@ -52,7 +46,9 @@ class FakeStreamlitModule(types.ModuleType):
         self.divider = lambda *a, **k: None
         self.date_input = lambda *a, **k: None
         self.file_uploader = lambda *a, **k: None
-        self.selectbox = lambda label, options, index=0, **k: options[index] if options and index < len(options) else None
+        self.selectbox = lambda label, options, index=0, **k: (
+            options[index] if options and index < len(options) else None
+        )
         self.multiselect = lambda label, options, default=None, **k: default or []
         self.number_input = lambda *a, **k: 0
         self.button = lambda *a, **k: False
@@ -61,7 +57,7 @@ class FakeStreamlitModule(types.ModuleType):
         self.spinner = lambda *a, **k: _DummyContextManager()
         self.progress = lambda *a, **k: _DummyContextManager()
         self.columns = lambda *a, **k: [MagicMock() for _ in range(2 if not a or not isinstance(a[0], int) else a[0])]
-        self.tabs = lambda *a, **k: [MagicMock(), MagicMock(), MagicMock(), MagicMock()] # Default 4 tabs for admin
+        self.tabs = lambda *a, **k: [MagicMock(), MagicMock(), MagicMock(), MagicMock()]  # Default 4 tabs for admin
         self.expander = lambda *a, **k: _DummyContextManager()
         self.write = lambda *a, **k: None
         self.dataframe = lambda *a, **k: None
@@ -92,15 +88,19 @@ class FakeStreamlitModule(types.ModuleType):
     def cache_data(self, *a, **k):
         if len(a) == 1 and callable(a[0]):
             return CachedFunction(a[0])
+
         def deco(func):
             return CachedFunction(func)
+
         return deco
 
     def cache_resource(self, *a, **k):
         if len(a) == 1 and callable(a[0]):
             return CachedFunction(a[0])
+
         def deco(func):
             return CachedFunction(func)
+
         return deco
 
     def _record_warning(self, message):
@@ -146,7 +146,7 @@ def make_fake_st(text_inputs=None, mode=None):
             "access_token": "fake_token",
             "name": "Saikrishna",
             "id": 1,
-        }
+        },
     }
 
     class Sidebar:
@@ -177,7 +177,7 @@ def make_fake_st(text_inputs=None, mode=None):
         return fake_st.sidebar.text_input(label, value=value, type=type, placeholder=placeholder)
 
     fake_st.text_input = st_text_input
-    
+
     return fake_st
 
 
