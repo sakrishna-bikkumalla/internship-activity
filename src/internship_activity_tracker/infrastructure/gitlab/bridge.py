@@ -3,6 +3,8 @@ import logging
 import threading
 from typing import Any, Coroutine, Optional
 
+import glabflow
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +31,7 @@ class GlobalBridge:
         if self._initialized:
             return
 
-        self._loop = asyncio.new_event_loop()
+        self._loop = glabflow.uvloop.new_event_loop()
         self._thread = threading.Thread(target=self._run_loop, name="GitLab-Global-Bridge", daemon=True)
         self._thread.start()
         self._initialized = True

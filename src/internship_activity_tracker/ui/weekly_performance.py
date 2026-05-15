@@ -878,6 +878,8 @@ def _fetch_all_activity(
                 end_date=end_date,
                 override_email=selected_intern.get("override_email"),
                 override_username=selected_intern.get("override_username"),
+                global_username=selected_intern.get("global_username"),
+                global_email=selected_intern.get("global_email"),
             )
             for date_str, daily in gitlab_activity.daily_data.items():
                 if date_str in activity.daily_data:

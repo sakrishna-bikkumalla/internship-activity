@@ -100,6 +100,7 @@ class GitLabClient:
         self.error_msg = None
         self.last_rate_limit: dict | None = None  # {endpoint, retry_after, timestamp}
         self._gl: glabflow.Client | None = None
+        self._sem: asyncio.Semaphore | None = None
 
         # All operations are now bridged to a single, persistent global loop.
         self._loop = get_global_loop()
@@ -130,17 +131,9 @@ class GitLabClient:
         # Execute setup in the dedicated background loop via a Task
         self._loop.call_soon_threadsafe(lambda: self._loop.create_task(_setup()))
 
-        # Wait for the background thread to be ready
-        if not self._ready_event.wait(timeout=10):
-            logger.error("GitLabClient failed to initialize in 10s")
-
-    def _init_sem(self):
-        """Re-initialize semaphore if needed (rare)."""
-
-        async def create_sem():
-            return asyncio.Semaphore(25)
-
-        self._sem = run_on_loop(create_sem())
+        # Wait for the background thread to be ready (warmup fires ~25 connections)
+        if not self._ready_event.wait(timeout=15):
+            logger.error("GitLabClient failed to initialize in 15s")
 
     def _run_sync(self, coro, timeout=60):
         """Bridge sync call to the background global event loop."""
@@ -171,12 +164,11 @@ class GitLabClient:
             path = f"{path}{connector}{query}"
 
         sem = self._sem
-        if sem is None:
+        if not gl or sem is None:
             return []
 
         try:
             async with sem:
-                # Wrap in a task to satisfy asyncio.timeout (Python 3.11+) if needed by the underlying client
                 raw = await asyncio.create_task(gl.get(path))
             return _decode_json(raw)
         except glabflow.NotFoundError:
@@ -192,14 +184,14 @@ class GitLabClient:
             if wait > 10:
                 raise Exception(f"GitLab API Rate Limit reached. Please wait {int(wait)}s.")
 
-            await asyncio.sleep(wait)
+            rl_wait = gl.rate_limit_budget.wait_time_if_needed()
+            await asyncio.sleep(rl_wait if rl_wait > 0 else wait)
             try:
-                # Use narrowed local 'sem'
                 async with sem:
                     raw = await asyncio.create_task(gl.get(path))
                 return _decode_json(raw)
-            except Exception as e:
-                logger.error(f"Retry GET {path} failed: {e}")
+            except Exception as retry_e:
+                logger.error(f"Retry GET {path} failed: {retry_e}")
                 return []
         except Exception as e:
             logger.error(f"GET {path} failed: {type(e).__name__} - {e}")
@@ -208,7 +200,8 @@ class GitLabClient:
     async def _async_request(self, method, endpoint, params=None):
         """Full HTTP request dispatcher (GET/POST/PUT/DELETE)."""
         gl = self._gl
-        if not gl:
+        sem = self._sem
+        if not gl or sem is None:
             return []
 
         path = endpoint if endpoint.startswith("/") else f"/{endpoint}"
@@ -216,9 +209,7 @@ class GitLabClient:
             path = path[len("/api/v4") :]
 
         try:
-            if self._sem is None:
-                return []
-            async with self._sem:
+            async with sem:
                 if method.upper() == "GET":
                     if params:
                         from urllib.parse import urlencode
@@ -253,7 +244,7 @@ class GitLabClient:
 
         try:
             page_count = 0
-            async for raw_page in gl.paginate(path, **p_params):
+            async for raw_page in gl.paginate(path, ordered=False, **p_params):
                 page_count += 1
                 page_data = _decode_json(raw_page)
                 if isinstance(page_data, list):
@@ -430,7 +421,20 @@ class GitLabClient:
         user_tasks = [self._fetch_user_mrs(u, project_id, group_id, mr_scope) for u in usernames]
         all_users_mrs = await asyncio.gather(*user_tasks)
         all_mrs = [mr for sublist in all_users_mrs for mr in sublist]
-        eval_results = await asyncio.gather(*[self._evaluate_single_mr(mr) for mr in all_mrs])
+
+        async def _mr_source():
+            for mr in all_mrs:
+                yield mr
+
+        eval_results: list[tuple[str, dict]] = []
+        async for result in glabflow.fanout(
+            _mr_source(),
+            self._evaluate_single_mr,
+            concurrency=50,
+            on_error=lambda e: logger.warning(f"MR eval error skipped: {e}"),
+        ):
+            eval_results.append(result)
+
         for uname, f in eval_results:
             if uname in result_map and f.get("is_terminal"):
                 row = result_map[uname]
@@ -568,7 +572,19 @@ class GitLabClient:
         user_tasks = [self._fetch_user_issues(u, project_id, group_id, issue_scope) for u in usernames]
         all_users_issues = await asyncio.gather(*user_tasks)
         all_issues = [issue for sublist in all_users_issues for issue in sublist]
-        eval_results = await asyncio.gather(*[self._evaluate_single_issue(issue) for issue in all_issues])
+
+        async def _issue_source():
+            for issue in all_issues:
+                yield issue
+
+        eval_results: list[tuple[str, dict]] = []
+        async for result in glabflow.fanout(
+            _issue_source(),
+            self._evaluate_single_issue,
+            concurrency=50,
+            on_error=lambda e: logger.warning(f"Issue eval error skipped: {e}"),
+        ):
+            eval_results.append(result)
 
         for uname, f in eval_results:
             if uname in result_map:

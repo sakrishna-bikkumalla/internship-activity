@@ -166,6 +166,8 @@ def _fetch_commits_by_date(
     override_email: str | None = None,
     override_username: str | None = None,
     user_projects: list[dict] | None = None,
+    global_username: str | None = None,
+    global_email: str | None = None,
 ) -> tuple[dict[str, int], dict[str, set[int]], dict[str, dict[int, list[EventDetail]]]]:
     logger.debug(
         f"[GitLab] Fetching commits for user_id={user_id}, gitlab_username={gitlab_username}, {start_date} to {end_date}"
@@ -183,6 +185,10 @@ def _fetch_commits_by_date(
         user_obj["override_email"] = override_email
     if override_username:
         user_obj["override_username"] = override_username
+    if global_username:
+        user_obj["global_username"] = global_username
+    if global_email:
+        user_obj["global_email"] = global_email
 
     # Reuse pre-fetched projects if provided to avoid a duplicate API call
     if user_projects is not None:
@@ -236,6 +242,8 @@ def aggregate_intern_data(
     end_date: date,
     override_email: str | None = None,
     override_username: str | None = None,
+    global_username: str | None = None,
+    global_email: str | None = None,
 ) -> WeeklyActivity:
     """Aggregate all GitLab activity for one intern into WeeklyActivity model."""
     logger.debug(
@@ -315,6 +323,8 @@ def aggregate_intern_data(
         override_email=override_email,
         override_username=override_username,
         user_projects=all_projs,
+        global_username=global_username,
+        global_email=global_email,
     )
 
     all_dates: set[str] = set()
@@ -390,6 +400,8 @@ def aggregate_batch_interns(
             intern_name=row.get("name", ""),
             start_date=start_date,
             end_date=end_date,
+            global_username=row.get("global_username"),
+            global_email=row.get("global_email"),
         )
         results.append(activity)
     return results
