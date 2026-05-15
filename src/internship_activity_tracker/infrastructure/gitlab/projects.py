@@ -1,5 +1,72 @@
 import asyncio
+import logging
 from urllib.parse import urlparse
+
+from internship_activity_tracker.infrastructure.gitlab.graphql_client import _parse_gid
+from internship_activity_tracker.infrastructure.gitlab.graphql_queries import GQL_USER_PROJECTS
+
+logger = logging.getLogger(__name__)
+
+
+async def get_user_projects_graphql(client, username: str) -> dict:
+    """
+    Fetch user projects via GraphQL — one query (contributedProjects + projectMemberships).
+    Returns same {personal, contributed, all} shape as get_user_projects_async().
+    """
+    gql = client._gql
+    if not gql:
+        raise RuntimeError("GraphQL client not available")
+
+    data = await gql.query(GQL_USER_PROJECTS, {"username": username})
+    user_data = data.get("user") or {}
+
+    def _normalize(node: dict) -> dict:
+        ns = node.get("namespace") or {}
+        return {
+            "id": _parse_gid(node.get("id")),
+            "name": node.get("name"),
+            "name_with_namespace": node.get("nameWithNamespace"),
+            "web_url": node.get("webUrl"),
+            "namespace": {
+                "path": ns.get("path"),
+                "kind": "user" if ns.get("path", "").lower() == username.lower() else "group",
+            },
+        }
+
+    seen_ids: set[int | None] = set()
+    personal: list[dict] = []
+    contributed: list[dict] = []
+
+    # contributedProjects — classify by namespace path (kind not available in this GitLab version)
+    for node in (user_data.get("contributedProjects") or {}).get("nodes") or []:
+        p = _normalize(node)
+        if p["id"] in seen_ids:
+            continue
+        seen_ids.add(p["id"])
+        ns_path = (p.get("namespace") or {}).get("path") or ""
+        if ns_path.lower() == username.lower():
+            personal.append(p)
+        else:
+            contributed.append(p)
+
+    # projectMemberships — may surface personal projects not in contributedProjects
+    for node_wrapper in (user_data.get("projectMemberships") or {}).get("nodes") or []:
+        node = node_wrapper.get("project") or {}
+        if not node:
+            continue
+        p = _normalize(node)
+        if p["id"] in seen_ids:
+            continue
+        seen_ids.add(p["id"])
+        ns_path = (p.get("namespace") or {}).get("path") or ""
+        if ns_path.lower() == username.lower():
+            personal.append(p)
+        else:
+            contributed.append(p)
+
+    all_projects = personal + contributed
+    logger.info(f"[GraphQL/Projects] {len(personal)} personal, {len(contributed)} contributed for {username}")
+    return {"personal": personal, "contributed": contributed, "all": all_projects}
 
 
 def extract_path_from_url(input_str: str) -> str:
@@ -28,8 +95,13 @@ def get_project_with_retries(gl_client, path_or_id):
 
 async def get_user_projects_async(client, user_id, username):
     """
-    Fetches all projects for a user asynchronously.
+    Fetches all projects for a user asynchronously. Tries GraphQL first.
     """
+    if client._gql and username:
+        try:
+            return await get_user_projects_graphql(client, username)
+        except Exception as exc:
+            logger.warning(f"[GraphQL/Projects] Fast path failed, falling back to REST: {exc}")
     try:
         # Step 1 & 2: Fetch projects and events concurrently
         f_projects = client._async_get_paginated(

@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -40,12 +40,12 @@ def test_project_classification_personal(mock_client):
     assert res["contributed"][1]["id"] == 3
 
 
-@patch("internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username")
-@patch("internship_activity_tracker.infrastructure.gitlab.projects.get_user_projects")
-@patch("internship_activity_tracker.infrastructure.gitlab.commits.get_user_commits")
-@patch("internship_activity_tracker.infrastructure.gitlab.groups.get_user_groups")
-@patch("internship_activity_tracker.infrastructure.gitlab.merge_requests.get_user_mrs")
-@patch("internship_activity_tracker.infrastructure.gitlab.issues.get_user_issues")
+@patch("internship_activity_tracker.infrastructure.gitlab.users.get_user_by_username_async", new_callable=AsyncMock)
+@patch("internship_activity_tracker.infrastructure.gitlab.projects.get_user_projects_async", new_callable=AsyncMock)
+@patch("internship_activity_tracker.infrastructure.gitlab.commits.get_user_commits_async", new_callable=AsyncMock)
+@patch("internship_activity_tracker.infrastructure.gitlab.groups.get_user_groups_async", new_callable=AsyncMock)
+@patch("internship_activity_tracker.infrastructure.gitlab.merge_requests.get_user_mrs_async", new_callable=AsyncMock)
+@patch("internship_activity_tracker.infrastructure.gitlab.issues.get_user_issues_async", new_callable=AsyncMock)
 def test_process_single_user_success(
     mock_issues, mock_mrs, mock_groups, mock_commits, mock_projects, mock_users, mock_client
 ):
@@ -53,6 +53,7 @@ def test_process_single_user_success(
     username = "testuser"
     user_id = 123
 
+    mock_client._gql = None  # disable GraphQL fast path so mocks are used
     mock_users.return_value = {"id": user_id, "username": username, "name": "Test User"}
     mock_projects.return_value = {
         "personal": [{"id": 1}],

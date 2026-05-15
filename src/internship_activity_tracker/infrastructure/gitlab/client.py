@@ -9,6 +9,7 @@ import glabflow
 import msgspec
 
 from .bridge import get_global_loop, run_on_loop
+from .graphql_client import GitLabGraphQLClient
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -100,6 +101,7 @@ class GitLabClient:
         self.error_msg = None
         self.last_rate_limit: dict | None = None  # {endpoint, retry_after, timestamp}
         self._gl: glabflow.Client | None = None
+        self._gql: GitLabGraphQLClient | None = None
         self._sem: asyncio.Semaphore | None = None
 
         # All operations are now bridged to a single, persistent global loop.
@@ -121,6 +123,8 @@ class GitLabClient:
                     timeout=30.0,
                 )
                 await self._gl.__aenter__()
+                self._gql = GitLabGraphQLClient(self.base_url, self.token, self.is_oauth)
+                await self._gql.__aenter__()
                 self._sem = asyncio.Semaphore(25)
                 self._ready_event.set()
             except Exception as e:
@@ -143,6 +147,11 @@ class GitLabClient:
     def client(self):
         """Returns the glabflow Client instance (for compatibility)."""
         return self._gl
+
+    @property
+    def gql(self) -> GitLabGraphQLClient | None:
+        """Returns the GraphQL client instance."""
+        return self._gql
 
     async def _async_get(self, endpoint: str, params: dict | None = None) -> Any:
         """Single GET request via glabflow. Returns decoded JSON."""
@@ -283,8 +292,8 @@ class GitLabClient:
             if not str(desc).strip():
                 flags["no_desc"] = True
 
-            # 1. Pipeline Check
-            pipeline = mr.get("pipeline")
+            # 1. Pipeline Check — use inline GraphQL data if available, else REST
+            pipeline = mr.get("head_pipeline") or mr.get("pipeline")
             if pipeline and isinstance(pipeline, dict):
                 if pipeline.get("status") == "failed":
                     flags["failed_pipe"] = True
@@ -294,7 +303,7 @@ class GitLabClient:
                     if pl[0].get("status") == "failed":
                         flags["failed_pipe"] = True
 
-            # 2. Time Spent Check
+            # 2. Time Spent Check — GraphQL pre-populates time_stats correctly
             ts = mr.get("time_stats")
             if ts is None or (isinstance(ts, dict) and not ts):
                 ts = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/time_stats")
@@ -302,23 +311,34 @@ class GitLabClient:
             if isinstance(ts, dict) and ts.get("total_time_spent", 0) == 0:
                 flags["no_time"] = True
 
-            # 3. Semantic Commits Check
-            m_commits = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/commits")
-            if m_commits and isinstance(m_commits, list):
+            # 3. Semantic Commits Check — use inline GraphQL commit titles if available
+            inline_commit_msgs: list[str] = mr.get("_commit_msgs") or []
+            if inline_commit_msgs:
                 has_any_semantic = any(
                     re.match(
                         r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:",
-                        str(c.get("message", "")).lower(),
+                        msg.lower(),
                     )
-                    for c in m_commits
+                    for msg in inline_commit_msgs
                 )
                 flags["no_semantic_commits"] = not has_any_semantic
             else:
-                title_lower = str(mr.get("title") or "").lower()
-                if not re.match(
-                    r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:", title_lower
-                ):
-                    flags["no_semantic_commits"] = True
+                m_commits = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/commits")
+                if m_commits and isinstance(m_commits, list):
+                    has_any_semantic = any(
+                        re.match(
+                            r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:",
+                            str(c.get("message", "")).lower(),
+                        )
+                        for c in m_commits
+                    )
+                    flags["no_semantic_commits"] = not has_any_semantic
+                else:
+                    title_lower = str(mr.get("title") or "").lower()
+                    if not re.match(
+                        r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\(.*?\))?!?:", title_lower
+                    ):
+                        flags["no_semantic_commits"] = True
 
             # 4. Internal Review
             m_notes = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/notes")
@@ -344,10 +364,13 @@ class GitLabClient:
                     if not has_issue_link_in_notes:
                         flags["no_issues"] = True
 
-            # 6. Unit Tests check
+            # 6. Unit Tests check — use inline GraphQL commit titles if available
             title_l = str(mr.get("title") or "").lower()
             if "test" in title_l or "spec" in title_l:
                 flags["no_unit_tests"] = False
+            elif inline_commit_msgs:
+                h_tests = any("test" in msg.lower() or "spec" in msg.lower() for msg in inline_commit_msgs)
+                flags["no_unit_tests"] = not h_tests
             else:
                 chg = await self._async_request("GET", f"/projects/{pid}/merge_requests/{iid}/changes")
                 h_tests = any(

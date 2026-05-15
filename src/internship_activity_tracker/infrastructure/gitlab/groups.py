@@ -1,10 +1,47 @@
 import asyncio
+import logging
+
+from internship_activity_tracker.infrastructure.gitlab.graphql_queries import GQL_USER_GROUPS
+
+logger = logging.getLogger(__name__)
 
 
-async def get_user_groups_async(client, user_id):
+async def get_user_groups_graphql(client, username: str) -> list[dict]:
+    """Fetch user groups via GraphQL — one query instead of paginated REST."""
+    gql = client._gql
+    if not gql:
+        raise RuntimeError("GraphQL client not available")
+
+    groups_list: list[dict] = []
+    data = await gql.query(GQL_USER_GROUPS, {"username": username})
+    nodes = ((data.get("user") or {}).get("groups") or {}).get("nodes") or []
+    seen: set[str] = set()
+    for g in nodes:
+        key = g.get("fullPath") or g.get("name") or ""
+        if key in seen:
+            continue
+        seen.add(key)
+        groups_list.append(
+            {
+                "name": g.get("name"),
+                "full_path": g.get("fullPath"),
+                "visibility": g.get("visibility"),
+            }
+        )
+    logger.info(f"[GraphQL/Groups] Fetched {len(groups_list)} groups for {username}")
+    return groups_list
+
+
+async def get_user_groups_async(client, user_id, username: str | None = None):
     """
-    Async fetch all groups the user belongs to.
+    Async fetch all groups the user belongs to. Tries GraphQL first.
     """
+    if client._gql and username:
+        try:
+            return await get_user_groups_graphql(client, username)
+        except Exception as exc:
+            logger.warning(f"[GraphQL/Groups] Fast path failed, falling back to REST: {exc}")
+
     groups_list = []
     try:
         groups = await client._async_get_paginated(

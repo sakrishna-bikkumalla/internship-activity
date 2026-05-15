@@ -1,4 +1,3 @@
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,17 +6,12 @@ import streamlit as st
 
 @pytest.fixture(autouse=True)
 def reimport_leaderboard(monkeypatch):
-    if "internship_activity_tracker.ui.leaderboard" in sys.modules:
-        del sys.modules["internship_activity_tracker.ui.leaderboard"]
+    from internship_activity_tracker.ui import leaderboard
 
-    # Mock the service function directly in the module as it is being imported
-    with (
-        patch("internship_activity_tracker.ui.leaderboard.get_all_teams_with_members", return_value=[]),
-        patch("internship_activity_tracker.ui.leaderboard.process_batch_users", return_value=[]),
-    ):
-        from internship_activity_tracker.ui import leaderboard
-
-        return leaderboard
+    # We don't delete from sys.modules as it breaks mock.patch in Python 3.12+
+    # We just return the already imported module. Any required session state
+    # cleanup should be done before the tests run.
+    return leaderboard
 
 
 @pytest.fixture

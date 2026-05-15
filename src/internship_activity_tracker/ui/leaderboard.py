@@ -29,7 +29,10 @@ import pandas as pd
 import streamlit as st
 
 from internship_activity_tracker.infrastructure.corpus.client import CorpusClient
-from internship_activity_tracker.infrastructure.gitlab.batch import process_batch_users
+from internship_activity_tracker.infrastructure.gitlab.batch import (
+    fetch_batch_commits,
+    process_batch_users_no_commits,
+)
 from internship_activity_tracker.infrastructure.gitlab.timelogs import format_time_spent
 from internship_activity_tracker.services.roster_service import (
     get_all_batches,
@@ -723,7 +726,9 @@ def _render_teams_overview(filter_team_name: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_team_result(team_name: str, project_name: str, member_rows: list[dict], totals: dict) -> None:
+def _render_team_result(
+    team_name: str, project_name: str, member_rows: list[dict], totals: dict, key_prefix: str = ""
+) -> None:
     """Render analytics for one team: metrics, member table, group breakdown."""
     st.subheader(f"🏅 {team_name}")
     if project_name:
@@ -779,7 +784,7 @@ def _render_team_result(team_name: str, project_name: str, member_rows: list[dic
         with st.expander("👥 Group Breakdown"):
             st.dataframe(pd.DataFrame(group_rows), width="stretch", hide_index=True)
 
-    _render_detailed_contributions(member_rows)
+    _render_detailed_contributions(member_rows, key_prefix=key_prefix or team_name)
 
     st.divider()
 
@@ -1374,7 +1379,7 @@ def _render_activity_heatmap(
     st.markdown(full_heatmap_html, unsafe_allow_html=True)
 
 
-def _render_detailed_contributions(member_rows: list[dict]) -> None:
+def _render_detailed_contributions(member_rows: list[dict], key_prefix: str = "") -> None:
     """Styled expander for detailed contributions (MR titles, Issue titles, Commit messages)."""
     with st.expander("🔍 Detailed Contributions"):
         valid_members = [r for r in member_rows if r.get("Status") == "Success"]
@@ -1470,7 +1475,8 @@ def _render_detailed_contributions(member_rows: list[dict]) -> None:
                                 title_x=0.5,
                             )
                             fig.update_traces(textposition="inside", textinfo="percent+label")
-                            st.plotly_chart(fig, width="stretch")
+                            chart_key = f"{key_prefix}_{col_key}" if key_prefix else col_key
+                            st.plotly_chart(fig, width="stretch", key=chart_key)
                         else:
                             st.markdown(
                                 f"<div style='text-align:center; padding:15px; border:1px dashed #555; border-radius:10px; margin-top:5px;'><h6 style='color:#ccc;margin:0;font-size:12px;'>{title}</h6><span style='color:#888;font-size:11px;'>No Data</span></div>",
@@ -2575,13 +2581,27 @@ def render_batch_analytics(client) -> None:
                 needs_fetch = True
                 break
 
+    # ── Team result placeholders — created here so they appear in the right position ──
+    st.markdown("### 📊 Team Results")
+    team_placeholders = {t["team_name"]: st.empty() for t in teams_to_process}
+
     if not needs_fetch:
         team_data = cached_results
+        for team_name in [t["team_name"] for t in teams_to_process]:
+            if team_name in team_data:
+                meta, member_rows, totals = team_data[team_name]
+                with team_placeholders[team_name].container():
+                    _render_team_result(
+                        team_name, meta.get("project_name", ""), member_rows, totals, key_prefix=f"{team_name}_c"
+                    )
     else:
         # ── Fetch ─────────────────────────────────────────────────────────
         # Retain existing cached results if we are just adding to it
         team_data = cached_results if not run_button_clicked and last_filters == current_filters else {}
-        progress = st.progress(0, text="Fetching team data…")
+        all_phase1_results: list = []  # flat list of all per-user phase-1 results for phase 2
+
+        # ── Phase 1: projects, MRs, issues, timelogs (GraphQL, fast) ─────────
+        progress = st.progress(0, text="Fetching profile data (projects, MRs, issues)…")
 
         for idx, team in enumerate(teams_to_process):
             team_name = team["team_name"]
@@ -2592,17 +2612,27 @@ def render_batch_analytics(client) -> None:
                 progress.progress((idx + 1) / len(teams_to_process), text=f"Skipped: {team_name}")
                 continue
 
-            with st.spinner(f"Fetching **{team_name}** ({len(usernames)} member(s))…"):
+            with st.spinner(f"Fetching **{team_name}** profile data ({len(usernames)} member(s))…"):
                 try:
-                    # Prepare overrides with time_since (Date of Joining) for all-time spent
                     overrides = {}
                     for m in team.get("members", []):
                         uname = m.get("username")
+                        if not uname:
+                            continue
+                        ov: dict = {}
                         doj = m.get("date_of_joining")
-                        if uname and doj:
-                            overrides[uname] = {"time_since": doj}
+                        if doj:
+                            ov["time_since"] = doj
+                        ge = m.get("global_email") or ""
+                        if ge:
+                            ov["override_email"] = ge
+                        gu = m.get("global_username") or ""
+                        if gu:
+                            ov["override_username"] = gu
+                        if ov:
+                            overrides[uname] = ov
 
-                    results = process_batch_users(
+                    results = process_batch_users_no_commits(
                         client,
                         usernames,
                         since=since_iso,
@@ -2613,12 +2643,13 @@ def render_batch_analytics(client) -> None:
                     st.warning(f"⚠️ Could not fetch data for **{team_name}**: {exc}")
                     results = []
 
+            all_phase1_results.extend(results)
+
             member_rows = []
             for r in results:
                 if not r:
                     continue
                 mrow = _extract_member_row(r)
-                # Enrich with metadata from the roster
                 found_meta: dict[str, Any] = next(
                     (m for m in team.get("members", []) if m["username"] == r.get("username")), {}
                 )
@@ -2634,39 +2665,33 @@ def render_batch_analytics(client) -> None:
                 )
                 member_rows.append(mrow)
 
-            # ── Corpus media fetch (if logged in) ────────────────────────────
+            # ── Corpus media fetch (independent of commits, done in phase 1) ──
             corpus_client = st.session_state.get("_lb_corpus_client")
             if corpus_client:
                 with st.spinner(f"Fetching Corpus files for **{team_name}**…"):
-                    # Build the member list with corpus_username for the helper
                     members_with_corpus = [
                         {"username": m.get("username", ""), "corpus_username": m.get("corpus_username", "")}
                         for m in team.get("members", [])
                     ]
-                    # since/until come from the date filter (already ISO strings or None)
-                    # The corpus client date filter expects YYYY-MM-DD, extract just the date part
                     corpus_since = since_iso[:10] if since_iso else None
                     corpus_until = until_iso[:10] if until_iso else None
                     corpus_media_map = _fetch_corpus_media_for_team(
                         corpus_client, members_with_corpus, corpus_since, corpus_until
                     )
-                    # Attach corpus files to each member row
                     for mrow in member_rows:
                         gl_user = mrow.get("Username", "")
                         mrow["corpus_files"] = corpus_media_map.get(
                             gl_user, {"audio": [], "image": [], "video": [], "file": []}
                         )
 
-            # ── Pre-calculate Attendance/Consistency Metrics for UI & Export ──
+            # Attendance with empty commits (recalculated after phase 2)
             for mrow in member_rows:
-                # 1. Get Activity Map
-                mrs = mrow.get("mrs_list", [])
-                issues = mrow.get("issues_list", [])
-                commits = mrow.get("commits_list", [])
-                corpus_files = mrow.get("corpus_files", {})
-                activity_map = _get_daily_activity_counts(mrs, issues, commits, corpus_files=corpus_files)
-
-                # 2. Get Joining Date
+                activity_map = _get_daily_activity_counts(
+                    mrow.get("mrs_list", []),
+                    mrow.get("issues_list", []),
+                    mrow.get("commits_list", []),
+                    corpus_files=mrow.get("corpus_files", {}),
+                )
                 joining_date_str = mrow.get("Date of Joining")
                 joining_date = None
                 if joining_date_str:
@@ -2674,13 +2699,9 @@ def render_batch_analytics(client) -> None:
                         joining_date = dateutil.parser.parse(joining_date_str).date()
                     except Exception:
                         pass
-
-                # 3. Calculate Index
                 active_days, total_days, consistency_pct, working_days, attendance_pct = _get_contribution_index(
                     activity_map, mrow.get("Username"), joining_date=joining_date
                 )
-
-                # 4. Store in row
                 mrow["Active Days"] = active_days
                 mrow["Total Days"] = total_days
                 mrow["Consistency %"] = consistency_pct
@@ -2689,13 +2710,82 @@ def render_batch_analytics(client) -> None:
 
             totals = _aggregate_team_totals(member_rows)
             team_data[team_name] = (team, member_rows, totals)
-            progress.progress((idx + 1) / len(teams_to_process), text=f"Done: {team_name}")
+
+            # Render phase 1 results immediately — MRs, issues, groups visible now; commits show 0
+            with team_placeholders[team_name].container():
+                _render_team_result(
+                    team_name, team.get("project_name", ""), member_rows, totals, key_prefix=f"{team_name}_p1"
+                )
+
+            progress.progress((idx + 1) / len(teams_to_process), text=f"Done (no commits): {team_name}")
 
         progress.empty()
 
         if not team_data:
             st.error("No team data could be fetched. Check your GitLab connection.")
             return
+
+        # Show loading indicator while commits are fetched
+        commits_loading = st.info("⏳ Loading commits for all teams… Commit counts and scores will update shortly.")
+
+        # ── Phase 2: commits for all teams at once (REST, slower) ────────────
+        with st.spinner("Fetching commits for all teams…"):
+            commits_map = fetch_batch_commits(client, all_phase1_results)
+
+        # Inject commits into every member row and recalculate scores + attendance
+        for team_name in list(team_data.keys()):
+            team, member_rows, _ = team_data[team_name]
+            for mrow in member_rows:
+                username = mrow.get("Username", "")
+                if username in commits_map:
+                    all_commits, commit_stats = commits_map[username]
+                    mrow["Total Commits"] = commit_stats.get("total", 0)
+                    mrow["Morning Commits"] = commit_stats.get("morning_commits", 0)
+                    mrow["Afternoon Commits"] = commit_stats.get("afternoon_commits", 0)
+                    mrow["commits_list"] = all_commits
+                    mrow["Score"] = _calculate_score(
+                        commit_stats.get("total", 0),
+                        mrow.get("MR Merged", 0),
+                        mrow.get("MR Created", 0),
+                        mrow.get("Issues Closed", 0),
+                    )
+
+            # Recalculate attendance now that commits_list is populated
+            for mrow in member_rows:
+                activity_map = _get_daily_activity_counts(
+                    mrow.get("mrs_list", []),
+                    mrow.get("issues_list", []),
+                    mrow.get("commits_list", []),
+                    corpus_files=mrow.get("corpus_files", {}),
+                )
+                joining_date_str = mrow.get("Date of Joining")
+                joining_date = None
+                if joining_date_str:
+                    try:
+                        joining_date = dateutil.parser.parse(joining_date_str).date()
+                    except Exception:
+                        pass
+                active_days, total_days, consistency_pct, working_days, attendance_pct = _get_contribution_index(
+                    activity_map, mrow.get("Username"), joining_date=joining_date
+                )
+                mrow["Active Days"] = active_days
+                mrow["Total Days"] = total_days
+                mrow["Consistency %"] = consistency_pct
+                mrow["Attendance %"] = attendance_pct
+                mrow["Working Days"] = working_days
+
+            totals = _aggregate_team_totals(member_rows)
+            team_data[team_name] = (team, member_rows, totals)
+
+            # Replace phase-1 content with full results (commits now populated)
+            team_placeholders[team_name].empty()
+            with team_placeholders[team_name].container():
+                _render_team_result(
+                    team_name, team.get("project_name", ""), member_rows, totals, key_prefix=f"{team_name}_p2"
+                )
+
+        # Clear loading indicator
+        commits_loading.empty()
 
         # Only update cache if we processed something new.
         # Don't erase the rest of the cache if we only fetched a sub-team.
@@ -2708,13 +2798,6 @@ def render_batch_analytics(client) -> None:
         # Cache ranking rows for the Ranking page
         st.session_state["_lb_last_ranking_rows"] = _build_ranking_rows(st.session_state["_lb_cached_results"])
         st.session_state["_lb_last_individual_rows"] = _build_individual_rows(st.session_state["_lb_cached_results"])
-
-    # ── Render results ────────────────────────────────────────────────────
-    st.markdown("### 📊 Team Results")
-    for team_name in [t["team_name"] for t in teams_to_process]:
-        if team_name in team_data:
-            meta, member_rows, totals = team_data[team_name]
-            _render_team_result(team_name, meta.get("project_name", ""), member_rows, totals)
 
     if "All Teams" in selected_teams or len(selected_teams) > 1:
         _render_overall_ranking(team_data)

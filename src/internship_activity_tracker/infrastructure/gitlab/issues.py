@@ -1,10 +1,123 @@
 import asyncio
+import logging
+
+from internship_activity_tracker.infrastructure.gitlab.graphql_client import _parse_gid
+from internship_activity_tracker.infrastructure.gitlab.graphql_queries import (
+    GQL_USER_ISSUES_ASSIGNED,
+    GQL_USER_ISSUES_AUTHORED,
+)
+
+logger = logging.getLogger(__name__)
+
+
+async def get_user_issues_graphql(
+    client,
+    username: str,
+    since: str | None = None,
+    until: str | None = None,
+    project_ids: list | None = None,
+) -> tuple[list[dict], dict]:
+    """
+    Fetch authored + assigned issues via GraphQL (~2 parallel queries).
+    Returns (issues_list, stats) matching get_user_issues_async() shape exactly.
+    """
+    gql = client._gql
+    if not gql:
+        raise RuntimeError("GraphQL client not available")
+
+    issues_dict: dict[int, dict] = {}
+    pid_set = set(project_ids) if project_ids else None
+    stats = {"total": 0, "opened": 0, "closed": 0, "assigned": 0}
+
+    def _node_to_issue(node: dict, role: str, is_assigned: bool) -> tuple[int, dict]:
+        issue_int_id = _parse_gid(node.get("id")) or 0
+        project_int_id = _parse_gid(node.get("projectId"))
+        state = node.get("state") or ""
+        labels = [n["title"] for n in (node.get("labels") or {}).get("nodes", [])]
+        milestone = {"title": node["milestone"]["title"]} if node.get("milestone") else None
+        time_spent = node.get("totalTimeSpent") or 0
+        return issue_int_id, {
+            "id": issue_int_id,
+            "iid": node.get("iid"),
+            "title": node.get("title"),
+            "description": node.get("description"),
+            "project_id": project_int_id,
+            "web_url": node.get("webUrl"),
+            "state": state,
+            "created_at": node.get("createdAt"),
+            "closed_at": node.get("closedAt"),
+            "assigned": is_assigned,
+            "role": role,
+            "labels": labels,
+            "milestone": milestone,
+            "time_stats": {"total_time_spent": time_spent},
+            "_username": username,
+        }
+
+    async def _paginate_authored() -> None:
+        after = None
+        while True:
+            data = await gql.query(GQL_USER_ISSUES_AUTHORED, {"username": username, "after": after})
+            conn = data.get("issues") or {}
+            for node in conn.get("nodes") or []:
+                iid, issue = _node_to_issue(node, "Author", False)
+                if pid_set is not None and issue["project_id"] not in pid_set:
+                    continue
+                if iid in issues_dict:
+                    if issues_dict[iid]["role"] == "Assigned":
+                        issues_dict[iid]["role"] = "Authored & Assigned"
+                else:
+                    issues_dict[iid] = issue
+                    stats["total"] += 1
+                    if issue["state"] == "opened":
+                        stats["opened"] += 1
+                    elif issue["state"] == "closed":
+                        stats["closed"] += 1
+            pi = conn.get("pageInfo") or {}
+            if not pi.get("hasNextPage"):
+                break
+            after = pi["endCursor"]
+
+    async def _paginate_assigned() -> None:
+        after = None
+        while True:
+            data = await gql.query(GQL_USER_ISSUES_ASSIGNED, {"username": username, "after": after})
+            conn = data.get("issues") or {}
+            for node in conn.get("nodes") or []:
+                iid, issue = _node_to_issue(node, "Assigned", True)
+                if pid_set is not None and issue["project_id"] not in pid_set:
+                    continue
+                stats["assigned"] += 1
+                if iid in issues_dict:
+                    if issues_dict[iid]["role"] == "Author":
+                        issues_dict[iid]["role"] = "Authored & Assigned"
+                else:
+                    issues_dict[iid] = issue
+                    stats["total"] += 1
+                    if issue["state"] == "opened":
+                        stats["opened"] += 1
+                    elif issue["state"] == "closed":
+                        stats["closed"] += 1
+            pi = conn.get("pageInfo") or {}
+            if not pi.get("hasNextPage"):
+                break
+            after = pi["endCursor"]
+
+    await asyncio.gather(_paginate_authored(), _paginate_assigned())
+    logger.info(f"[GraphQL/Issues] Fetched {stats['total']} issues for {username}")
+    return list(issues_dict.values()), stats
 
 
 async def get_user_issues_async(client, user_id, username=None, since=None, until=None, project_ids=None):
     """
-    Async fetch Issues.
+    Async fetch Issues. Tries GraphQL first, falls back to REST.
     """
+    if client._gql and username:
+        try:
+            return await get_user_issues_graphql(client, username, since, until, project_ids)
+        except Exception as exc:
+            logger.warning(f"[GraphQL/Issues] Fast path failed, falling back to REST: {exc}")
+
     issues_dict = {}
     stats = {"total": 0, "opened": 0, "closed": 0, "assigned": 0}
     pid_set = set(project_ids) if project_ids else None

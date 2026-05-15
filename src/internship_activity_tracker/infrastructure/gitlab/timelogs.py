@@ -13,7 +13,90 @@ from collections import defaultdict
 from datetime import date
 from typing import Any
 
+from internship_activity_tracker.infrastructure.gitlab.graphql_client import _parse_gid
+from internship_activity_tracker.infrastructure.gitlab.graphql_queries import GQL_USER_TIMELOGS
+
 logger = logging.getLogger(__name__)
+
+
+async def fetch_user_timelogs_graphql(
+    gl_client,
+    username: str,
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    """
+    Fetch timelogs via GraphQL — one paginated query instead of N per-project REST calls.
+    Returns list in the same shape consumed by aggregate_daily_time_categorized().
+    """
+    gql = gl_client._gql
+    if not gql:
+        raise RuntimeError("GraphQL client not available")
+
+    # Timelogs uses Time scalar (full ISO 8601 datetime), not Date
+    start_str = (start_date.isoformat() + "T00:00:00Z") if isinstance(start_date, date) else str(start_date)
+    end_str = (end_date.isoformat() + "T23:59:59Z") if isinstance(end_date, date) else str(end_date)
+
+    all_timelogs: list[dict[str, Any]] = []
+    after = None
+
+    while True:
+        data = await gql.query(
+            GQL_USER_TIMELOGS,
+            {
+                "username": username,
+                "startDate": start_str,
+                "endDate": end_str,
+                "after": after,
+            },
+        )
+        conn = data.get("timelogs") or {}
+        for node in conn.get("nodes") or []:
+            issue_node = node.get("issue") or {}
+            mr_node = node.get("mergeRequest") or {}
+            proj_node = node.get("project") or {}
+
+            # Normalize to shape expected by aggregate_daily_time_categorized()
+            all_timelogs.append(
+                {
+                    "id": None,  # GraphQL timelogs have a GID but no integer id needed here
+                    "time_spent": node.get("timeSpent") or 0,
+                    "spent_at": node.get("spentAt"),
+                    "summary": node.get("summary"),
+                    # Issue linkage
+                    "issue_id": _parse_gid(issue_node.get("id")) if issue_node.get("id") else None,
+                    "issue_iid": issue_node.get("iid"),
+                    "issue": {
+                        "iid": issue_node.get("iid"),
+                        "title": issue_node.get("title"),
+                        "state": issue_node.get("state"),
+                        "project_id": _parse_gid(issue_node.get("projectId")),
+                    }
+                    if issue_node
+                    else None,
+                    # MR linkage
+                    "merge_request_id": _parse_gid(mr_node.get("id")) if mr_node.get("id") else None,
+                    "merge_request_iid": mr_node.get("iid"),
+                    "merge_request": {
+                        "iid": mr_node.get("iid"),
+                        "title": mr_node.get("title"),
+                        "state": mr_node.get("state"),
+                        "project_id": _parse_gid((mr_node.get("project") or {}).get("id")),
+                    }
+                    if mr_node
+                    else None,
+                    # Project
+                    "project_id": _parse_gid(proj_node.get("id")) if proj_node else None,
+                }
+            )
+
+        pi = conn.get("pageInfo") or {}
+        if not pi.get("hasNextPage"):
+            break
+        after = pi["endCursor"]
+
+    logger.info(f"[GraphQL/Timelogs] Fetched {len(all_timelogs)} timelogs for {username}")
+    return all_timelogs
 
 
 def fetch_user_timelogs(
@@ -117,8 +200,12 @@ async def fetch_user_timelogs_from_projects_async(
     projects: list[dict[str, Any]],
     start_date: date,
     end_date: date,
+    username: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Async version of fetch_user_timelogs_from_projects."""
+    """Async fetch of timelogs via REST (global + per-project).
+    GraphQL timelogs require admin access for non-self users, so REST is used directly.
+    """
+
     seen_ids: set[int] = set()
     all_timelogs: list[dict[str, Any]] = []
 
@@ -219,11 +306,6 @@ def build_daily_time_from_time_stats(
             continue
 
         ts = issue.get("time_stats") or {}
-        if not ts:
-            try:
-                ts = gl_client._get(f"/projects/{pid}/issues/{iid}/time_stats") or {}
-            except Exception:
-                ts = {}
 
         total_ts = ts.get("total_time_spent", 0)
         formal_ts = f_issues.get(gid, 0) if gid else 0
@@ -249,11 +331,6 @@ def build_daily_time_from_time_stats(
             continue
 
         ts = mr.get("time_stats") or {}
-        if not ts:
-            try:
-                ts = gl_client._get(f"/projects/{pid}/merge_requests/{iid}/time_stats") or {}
-            except Exception:
-                ts = {}
 
         total_ts = ts.get("total_time_spent", 0)
         formal_ts = f_mrs.get(gid, 0) if gid else 0

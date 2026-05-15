@@ -1,12 +1,149 @@
 import asyncio
+import logging
 
 from internship_activity_tracker.infrastructure.gitlab.description_quality import analyze_description
+from internship_activity_tracker.infrastructure.gitlab.graphql_client import _parse_gid
+from internship_activity_tracker.infrastructure.gitlab.graphql_queries import (
+    GQL_USER_MRS_ASSIGNED,
+    GQL_USER_MRS_AUTHORED,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _mr_node_to_dict(node: dict, role: str, username: str | None) -> tuple[int, dict]:
+    """Normalize a GraphQL MR node into the standard MR dict shape. Returns (int_id, mr_dict)."""
+
+    mr_int_id = _parse_gid(node.get("id")) or 0
+    project_int_id = _parse_gid((node.get("project") or {}).get("id"))
+    state = node.get("state") or ""
+    desc = node.get("description") or ""
+    desc_quality = analyze_description(desc)
+
+    pipeline = node.get("headPipeline")
+    head_pipeline = {"status": pipeline["status"]} if pipeline else None
+    time_spent = node.get("totalTimeSpent") or 0
+
+    # Store commit messages for Phase 4 inline evaluation
+    commit_nodes = (node.get("commits") or {}).get("nodes") or []
+    commit_msgs = [c.get("title", "") or "" for c in commit_nodes]
+
+    return mr_int_id, {
+        "id": mr_int_id,
+        "iid": node.get("iid"),
+        "title": node.get("title"),
+        "description": desc,
+        "project_id": project_int_id,
+        "project_path": (node.get("project") or {}).get("fullPath"),
+        "web_url": node.get("webUrl"),
+        "state": state,
+        "created_at": node.get("createdAt"),
+        "merged_at": node.get("mergedAt"),
+        "closed_at": node.get("closedAt"),
+        "role": role,
+        "upvotes": node.get("upvotes") or 0,
+        "user_notes_count": node.get("userNotesCount") or 0,
+        "time_stats": {"total_time_spent": time_spent},
+        "head_pipeline": head_pipeline,
+        "desc_score": desc_quality["description_score"],
+        "quality": desc_quality["quality_label"],
+        "feedback": desc_quality["feedback"],
+        "_username": username,
+        "_commit_msgs": commit_msgs,  # used by Phase 4 inline evaluation
+    }
+
+
+async def get_user_mrs_graphql(
+    client,
+    username: str,
+    since: str | None = None,
+    until: str | None = None,
+    project_ids: list | None = None,
+) -> tuple[list[dict], dict]:
+    """
+    Fetch authored + assigned MRs via GraphQL (~2 paginated queries instead of 2+ REST pages each).
+    Returns (mrs_list, stats) with the exact same shape as get_user_mrs_async().
+    """
+    gql = client._gql
+    if not gql:
+        raise RuntimeError("GraphQL client not available")
+
+    mrs_dict: dict[int, dict] = {}
+    pid_set = set(project_ids) if project_ids else None
+    stats = {"total": 0, "merged": 0, "closed": 0, "opened": 0, "pending": 0, "assigned": 0}
+
+    async def _paginate_authored() -> None:
+        after = None
+        while True:
+            data = await gql.query(GQL_USER_MRS_AUTHORED, {"username": username, "after": after})
+            conn = ((data.get("user") or {}).get("authoredMergeRequests")) or {}
+            for node in conn.get("nodes") or []:
+                mr_int_id, mr = _mr_node_to_dict(node, "Authored", username)
+                if pid_set is not None and mr["project_id"] not in pid_set:
+                    continue
+                if mr_int_id in mrs_dict:
+                    if mrs_dict[mr_int_id]["role"] == "Assigned":
+                        mrs_dict[mr_int_id]["role"] = "Authored & Assigned"
+                else:
+                    mrs_dict[mr_int_id] = mr
+                    stats["total"] += 1
+                    state = mr["state"]
+                    if state == "merged":
+                        stats["merged"] += 1
+                    elif state == "closed":
+                        stats["closed"] += 1
+                    elif state == "opened":
+                        stats["opened"] += 1
+                        stats["pending"] += 1
+            pi = conn.get("pageInfo") or {}
+            if not pi.get("hasNextPage"):
+                break
+            after = pi["endCursor"]
+
+    async def _paginate_assigned() -> None:
+        after = None
+        while True:
+            data = await gql.query(GQL_USER_MRS_ASSIGNED, {"username": username, "after": after})
+            conn = ((data.get("user") or {}).get("assignedMergeRequests")) or {}
+            for node in conn.get("nodes") or []:
+                mr_int_id, mr = _mr_node_to_dict(node, "Assigned", username)
+                if pid_set is not None and mr["project_id"] not in pid_set:
+                    continue
+                stats["assigned"] += 1
+                if mr_int_id in mrs_dict:
+                    if mrs_dict[mr_int_id]["role"] == "Authored":
+                        mrs_dict[mr_int_id]["role"] = "Authored & Assigned"
+                else:
+                    mrs_dict[mr_int_id] = mr
+                    stats["total"] += 1
+                    state = mr["state"]
+                    if state == "merged":
+                        stats["merged"] += 1
+                    elif state == "closed":
+                        stats["closed"] += 1
+                    elif state == "opened":
+                        stats["opened"] += 1
+                        stats["pending"] += 1
+            pi = conn.get("pageInfo") or {}
+            if not pi.get("hasNextPage"):
+                break
+            after = pi["endCursor"]
+
+    await asyncio.gather(_paginate_authored(), _paginate_assigned())
+    logger.info(f"[GraphQL/MRs] Fetched {stats['total']} MRs for {username}")
+    return list(mrs_dict.values()), stats
 
 
 async def get_user_mrs_async(client, user_id, username=None, since=None, until=None, project_ids=None):
     """
-    Async fetch Merge Requests.
+    Async fetch Merge Requests. Tries GraphQL first, falls back to REST.
     """
+    if client._gql and username:
+        try:
+            return await get_user_mrs_graphql(client, username, since, until, project_ids)
+        except Exception as exc:
+            logger.warning(f"[GraphQL/MRs] Fast path failed, falling back to REST: {exc}")
+
     mrs_dict = {}
     pid_set = set(project_ids) if project_ids else None
 

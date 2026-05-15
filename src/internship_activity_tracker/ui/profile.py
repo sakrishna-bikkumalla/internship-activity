@@ -9,7 +9,10 @@ from internship_activity_tracker.services.profile.profile_service import check_p
 
 def render_user_profile(client, simple_user_info):
     """
-    Renders the User Profile UI.
+    Renders the User Profile UI with two-phase loading:
+      Phase 1 — projects, MRs, issues, groups, timelogs (fast, GraphQL)
+      Phase 2 — commits (slower, REST per-project)
+    Both phases are cached in st.session_state so re-interactions don't re-fetch.
     """
     if not simple_user_info:
         st.error("User info not provided.")
@@ -21,47 +24,51 @@ def render_user_profile(client, simple_user_info):
     avatar_url = simple_user_info.get("avatar_url")
     web_url = simple_user_info.get("web_url")
 
-    # Header
-    col1, col2 = st.columns([1, 4])
+    profile_cache_key = f"profile_{username}"
+    commits_cache_key = f"profile_{username}_commits"
+
+    # Header with refresh button
+    col1, col2, col3 = st.columns([1, 4, 1])
     with col1:
         if avatar_url:
             st.image(avatar_url, width=100)
     with col2:
         st.markdown(f"### {name} (@{username})")
         st.markdown(f"**ID:** {user_id} | [GitLab Profile]({web_url})")
+    with col3:
+        if st.button("🔄 Refresh", key=f"refresh_{username}"):
+            st.session_state.pop(profile_cache_key, None)
+            st.session_state.pop(commits_cache_key, None)
+            st.rerun()
 
-    # Fetch Data concurrently via the batch engine
-    with st.spinner("Fetching comprehensive user data in parallel..."):
-        user_data = batch.process_single_user(
-            client,
-            username,
-            override_email=simple_user_info.get("override_email"),
-            override_username=simple_user_info.get("override_username"),
-        )
+    # ── Phase 1: profile data (projects, MRs, issues, groups, timelogs) ──────────
+    if profile_cache_key not in st.session_state:
+        with st.spinner("Fetching profile data (projects, MRs, issues, timelogs)..."):
+            st.session_state[profile_cache_key] = batch.process_single_user_no_commits(
+                client,
+                username,
+                override_email=simple_user_info.get("override_email"),
+                override_username=simple_user_info.get("override_username"),
+            )
+
+    user_data = st.session_state[profile_cache_key]
 
     if not user_data or user_data.get("status") != "Success":
         error_msg = user_data.get("error", "Unknown error") if user_data else "Unknown error"
         st.error(f"Error fetching data: {error_msg}")
         return
 
-    # Extract data from the resulting dict
     data = user_data["data"]
     proj_data = data["projects"]
-    all_commits = data["commits"]
-    commit_stats = data["commit_stats"]
     user_groups = data["groups"]
     user_mrs = data["mrs"]
     mr_stats = data["mr_stats"]
     user_issues = data["issues"]
     issue_stats = data["issue_stats"]
-
-    # Projects classification
     personal_projects = proj_data["personal"]
     verified_contributed = proj_data["contributed"]
 
-    # --- Display ---
-
-    # Projects
+    # ── Projects ──────────────────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("📦 Projects")
     p_col1, p_col2 = st.columns(2)
@@ -96,26 +103,7 @@ def render_user_profile(client, simple_user_info):
                     height=350,
                 )
 
-    # Commits
-    st.markdown("---")
-    st.subheader("💻 Commits Analysis (IST)")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Commits", commit_stats["total"])
-    c2.metric("Morning (9:00-12:29)", commit_stats["morning_commits"])
-    c3.metric("Afternoon (12:30-5:00)", commit_stats["afternoon_commits"])
-
-    if all_commits:
-        with st.expander("View Recent Commits"):
-            # Use pandas for table
-            df_commits = pd.DataFrame(all_commits)
-            # Display updated columns, including web_url rendered as a link
-            st.dataframe(
-                df_commits[["project_name", "message", "date", "time", "slot", "web_url"]],
-                column_config={"web_url": st.column_config.LinkColumn("Commit Link", display_text="View Commit")},
-                width="stretch",
-            )
-
-    # Groups
+    # ── Groups ────────────────────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("👥 Groups")
     if user_groups:
@@ -125,7 +113,7 @@ def render_user_profile(client, simple_user_info):
     else:
         st.info("No groups found.")
 
-    # Merge Requests
+    # ── Merge Requests ────────────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("🔀 Merge Requests")
     m1, m2, m3, m4 = st.columns(4)
@@ -143,7 +131,7 @@ def render_user_profile(client, simple_user_info):
                 width="stretch",
             )
 
-    # Issues
+    # ── Issues ────────────────────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("⚠️ Issues")
     i1, i2, i3 = st.columns(3)
@@ -160,11 +148,35 @@ def render_user_profile(client, simple_user_info):
                 width="stretch",
             )
 
-    # ---------------- Profile README Status ----------------
+    # ── Phase 2: Commits (fetched after profile is already visible) ───────────────
+    st.markdown("---")
+    st.subheader("💻 Commits Analysis (IST)")
+
+    if commits_cache_key not in st.session_state:
+        with st.spinner("Loading commits..."):
+            all_commits, commit_stats = batch.fetch_commits_for_result(client, user_data)
+        st.session_state[commits_cache_key] = (all_commits, commit_stats)
+
+    all_commits, commit_stats = st.session_state[commits_cache_key]
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Commits", commit_stats["total"])
+    c2.metric("Morning (9:00–12:29)", commit_stats["morning_commits"])
+    c3.metric("Afternoon (12:30–17:00)", commit_stats["afternoon_commits"])
+
+    if all_commits:
+        with st.expander("View Recent Commits"):
+            df_commits = pd.DataFrame(all_commits)
+            st.dataframe(
+                df_commits[["project_name", "message", "date", "time", "slot", "web_url"]],
+                column_config={"web_url": st.column_config.LinkColumn("Commit Link", display_text="View Commit")},
+                width="stretch",
+            )
+
+    # ── Profile README Status ─────────────────────────────────────────────────────
     st.markdown("---")
     st.subheader("📄 Profile README Status")
 
-    # Using the underlying python-gitlab client from our custom client
     readme_status = check_profile_readme(client.client, username)
 
     if readme_status["exists"]:
@@ -180,7 +192,7 @@ def render_user_profile(client, simple_user_info):
             "3. This README will appear on your GitLab profile page"
         )
 
-    # Excel Export
+    # ── Excel Export (all data available by this point) ───────────────────────────
     try:
         export_payload = {
             "Personal_Projects": personal_projects,
